@@ -1,171 +1,173 @@
 -- [[ Valax Hub v1 - 99 Nights In The Forest ]]
--- [[ Focus: True Core Modification & Exclusive Exploits ]]
+-- [[ Final Stable Version - Core Modification ]]
 
+-- 确保游戏完全加载
 if not game:IsLoaded() then game.Loaded:Wait() end
 
--- [[ SERVICES ]]
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ProximityPromptService = game:GetService("ProximityPromptService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
--- [[ LOAD WIND UI ]]
+-- 加载 WindUI 框架
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
--- [[ GLOBAL SETTINGS ]]
+-- [[ 核心功能配置表 ]]
 getgenv().ValaxV1 = {
     GodMode = false,
     OneHitKill = false,
     InstantInteract = false,
     InfItems = false,
-    OHK_Multiplier = 15, -- 核心攻击倍率
-    AntiDeath = false
+    OHK_Multiplier = 25 -- 秒杀强度
 }
 
--- [[ CORE ENGINE MODIFICATION - THE "REAL" STUFF ]]
-
-local mt = getmetatable(game)
-local oldNamecall = mt.__namecall
-local oldIndex = mt.__index
-setreadonly(mt, false)
-
--- 1. True One Hit Kill & Infinite Items (Remote Interception)
-mt.__namecall = newcclosure(function(self, ...)
-    local args = {...}
-    local method = getnamecallmethod()
-
-    if not checkcaller() then
-        -- TRUE ONE HIT KILL: 拦截伤害事件并进行多重物理重叠
-        if method == "FireServer" and getgenv().ValaxV1.OneHitKill then
-            local remoteName = tostring(self)
-            if remoteName:find("Hit") or remoteName:find("Attack") or remoteName:find("Damage") then
-                for i = 1, getgenv().ValaxV1.OHK_Multiplier do
-                    oldNamecall(self, unpack(args))
+-- [[ 核心 Hook 逻辑 - 修复 setreadonly 报错 ]]
+local function SecureHook()
+    local mt = (debug and debug.getmetatable or getmetatable)(game)
+    if type(mt) ~= "table" then return end
+    
+    -- 智能寻找执行器支持的读写权限修改函数
+    local set_writeable = make_writeable or setreadonly or (function(t, b) 
+        if setrawmetatable then setrawmetatable(t, b) end 
+    end)
+    
+    if set_writeable then
+        pcall(function()
+            set_writeable(mt, false)
+            local oldNamecall = mt.__namecall
+            
+            mt.__namecall = newcclosure(function(self, ...)
+                local args = {...}
+                local method = getnamecallmethod()
+                
+                if not checkcaller() then
+                    -- 【核心功能：一击必杀】
+                    -- 原理：在客户端发送伤害请求时，瞬间倍增数据包发往服务器
+                    if method == "FireServer" and getgenv().ValaxV1.OneHitKill then
+                        local rName = tostring(self)
+                        if rName:find("Hit") or rName:find("Attack") or rName:find("Damage") then
+                            for i = 1, getgenv().ValaxV1.OHK_Multiplier do
+                                task.spawn(function() oldNamecall(self, unpack(args)) end)
+                            end
+                        end
+                    end
+                    
+                    -- 【核心功能：无限物品】
+                    -- 原理：掐断所有发往服务器的“减少/消耗物品”信号
+                    if method == "FireServer" and getgenv().ValaxV1.InfItems then
+                        local rName = tostring(self)
+                        if rName:find("Consume") or rName:find("Use") or rName:find("Reduce") then
+                            return nil 
+                        end
+                    end
                 end
-            end
-        end
-
-        -- TRUE INFINITE ITEMS: 拦截消耗品减少的指令
-        if method == "FireServer" and getgenv().ValaxV1.InfItems then
-            local remoteName = tostring(self)
-            if remoteName:find("Consume") or remoteName:find("Use") or remoteName:find("Reduce") then
-                return nil -- 直接掐断发往服务器的“减少物品”信号
-            end
-        end
+                return oldNamecall(self, ...)
+            end)
+            set_writeable(mt, true)
+        end)
     end
+end
 
-    return oldNamecall(self, ...)
-end)
+-- 执行注入
+SecureHook()
 
--- 2. True God Mode (Humanoid State & Health Locking)
--- 绑定到 Heartbeat 确保在每一帧物理模拟前强制修改数值
+-- [[ 核心上帝模式 - 状态锁定 ]]
+-- 使用 Heartbeat 以确保每一帧物理模拟前锁定状态，防止瞬间死亡
 RunService.Heartbeat:Connect(function()
     if getgenv().ValaxV1.GodMode then
         local char = LocalPlayer.Character
-        if char then
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then
-                -- 核心修改：锁定 Health 属性且禁止其进入 Dead 状态
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            -- 强制锁定血量为最大值
+            if hum.Health < hum.MaxHealth then
                 hum.Health = hum.MaxHealth
-                if hum:GetState() == Enum.HumanoidStateType.Dead then
-                    hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-                end
+            end
+            -- 强制绕过死亡状态检查
+            if hum:GetState() == Enum.HumanoidStateType.Dead then
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                hum.Health = hum.MaxHealth
             end
         end
     end
 end)
 
-setreadonly(mt, true)
-
--- 3. Instant Interaction (Global Hook)
+-- [[ 核心快速交互 ]]
+-- 原理：直接调用底层交互触发，跳过 UI 进度条
 ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
     if getgenv().ValaxV1.InstantInteract then
         fireproximityprompt(prompt)
     end
 end)
 
--- [[ UI CONSTRUCTION ]]
-
+-- [[ UI 绘制逻辑 ]]
 local Window = WindUI:CreateWindow({
     Title = "Valax Hub",
     Icon = "rbxassetid://84501312005643",
-    Author = "Premium v1",
-    Folder = "ValaxHub_Forest",
-    Size = UDim2.fromOffset(480, 400),
+    Author = "Valax Premium v1",
+    Folder = "Valax_Forest_V1",
+    Size = UDim2.fromOffset(480, 420),
     Transparent = true,
     Theme = "Dark",
-    Resizable = false,
-    SideBarWidth = 180,
     HideSearchBar = true,
 })
 
-local Godly = Window:Tab({ 
-    Title = "Exclusive & Godly", 
-    Icon = "crown" 
-})
+local Godly = Window:Tab({ Title = "Exclusive & Godly", Icon = "crown" })
 
--- Section: Core Godly Functions
-Godly:Section({ Title = "👑 Godly Core" })
+-- 第一部分：核心生存修改
+Godly:Section({ Title = "🛡️ Core Immortality" })
 
 Godly:Toggle({
     Title = "Absolute God Mode",
-    Desc = "True Health Lock & Anti-Death State",
+    Desc = "Force Health Lock & State Persistence",
     Value = false,
-    Callback = function(state)
-        getgenv().ValaxV1.GodMode = state
-        if state then
-            WindUI:Notify({ Title = "Core Modified", Content = "Health Memory Locked" })
-        end
+    Callback = function(state) 
+        getgenv().ValaxV1.GodMode = state 
+        if state then WindUI:Notify({Title = "Core", Content = "God Mode Injected!"}) end
     end
 })
+
+-- 第二部分：核心战斗修改
+Godly:Section({ Title = "⚔️ Divine Offense" })
 
 Godly:Toggle({
     Title = "One Hit Kill",
-    Desc = "Force Multi-Packet Damage (Server-Side impact)",
+    Desc = "Server-Side Damage Multiplication",
     Value = false,
-    Callback = function(state)
-        getgenv().ValaxV1.OneHitKill = state
-    end
+    Callback = function(state) getgenv().ValaxV1.OneHitKill = state end
 })
 
 Godly:Slider({
-    Title = "OHK Multiplier",
-    Desc = "Packets per click (Higher = Faster Kill)",
-    Min = 1,
-    Max = 100,
-    Default = 15,
-    Callback = function(v)
-        getgenv().ValaxV1.OHK_Multiplier = v
-    end
+    Title = "OHK Intensity",
+    Desc = "Packets per click (Higher = Deadlier)",
+    Min = 1, Max = 100, Default = 25,
+    Callback = function(v) getgenv().ValaxV1.OHK_Multiplier = v end
 })
 
--- Section: Divine Exploits
-Godly:Section({ Title = "💎 Divine Exploits" })
+-- 第三部分：核心功能辅助
+Godly:Section({ Title = "💎 Divine Utility" })
 
 Godly:Toggle({
     Title = "Instant Interaction",
-    Desc = "Bypass all hold-times for chests & items",
+    Desc = "Zero-second Chest/Item collection",
     Value = false,
-    Callback = function(state)
-        getgenv().ValaxV1.InstantInteract = state
-    end
+    Callback = function(state) getgenv().ValaxV1.InstantInteract = state end
 })
 
 Godly:Toggle({
     Title = "Infinite Consumption",
-    Desc = "Blocks 'Item-Decrease' packets from reaching server",
+    Desc = "Prevents items from being subtracted",
     Value = false,
-    Callback = function(state)
-        getgenv().ValaxV1.InfItems = state
-    end
+    Callback = function(state) getgenv().ValaxV1.InfItems = state end
 })
 
+-- 高级服务器功能
 Godly:Button({
-    Title = "Server Hopper (Speed Mode)",
-    Desc = "Instantly hop to low-ping servers",
+    Title = "Fast Server Hop",
+    Desc = "Teleport to a new forest server",
     Callback = function()
-        local Servers = game:GetService("HttpService"):JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
+        local Http = game:GetService("HttpService")
+        local Servers = Http:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
         for _, v in pairs(Servers.data) do
             if v.playing < v.maxPlayers and v.id ~= game.JobId then
                 game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, v.id, LocalPlayer)
@@ -175,18 +177,9 @@ Godly:Button({
     end
 })
 
-Godly:Button({
-    Title = "Instant Respawn",
-    Desc = "Bypass death timer and respawn at camp",
-    Callback = function()
-        LocalPlayer.Character:BreakJoints()
-    end
-})
-
--- [[ INIT NOTIFY ]]
+-- 加载完成通知
 WindUI:Notify({
-    Title = "Valax Hub v1 Loaded",
-    Content = "Premium functions are now active.",
+    Title = "Valax Hub Loaded",
+    Content = "Exclusive v1 functions are ready.",
     Duration = 5
 })
-
