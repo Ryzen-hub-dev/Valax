@@ -110,14 +110,53 @@ class CodeBlock:
     block_id: int
     content: str
     block_type: str  # "statement", "function", "control_flow"
+    next_id: int | None = None  # 默认下一步执行标识，None 表示程序结束
+    branches: dict = None  # 分支结构: {"true": next_id, "false": next_id}
+    auxiliary_paths: list = None  # 辅助路径列表，不影响主流程
     dependencies: list[int] = None
     metadata: dict = None
 
     def __post_init__(self):
+        if self.branches is None:
+            self.branches = {}
+        if self.auxiliary_paths is None:
+            self.auxiliary_paths = []
         if self.dependencies is None:
             self.dependencies = []
         if self.metadata is None:
             self.metadata = {}
+
+    def set_next(self, next_block_id: int | None) -> None:
+        """设置下一步执行标识"""
+        self.next_id = next_block_id
+
+    def set_branch(self, condition: str, next_block_id: int | None) -> None:
+        """设置条件分支"""
+        self.branches[condition] = next_block_id
+
+    def add_auxiliary_path(self, path: dict) -> None:
+        """添加辅助路径"""
+        self.auxiliary_paths.append(path)
+
+    def has_next(self) -> bool:
+        """是否有下一步执行"""
+        return self.next_id is not None
+
+    def has_branches(self) -> bool:
+        """是否有分支"""
+        return len(self.branches) > 0
+
+    def has_auxiliary_paths(self) -> bool:
+        """是否有辅助路径"""
+        return len(self.auxiliary_paths) > 0
+
+    def get_successor_ids(self) -> list[int | None]:
+        """获取所有后继块 ID"""
+        successors = []
+        if self.next_id is not None:
+            successors.append(self.next_id)
+        successors.extend(self.branches.values())
+        return successors
 
 
 @dataclass
@@ -127,6 +166,10 @@ class BlockProgram:
     execution_order: list[int]
     block_map: dict[int, CodeBlock]
     entry_block_id: int = 1
+    constant_pool: ConstantPool | None = None
+    randomized: bool = False
+    use_auxiliary_paths: bool = False
+    auxiliary_path_count: int = 0
 
     def __post_init__(self):
         self.block_map = {b.block_id: b for b in self.blocks}
@@ -137,6 +180,68 @@ class BlockProgram:
     def get_execution_sequence(self) -> list[CodeBlock]:
         return [self.block_map[bid] for bid in self.execution_order if bid in self.block_map]
 
+    def link_blocks(self, order: list[int] | None = None) -> None:
+        """将块按顺序链接，设置 next_id"""
+        exec_order = order if order is not None else self.execution_order
+        for i, bid in enumerate(exec_order):
+            block = self.get_block(bid)
+            if block is None:
+                continue
+            if i < len(exec_order) - 1:
+                block.set_next(exec_order[i + 1])
+            else:
+                block.set_next(None)
+
+    def randomize_and_link(self, rng: random.Random, respect_deps: bool = False) -> None:
+        """随机化顺序并重新链接"""
+        randomize_block_order(self, rng, respect_deps)
+        self.randomized = True
+
+    def randomize_layout(self, rng: random.Random, config: LayoutConfig | None = None) -> 'BlockProgram':
+        """
+        使用布局随机化随机化块顺序
+        
+        Args:
+            rng: 随机数生成器
+            config: 布局配置，如果为 None 则使用默认配置
+            
+        Returns:
+            自身以便链式调用
+        """
+        randomizer = BlockLayoutRandomizer(rng, config)
+        return randomizer.randomize(self)
+
+    def analyze_layout(self) -> dict:
+        """
+        分析当前布局
+        
+        Returns:
+            包含局部性和跳转开销分析的字典
+        """
+        locality = LayoutAnalyzer.analyze_locality(self)
+        jump_cost = LayoutAnalyzer.compute_jump_cost(self)
+        return {
+            "locality": locality,
+            "jump_cost": jump_cost,
+            "block_count": len(self.execution_order)
+        }
+
+    def set_constant_pool(self, pool: ConstantPool) -> None:
+        """设置常量池"""
+        self.constant_pool = pool
+
+    def get_constant_pool(self) -> ConstantPool | None:
+        """获取常量池"""
+        return self.constant_pool
+
+    def enable_auxiliary_paths(self, enabled: bool = True) -> None:
+        """启用/禁用辅助路径"""
+        self.use_auxiliary_paths = enabled
+
+    def increment_auxiliary_count(self) -> None:
+        """增加辅助路径计数"""
+        self.auxiliary_path_count += 1
+
 
 class BlockTypeLegacy(Enum):
     """Block 类型分类"""
@@ -146,6 +251,515 @@ class BlockTypeLegacy(Enum):
     TABLE_DEF = "table_def"
     ASSIGNMENT = "assignment"
     EXPRESSION = "expression"
+
+
+class AuxiliaryPathType(Enum):
+    """辅助路径类型"""
+    DEAD_CODE = "dead_code"           # 永不到达的代码
+    REDUNDANT_JUMP = "redundant_jump"  # 冗余跳转
+    NOP_FILL = "nop_fill"            # 空操作填充
+    DECOY_BRANCH = "decoy_branch"    # 诱饵分支
+    GUARD_CHECK = "guard_check"      # 守卫检查
+    DUMMY_LOOP = "dummy_loop"        # 虚假循环
+    REDUNDANT_ASSIGN = "redundant_assign"  # 冗余赋值
+    SWAP_VARIABLES = "swap_variables"  # 变量交换（无意义）
+    SELF_ASSIGN = "self_assign"      # 自赋值
+    COMPUTED_SKIP = "computed_skip"    # 计算跳过
+    DUMMY_FUNCTION = "dummy_function"  # 虚假函数调用
+    # 冗余 block 类型
+    REDUNDANT_BLOCK = "redundant_block"  # 冗余代码块
+    SKIP_TARGET = "skip_target"        # 跳转目标块
+    DECOY_BLOCK = "decoy_block"        # 诱饵块
+    NESTED_TRAP = "nested_trap"        # 嵌套陷阱
+
+
+@dataclass
+class AuxiliaryPath:
+    """辅助路径"""
+    path_id: int
+    path_type: str
+    content: str  # Lua 代码片段
+    target_block_id: int | None = None  # 跳转目标
+    condition: str | None = None  # 触发条件
+    probability: float = 0.0  # 执行概率
+    execution_mode: str = "inline"  # "inline" | "wrapped" | "called"
+
+
+class AuxiliaryPathGenerator:
+    """辅助路径生成器：生成不影响主流程的额外路径"""
+
+    def __init__(self, rng: random.Random):
+        self.rng = rng
+        self.path_counter = [0]
+        self.used_identifiers: set[str] = set()
+        self.generated_paths_count = 0
+
+    def _gen_id(self) -> int:
+        self.path_counter[0] += 1
+        self.generated_paths_count += 1
+        return self.path_counter[0]
+
+    def _random_identifier(self, prefix: str = "_aux") -> str:
+        chars = string.ascii_lowercase
+        for _ in range(10):
+            name = prefix + "_" + "".join(self.rng.choice(chars) for _ in range(4))
+            if name not in self.used_identifiers:
+                self.used_identifiers.add(name)
+                return name
+        return prefix + "_" + str(self._gen_id())
+
+    def _create_path(
+        self,
+        path_type: AuxiliaryPathType,
+        content: str,
+        target_block_id: int | None = None,
+        condition: str | None = None,
+        execution_mode: str = "inline"
+    ) -> AuxiliaryPath:
+        """创建辅助路径的统一方法"""
+        return AuxiliaryPath(
+            path_id=self._gen_id(),
+            path_type=path_type.value,
+            content=content,
+            target_block_id=target_block_id,
+            condition=condition,
+            probability=0.0,
+            execution_mode=execution_mode
+        )
+
+    def generate_dead_code(self, block: CodeBlock) -> AuxiliaryPath | None:
+        """生成死代码路径 - 条件永远为假的代码"""
+        if self.rng.random() > 0.25:
+            return None
+
+        patterns = [
+            (f"local _d = false\nif _d then\n    error('unreachable')\nend", None),
+            (f"if false and true then\n    error('dead')\nend", None),
+            (f"if nil then\n    error('unreachable')\nend", None),
+            (f"if 1 ~= 1 then\n    error('impossible')\nend", None),
+        ]
+
+        content, _ = self.rng.choice(patterns)
+        var_name = self._random_identifier("_d")
+        content = content.replace("_d", var_name)
+
+        return self._create_path(AuxiliaryPathType.DEAD_CODE, content, condition="false")
+
+    def generate_redundant_jump(self, block: CodeBlock, next_block_id: int | None) -> AuxiliaryPath | None:
+        """生成冗余跳转 - 先跳到某处再跳回来"""
+        if next_block_id is None or self.rng.random() > 0.25:
+            return None
+
+        patterns = [
+            f"local _skip = false\nif _skip then\n    -- redundant jump\nend",
+            f"do\n    local _label = false\n    if not _label then\n        -- fall through\n    end\nend",
+            f"if true then\n    -- always true\nelse\n    -- never reached\nend",
+        ]
+
+        content = self.rng.choice(patterns)
+        return self._create_path(
+            AuxiliaryPathType.REDUNDANT_JUMP,
+            content,
+            target_block_id=next_block_id
+        )
+
+    def generate_nop_fill(self, block: CodeBlock) -> AuxiliaryPath | None:
+        """生成 NOP 填充 - 无意义的空操作"""
+        if self.rng.random() > 0.35:
+            return None
+
+        nop_ops = [
+            "do end",
+            "(function() end)()",
+            "pcall(function() end)",
+            "select('#', nil)",
+            "next({})",
+            "(function() return end)()",
+            "setmetatable({}, {})",
+        ]
+
+        nop_count = self.rng.randint(1, 3)
+        lines = [self.rng.choice(nop_ops) for _ in range(nop_count)]
+
+        return self._create_path(AuxiliaryPathType.NOP_FILL, "\n".join(lines))
+
+    def generate_decoy_branch(self, block: CodeBlock, next_block_id: int | None) -> AuxiliaryPath | None:
+        """生成诱饵分支 - 两条分支最终都到同一目标"""
+        if next_block_id is None or self.rng.random() > 0.2:
+            return None
+
+        patterns = [
+            (
+                "local _decoy = false\n"
+                "local _tmp = 0\n"
+                "if _decoy then\n"
+                "    _tmp = 1\n"
+                "else\n"
+                "    _tmp = 2\n"
+                "end"
+            ),
+            (
+                "local _cond = true\n"
+                "local _val = 0\n"
+                "if _cond and false then\n"
+                "    _val = 100\n"
+                "else\n"
+                "    _val = _val\n"
+                "end"
+            ),
+        ]
+
+        content = self.rng.choice(patterns)
+        return self._create_path(
+            AuxiliaryPathType.DECOY_BRANCH,
+            content,
+            target_block_id=next_block_id
+        )
+
+    def generate_guard_check(self, block: CodeBlock) -> AuxiliaryPath | None:
+        """生成守卫检查 - 不会触发的安全检查"""
+        if self.rng.random() > 0.2:
+            return None
+
+        patterns = [
+            (
+                "local _guard = true\n"
+                "if not _guard then\n"
+                "    error('guard failed')\n"
+                "end"
+            ),
+            (
+                "local _safe = 1\n"
+                "if _safe == 0 then\n"
+                "    _safe = _safe + 1\n"
+                "end"
+            ),
+            (
+                "local _check = true\n"
+                "if _check == false then\n"
+                "    _check = true\n"
+                "end"
+            ),
+        ]
+
+        content = self.rng.choice(patterns)
+        return self._create_path(AuxiliaryPathType.GUARD_CHECK, content)
+
+    def generate_dummy_loop(self, block: CodeBlock) -> AuxiliaryPath | None:
+        """生成虚假循环 - 永远不会真正循环"""
+        if self.rng.random() > 0.2:
+            return None
+
+        patterns = [
+            (
+                "local _iter = 0\n"
+                "while false do\n"
+                "    _iter = _iter + 1\n"
+                "end"
+            ),
+            (
+                "for _i = 1, 0 do\n"
+                "    -- empty iteration\n"
+                "end"
+            ),
+            (
+                "repeat\n"
+                "    break\n"
+                "until true"
+            ),
+        ]
+
+        content = self.rng.choice(patterns)
+        return self._create_path(AuxiliaryPathType.DUMMY_LOOP, content)
+
+    def generate_redundant_assign(self, block: CodeBlock) -> AuxiliaryPath | None:
+        """生成冗余赋值 - 赋值后立即覆盖"""
+        if self.rng.random() > 0.25:
+            return None
+
+        patterns = [
+            "local _x = 0\n_x = 1\n_x = _x",
+            "local _y = nil\n_y = {}\n_y = nil",
+            "local _z = 1\n_z = _z\n_z = _z + 0",
+        ]
+
+        content = self.rng.choice(patterns)
+        var_prefix = "_x" if "_x" in content else ("_y" if "_y" in content else "_z")
+        new_var = self._random_identifier("_tmp")
+        content = content.replace(var_prefix, new_var)
+
+        return self._create_path(AuxiliaryPathType.REDUNDANT_ASSIGN, content)
+
+    def generate_swap_variables(self, block: CodeBlock) -> AuxiliaryPath | None:
+        """生成变量交换（无意义）"""
+        if self.rng.random() > 0.15:
+            return None
+
+        var_a = self._random_identifier("_a")
+        var_b = self._random_identifier("_b")
+
+        content = (
+            f"local {var_a}, {var_b} = 0, 0\n"
+            f"local _temp = {var_a}\n"
+            f"{var_a} = {var_b}\n"
+            f"{var_b} = _temp"
+        )
+
+        return self._create_path(AuxiliaryPathType.SWAP_VARIABLES, content)
+
+    def generate_self_assign(self, block: CodeBlock) -> AuxiliaryPath | None:
+        """生成自赋值"""
+        if self.rng.random() > 0.3:
+            return None
+
+        var_name = self._random_identifier("_self")
+        patterns = [
+            f"local {var_name} = 1\n{var_name} = {var_name}",
+            f"local {var_name} = nil\n{var_name} = {var_name}",
+            f"local {var_name} = {{}}\n{var_name} = {var_name}",
+        ]
+
+        content = self.rng.choice(patterns)
+        return self._create_path(AuxiliaryPathType.SELF_ASSIGN, content)
+
+    def generate_computed_skip(self, block: CodeBlock) -> AuxiliaryPath | None:
+        """生成计算跳过 - 无意义的计算"""
+        if self.rng.random() > 0.2:
+            return None
+
+        patterns = [
+            "local _ = 0 + 0 - 0 * 0",
+            "local _ = 1 == 1 and true or false",
+            "local _ = 'a' .. '' .. ''",
+            "local _ = ({1,2,3})[1]",
+            "local _ = pcall(error, nil)",
+        ]
+
+        content = self.rng.choice(patterns)
+        return self._create_path(AuxiliaryPathType.COMPUTED_SKIP, content)
+
+    def generate_dummy_function(self, block: CodeBlock) -> AuxiliaryPath | None:
+        """生成虚假函数调用"""
+        if self.rng.random() > 0.15:
+            return None
+
+        func_name = self._random_identifier("_dummy")
+        content = (
+            f"local function {func_name}() end\n"
+            f"{func_name}()"
+        )
+
+        return self._create_path(
+            AuxiliaryPathType.DUMMY_FUNCTION,
+            content,
+            execution_mode="wrapped"
+        )
+
+    def generate_auxiliary_path(self, block: CodeBlock, next_block_id: int | None) -> AuxiliaryPath | None:
+        """根据概率生成一种辅助路径"""
+        generators = [
+            lambda: self.generate_nop_fill(block),
+            lambda: self.generate_dead_code(block),
+            lambda: self.generate_self_assign(block),
+            lambda: self.generate_redundant_assign(block),
+            lambda: self.generate_decoy_branch(block, next_block_id),
+            lambda: self.generate_guard_check(block),
+            lambda: self.generate_dummy_loop(block),
+            lambda: self.generate_computed_skip(block),
+            lambda: self.generate_redundant_jump(block, next_block_id),
+            lambda: self.generate_swap_variables(block),
+            lambda: self.generate_dummy_function(block),
+        ]
+
+        self.rng.shuffle(generators)
+
+        for gen in generators:
+            path = gen()
+            if path is not None:
+                return path
+
+        return None
+
+    def add_auxiliary_paths_to_block(
+        self,
+        block: CodeBlock,
+        next_block_id: int | None,
+        max_paths: int = 2
+    ) -> None:
+        """为 block 添加辅助路径"""
+        if len(block.auxiliary_paths) >= max_paths:
+            return
+
+        path = self.generate_auxiliary_path(block, next_block_id)
+        if path is not None:
+            block.add_auxiliary_path({
+                "path_id": path.path_id,
+                "path_type": path.path_type,
+                "content": path.content,
+                "target_block_id": path.target_block_id,
+                "execution_mode": path.execution_mode,
+            })
+
+    def get_statistics(self) -> dict:
+        """获取生成统计"""
+        return {
+            "total_generated": self.generated_paths_count,
+            "unique_id_count": len(self.used_identifiers),
+        }
+
+
+# ===== 常量池（Constant Pool）=====
+@dataclass
+class ConstantEntry:
+    """常量条目"""
+    index: int
+    value: str
+    const_type: str  # "string", "number", "boolean"
+
+
+class ConstantPool:
+    """常量池：提取字符串和数字到表中，用索引访问"""
+
+    def __init__(self, rng: random.Random | None = None):
+        self.rng = rng
+        self.strings: dict[str, int] = {}
+        self.numbers: dict[float, int] = {}
+        self.booleans: dict[bool, int] = {}
+        self.next_string_index = 1
+        self.next_number_index = 1
+        self.next_boolean_index = 1
+        self.pool_prefix = "_cp" if rng is None else random_lua_identifier(rng, "_cp")
+        self.replacements: dict[str, str] = {}
+
+    def intern_string(self, value: str) -> int:
+        """将字符串加入常量池，返回索引"""
+        if value not in self.strings:
+            self.strings[value] = self.next_string_index
+            self.next_string_index += 1
+        return self.strings[value]
+
+    def intern_number(self, value: float) -> int:
+        """将数字加入常量池，返回索引"""
+        if value not in self.numbers:
+            self.numbers[value] = self.next_number_index
+            self.next_number_index += 1
+        return self.numbers[value]
+
+    def intern_boolean(self, value: bool) -> int:
+        """将布尔值加入常量池，返回索引"""
+        if value not in self.booleans:
+            self.booleans[value] = self.next_boolean_index
+            self.next_boolean_index += 1
+        return self.booleans[value]
+
+    def get_string_index(self, value: str) -> int | None:
+        """获取字符串的索引，不存在返回 None"""
+        return self.strings.get(value)
+
+    def get_number_index(self, value: float) -> int | None:
+        """获取数字的索引，不存在返回 None"""
+        return self.numbers.get(value)
+
+    def has_string(self, value: str) -> bool:
+        return value in self.strings
+
+    def has_number(self, value: float) -> bool:
+        return value in self.numbers
+
+    def get_total_count(self) -> int:
+        """获取常量总数"""
+        return len(self.strings) + len(self.numbers) + len(self.booleans)
+
+    def generate_pool_table(self) -> str:
+        """生成常量池 Lua 代码"""
+        lines: list[str] = []
+        prefix = self.pool_prefix
+
+        lines.append(f"local {prefix}_S = {{")
+        for value, idx in sorted(self.strings.items(), key=lambda x: x[1]):
+            escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+            lines.append(f"    [{idx}] = \"{escaped}\",")
+        lines.append("}")
+
+        lines.append(f"local {prefix}_N = {{")
+        for value, idx in sorted(self.numbers.items(), key=lambda x: x[1]):
+            lines.append(f"    [{idx}] = {value},")
+        lines.append("}")
+
+        lines.append(f"local {prefix}_B = {{")
+        for value, idx in sorted(self.booleans.items(), key=lambda x: x[1]):
+            lines.append(f"    [{idx}] = {str(value).lower()},")
+        lines.append("}")
+
+        lines.append(f"local function {prefix}_Sget(idx) return {prefix}_S[idx] end")
+        lines.append(f"local function {prefix}_Nget(idx) return {prefix}_N[idx] end")
+        lines.append(f"local function {prefix}_Bget(idx) return {prefix}_B[idx] end")
+
+        return "\n".join(lines)
+
+    def generate_accessors(self) -> tuple[str, str, str]:
+        """生成访问器函数名"""
+        return (
+            f"{self.pool_prefix}_Sget",
+            f"{self.pool_prefix}_Nget",
+            f"{self.pool_prefix}_Bget"
+        )
+
+    def generate_replacement_expr(self, literal: str, literal_type: str) -> str | None:
+        """生成常量替换表达式"""
+        prefix = self.pool_prefix
+        if literal_type == "string" and literal in self.strings:
+            idx = self.strings[literal]
+            return f"{prefix}_Sget({idx})"
+        elif literal_type == "number":
+            try:
+                num_val = float(literal)
+                if num_val in self.numbers:
+                    idx = self.numbers[num_val]
+                    return f"{prefix}_Nget({idx})"
+            except ValueError:
+                pass
+        elif literal_type == "boolean":
+            try:
+                bool_val = literal.lower() == "true"
+                if bool_val in self.booleans:
+                    idx = self.booleans[bool_val]
+                    return f"{prefix}_Bget({idx})"
+            except ValueError:
+                pass
+        return None
+
+    def replace_literals_in_content(self, content: str) -> str:
+        """在代码内容中替换字面量为常量池访问"""
+        result = content
+
+        for value, idx in self.strings.items():
+            escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+            old_pattern = f'"{escaped}"'
+            new_expr = f'{self.pool_prefix}_Sget({idx})'
+            result = result.replace(old_pattern, new_expr)
+
+        for value, idx in self.numbers.items():
+            old_pattern = str(value)
+            new_expr = f'{self.pool_prefix}_Nget({idx})'
+            result = result.replace(old_pattern, new_expr)
+
+        for value, idx in self.booleans.items():
+            old_pattern = str(value).lower()
+            new_expr = f'{self.pool_prefix}_Bget({idx})'
+            result = result.replace(old_pattern, new_expr)
+
+        return result
+
+    def get_statistics(self) -> dict:
+        """获取常量池统计信息"""
+        return {
+            "string_count": len(self.strings),
+            "number_count": len(self.numbers),
+            "boolean_count": len(self.booleans),
+            "total_count": self.get_total_count(),
+            "prefix": self.pool_prefix,
+        }
 
 
 @dataclass
@@ -270,6 +884,15 @@ class ProtectionProfile:
         self.used_cache_indexes: set[int] = set()
         self.used_storage_indexes: set[int] = set()
         self.string_pool_by_key: dict[str, EncodedString] = {}
+
+        # 代码布局随机化配置
+        self.layout_randomization_enabled = rng.random() > 0.5
+        self.layout_strategy = rng.choice(list(LayoutStrategy))
+        self.layout_group_size = 2 + rng.randint(0, 3)
+        self.layout_swap_iterations = 3 + rng.randint(0, 5)
+        self.layout_preserve_entry = rng.random() > 0.3
+        self.layout_preserve_exit = rng.random() > 0.3
+        self.layout_cluster_depth = 2 + rng.randint(0, 2)
 
         if self.expression_variant == 0:
             self.nil_expression = "({})[" + self.number_name + "(1,0)]"
@@ -610,12 +1233,14 @@ def transform(source: str, watermark: str) -> str:
     randomize_algorithms(profile, rng)
     shuffle_tables(profile, rng)
 
-    program_wrapper, dispatcher_code, _ = build_block_program(
+    program_wrapper, constant_pool_code, dispatcher_code, _ = build_block_program(
         source,
         profile,
         rng,
         randomize_order=False,
-        execution_mode="sequential"
+        execution_mode="sequential",
+        use_constant_pool=True,
+        use_auxiliary_paths=False
     )
 
     api_plan = apply_api_indirection(tokenize(source), profile, rng)
@@ -627,10 +1252,12 @@ def transform(source: str, watermark: str) -> str:
         + "\nGenerated by Python transformer\n"
         + "Protection profile: pooled literals + randomized runtime + lexer-aware minification\n"
         + "Multi-stage block generation architecture\n"
+        + "Features: constant pool + branch support + block randomization + auxiliary paths\n"
         + "]]\n"
         + build_runtime_prelude(profile)
         + api_plan.prelude
         + "\n"
+        + constant_pool_code
         + program_wrapper
         + "\n"
         + dispatcher_code
@@ -661,7 +1288,7 @@ BLOCK_STARTERS = frozenset({"function", "if", "for", "while", "repeat", "do"})
 def split_into_blocks(tokens: list[Token], rng: random.Random) -> list[CodeBlock]:
     """
     将 token 流拆分为多个代码块。
-    策略：按语句边界（分号或换行）拆分，保留控制流结构的完整性。
+    策略：按语句边界拆分，保留控制流结构的完整性，支持分支检测。
     """
     significant_tokens = [t for t in tokens if t.type not in (TokenType.WHITESPACE, TokenType.COMMENT)]
 
@@ -672,6 +1299,7 @@ def split_into_blocks(tokens: list[Token], rng: random.Random) -> list[CodeBlock
     current_tokens: list[Token] = []
     block_id_counter = [1]
     block_depth = [0]
+    pending_if_endpoints: list[tuple[int, int]] = []  # (block_id, else_target_id)
 
     def classify_block(tokens_in_block: list[Token]) -> str:
         if not tokens_in_block:
@@ -688,14 +1316,29 @@ def split_into_blocks(tokens: list[Token], rng: random.Random) -> list[CodeBlock
                 return BlockTypeLegacy.TABLE_DEF.value
         return BlockTypeLegacy.STATEMENT.value
 
+    def detect_branches(tokens_in_block: list[Token]) -> dict:
+        """检测块中的条件分支"""
+        branches = {}
+        for i, token in enumerate(tokens_in_block):
+            if token.is_keyword("if"):
+                branches["conditional"] = True
+                branches["condition_start"] = i
+            elif token.is_keyword("else") or token.is_keyword("elseif"):
+                branches["has_else"] = True
+            elif token.is_keyword("while") or token.is_keyword("for"):
+                branches["loop"] = True
+                branches["loop_target"] = block_id_counter[0] + 1
+        return branches
+
     def finalize_block(tokens_in_block: list[Token], bid_counter: list[int], depth: list[int]) -> CodeBlock:
         content = render_tokens(tokens_in_block)
         block_type = classify_block(tokens_in_block)
+        branch_info = detect_branches(tokens_in_block)
         block = CodeBlock(
             block_id=bid_counter[0],
             content=content,
             block_type=block_type,
-            metadata={"depth": depth[0]}
+            metadata={"depth": depth[0], "branches": branch_info}
         )
         bid_counter[0] += 1
         return block
@@ -762,21 +1405,205 @@ def analyze_block_dependencies(blocks: list[CodeBlock]) -> list[CodeBlock]:
     return blocks
 
 
+def link_blocks_sequentially(blocks: list[CodeBlock]) -> list[CodeBlock]:
+    """
+    将块按 block_id 顺序链接，设置 next_id。
+    支持简单条件分支的跳转关系设置。
+    """
+    if not blocks:
+        return blocks
+
+    sorted_blocks = sorted(blocks, key=lambda b: b.block_id)
+    id_to_block = {b.block_id: b for b in sorted_blocks}
+
+    for i, block in enumerate(sorted_blocks):
+        branches = block.metadata.get("branches", {})
+
+        if block.block_type == BlockTypeLegacy.CONTROL_STRUCT.value:
+            if branches.get("loop"):
+                loop_target = i + 1
+                if loop_target < len(sorted_blocks):
+                    block.set_branch("loop", sorted_blocks[loop_target].block_id)
+
+        if i < len(sorted_blocks) - 1:
+            block.set_next(sorted_blocks[i + 1].block_id)
+        else:
+            block.set_next(None)
+
+    return blocks
+
+
+# ===== 常量池阶段：字面量收集与替换 =====
+
+class LiteralCollector:
+    """收集代码中的字面量"""
+
+    def __init__(self):
+        self.strings: dict[str, int] = {}
+        self.numbers: dict[str, int] = {}
+        self.booleans: dict[str, int] = {}
+
+    def collect_from_tokens(self, tokens: list[Token]) -> None:
+        """从 token 流收集字面量"""
+        for token in tokens:
+            if token.type is TokenType.STRING and token.bytes_value is not None:
+                try:
+                    s = token.bytes_value.decode("utf-8")
+                    if s not in self.strings:
+                        self.strings[s] = len(self.strings) + 1
+                except UnicodeDecodeError:
+                    pass
+            elif token.type is TokenType.NUMBER:
+                if token.text not in self.numbers:
+                    self.numbers[token.text] = len(self.numbers) + 1
+
+    def collect_from_content(self, content: str) -> None:
+        """从代码内容中收集字面量"""
+        import re
+        string_pattern = r'"([^"\\]*(?:\\.[^"\\]*)*)"'
+        for match in re.finditer(string_pattern, content):
+            s = match.group(1)
+            s = s.replace("\\n", "\n").replace("\\t", "\t").replace("\\r", "\r")
+            if s not in self.strings:
+                self.strings[s] = len(self.strings) + 1
+
+        number_pattern = r'\b(\d+\.?\d*)\b'
+        for match in re.finditer(number_pattern, content):
+            num_str = match.group(1)
+            if num_str not in self.numbers:
+                self.numbers[num_str] = len(self.numbers) + 1
+
+    def get_statistics(self) -> dict:
+        return {
+            "strings": len(self.strings),
+            "numbers": len(self.numbers),
+            "booleans": len(self.booleans),
+            "total": len(self.strings) + len(self.numbers) + len(self.booleans),
+        }
+
+
+class LiteralReplacer:
+    """将代码中的字面量替换为常量池访问"""
+
+    def __init__(self, constant_pool: ConstantPool):
+        self.pool = constant_pool
+        self.replaced_count = 0
+
+    def replace_in_block(self, block: CodeBlock) -> None:
+        """替换 block 中的字面量"""
+        original_content = block.content
+        new_content = self.pool.replace_literals_in_content(original_content)
+        block.content = new_content
+
+        replaced = original_content.count('"') // 2
+        self.replaced_count += replaced
+
+    def replace_in_blocks(self, blocks: list[CodeBlock]) -> int:
+        """替换所有 block 中的字面量，返回替换数量"""
+        total_replaced = 0
+        for block in blocks:
+            original_content = block.content
+            new_content = self.pool.replace_literals_in_content(original_content)
+            block.content = new_content
+
+            replaced = original_content.count('"') - new_content.count('"')
+            total_replaced += max(0, replaced // 2)
+
+        self.replaced_count = total_replaced
+        return total_replaced
+
+    def get_statistics(self) -> dict:
+        return {
+            "replaced_count": self.replaced_count,
+            "pool_stats": self.pool.get_statistics(),
+        }
+
+
+def apply_constant_pool_stage(
+    blocks: list[CodeBlock],
+    tokens: list[Token],
+    rng: random.Random,
+    use_pool: bool = True
+) -> tuple[list[CodeBlock], ConstantPool | None, LiteralReplacer | None]:
+    """
+    常量池阶段：收集字面量并替换。
+
+    返回 (blocks, constant_pool, replacer)
+    """
+    if not use_pool:
+        return blocks, None, None
+
+    collector = LiteralCollector()
+    collector.collect_from_tokens(tokens)
+    for block in blocks:
+        collector.collect_from_content(block.content)
+
+    pool = ConstantPool(rng)
+    for s, idx in collector.strings.items():
+        pool.strings[s] = idx
+        pool.next_string_index = len(pool.strings) + 1
+
+    for num_str, idx in collector.numbers.items():
+        try:
+            pool.numbers[float(num_str)] = idx
+            pool.next_number_index = len(pool.numbers) + 1
+        except ValueError:
+            pass
+
+    replacer = LiteralReplacer(pool)
+    replacer.replace_in_blocks(blocks)
+
+    return blocks, pool, replacer
+
+
+def relink_blocks_for_randomized_order(program: BlockProgram) -> None:
+    """
+    在顺序打乱后重新设置跳转关系。
+    保持原有的分支结构，但更新目标 block_id。
+    """
+    if not program.blocks:
+        return
+
+    sorted_blocks = sorted(program.blocks, key=lambda b: b.block_id)
+    old_id_to_new_pos = {b.block_id: i for i, b in enumerate(sorted_blocks)}
+    old_id_to_block = {b.block_id: b for b in sorted_blocks}
+
+    for block in program.blocks:
+        old_next = block.next_id
+        if old_next is not None and old_next in old_id_to_new_pos:
+            new_pos = old_id_to_new_pos[old_next]
+            if new_pos < len(sorted_blocks):
+                block.next_id = sorted_blocks[new_pos].block_id
+
+        new_branches = {}
+        for cond, old_target in block.branches.items():
+            if old_target is not None and old_target in old_id_to_new_pos:
+                new_pos = old_id_to_new_pos[old_target]
+                if new_pos < len(sorted_blocks):
+                    new_branches[cond] = sorted_blocks[new_pos].block_id
+            else:
+                new_branches[cond] = None
+        block.branches = new_branches
+
+
 def randomize_block_order(program: BlockProgram, rng: random.Random, respect_deps: bool = False) -> BlockProgram:
     """
     随机化块的执行顺序。
     如果 respect_deps=True，则保持依赖关系顺序。
+    随机化后自动更新跳转关系。
     """
     if not respect_deps:
         order = list(range(1, len(program.blocks) + 1))
         rng.shuffle(order)
         program.execution_order = order
+        relink_blocks_for_randomized_order(program)
         return program
 
     ordered = topological_sort(program)
     rng.shuffle(ordered[1:])
     ordered[0] = program.entry_block_id
     program.execution_order = ordered
+    relink_blocks_for_randomized_order(program)
     return program
 
 
@@ -801,6 +1628,395 @@ def topological_sort(program: BlockProgram) -> list[int]:
     return result
 
 
+# ===== 代码布局随机化系统 =====
+
+
+class LayoutStrategy(Enum):
+    """代码布局随机化策略"""
+    FULL_RANDOM = "full_random"           # 完全随机打乱
+    GROUP_SHUFFLE = "group_shuffle"         # 按组打乱
+    CLUSTER_SWAP = "cluster_swap"           # 簇交换
+    SPINE_REVERSE = "spine_reverse"         # 主干反转
+    SIBLING_INTERLEAVE = "sibling_interleave"  # 兄弟节点交错
+
+
+@dataclass
+class LayoutConfig:
+    """布局随机化配置"""
+    enabled: bool = False
+    strategy: LayoutStrategy = LayoutStrategy.FULL_RANDOM
+    group_size: int = 3                    # 组大小
+    swap_iterations: int = 5               # 交换迭代次数
+    preserve_entry: bool = True           # 保留入口块位置
+    preserve_exit: bool = True             # 保留出口块位置
+    cluster_depth: int = 2                # 簇深度
+
+
+class BlockLayoutRandomizer:
+    """
+    代码布局随机化器
+    
+    提供多种布局随机化策略，用于打乱块的物理输出顺序，
+    同时保持执行逻辑不变。这对于测试不同代码组织方式
+    对执行的影响非常有用。
+    """
+
+    def __init__(self, rng: random.Random, config: LayoutConfig | None = None):
+        self.rng = rng
+        self.config = config if config else LayoutConfig()
+        self.layout_history: list[dict] = []
+        self._original_order: list[int] = []
+
+    def randomize(self, program: BlockProgram) -> BlockProgram:
+        """
+        对程序应用布局随机化
+        
+        Args:
+            program: 要随机化的程序
+            
+        Returns:
+            随机化后的程序
+        """
+        if not self.config.enabled:
+            return program
+        
+        # 记录原始顺序用于分析
+        self._original_order = list(program.execution_order)
+        
+        # 根据策略执行随机化
+        strategy_map = {
+            LayoutStrategy.FULL_RANDOM: self._full_random,
+            LayoutStrategy.GROUP_SHUFFLE: self._group_shuffle,
+            LayoutStrategy.CLUSTER_SWAP: self._cluster_swap,
+            LayoutStrategy.SPINE_REVERSE: self._spine_reverse,
+            LayoutStrategy.SIBLING_INTERLEAVE: self._sibling_interleave,
+        }
+        
+        strategy_func = strategy_map.get(self.config.strategy, self._full_random)
+        new_order = strategy_func(program)
+        
+        # 更新程序
+        program.execution_order = new_order
+        
+        # 重新链接块以保持执行逻辑
+        self._relink_for_layout(program)
+        
+        # 记录布局变化
+        self._record_layout_change(program)
+        
+        program.randomized = True
+        return program
+
+    def _full_random(self, program: BlockProgram) -> list[int]:
+        """完全随机打乱"""
+        order = list(program.execution_order)
+        
+        # 确定保留位置
+        preserved = set()
+        if self.config.preserve_entry and order:
+            preserved.add(0)
+        if self.config.preserve_exit and len(order) > 1:
+            preserved.add(len(order) - 1)
+        
+        # 收集可移动元素
+        movable = [o for i, o in enumerate(order) if i not in preserved]
+        self.rng.shuffle(movable)
+        
+        # 重组
+        result = []
+        movable_idx = 0
+        for i in range(len(order)):
+            if i in preserved:
+                result.append(order[i])
+            else:
+                result.append(movable[movable_idx])
+                movable_idx += 1
+        
+        return result
+
+    def _group_shuffle(self, program: BlockProgram) -> list[int]:
+        """按组打乱"""
+        order = list(program.execution_order)
+        group_size = self.config.group_size
+        
+        # 分组
+        groups: list[list[int]] = []
+        for i in range(0, len(order), group_size):
+            group = order[i:i + group_size]
+            groups.append(group)
+        
+        # 随机打乱组
+        preserved_groups = set()
+        if self.config.preserve_entry and groups:
+            preserved_groups.add(0)
+        if self.config.preserve_exit and len(groups) > 1:
+            preserved_groups.add(len(groups) - 1)
+        
+        # 收集可移动的组
+        movable_groups = [g for i, g in enumerate(groups) if i not in preserved_groups]
+        self.rng.shuffle(movable_groups)
+        
+        # 重组
+        result_groups = []
+        movable_idx = 0
+        for i in range(len(groups)):
+            if i in preserved_groups:
+                result_groups.append(groups[i])
+            else:
+                result_groups.append(movable_groups[movable_idx])
+                movable_idx += 1
+        
+        # 扁平化
+        return [bid for group in result_groups for bid in group]
+
+    def _cluster_swap(self, program: BlockProgram) -> list[int]:
+        """簇交换：随机交换相邻的块簇"""
+        order = list(program.execution_order)
+        depth = self.config.cluster_depth
+        iterations = self.config.swap_iterations
+        
+        for _ in range(iterations):
+            if len(order) < depth * 2:
+                break
+            
+            # 随机选择起始位置
+            start = self.rng.randint(0, len(order) - depth * 2)
+            
+            # 交换两个簇
+            cluster1 = order[start:start + depth]
+            cluster2 = order[start + depth:start + depth * 2]
+            
+            order[start:start + depth * 2] = cluster2 + cluster1
+        
+        return order
+
+    def _spine_reverse(self, program: BlockProgram) -> list[int]:
+        """主干反转：反转主执行路径上的块"""
+        order = list(program.execution_order)
+        
+        if len(order) < 3:
+            return order
+        
+        # 找到主路径（按 next_id 链接）
+        spine = self._extract_spine(program)
+        
+        # 反转主干
+        reversed_spine = spine[::-1]
+        
+        # 如果入口需要保留
+        if self.config.preserve_entry and reversed_spine:
+            reversed_spine[0] = program.entry_block_id
+        
+        return reversed_spine
+
+    def _sibling_interleave(self, program: BlockProgram) -> list[int]:
+        """兄弟节点交错：将并行分支的块交错排列"""
+        order = list(program.execution_order)
+        
+        if len(order) < 4:
+            return order
+        
+        # 识别有分支的块
+        branch_info = self._identify_branches(program)
+        
+        if not branch_info:
+            return self._full_random(program)
+        
+        # 分离主线和分支
+        main_blocks = []
+        branch_blocks = []
+        
+        for bid in order:
+            block = program.get_block(bid)
+            if block and block.has_branches():
+                main_blocks.append(bid)
+                # 收集分支目标
+                for target in block.branches.values():
+                    if target is not None:
+                        branch_blocks.append(target)
+            elif bid not in branch_blocks:
+                main_blocks.append(bid)
+        
+        # 交错排列
+        result = []
+        branch_idx = 0
+        
+        for bid in main_blocks:
+            result.append(bid)
+            # 在某些位置插入分支块
+            if branch_idx < len(branch_blocks) and self.rng.random() > 0.5:
+                result.append(branch_blocks[branch_idx])
+                branch_idx += 1
+        
+        # 添加剩余分支块
+        result.extend(branch_blocks[branch_idx:])
+        
+        return result
+
+    def _extract_spine(self, program: BlockProgram) -> list[int]:
+        """提取主执行路径"""
+        spine = []
+        current_id = program.entry_block_id
+        visited = set()
+        
+        while current_id is not None and current_id not in visited:
+            visited.add(current_id)
+            spine.append(current_id)
+            
+            block = program.get_block(current_id)
+            if block is None:
+                break
+            
+            # 优先跟随 next_id
+            if block.next_id is not None:
+                current_id = block.next_id
+            elif block.has_branches():
+                # 如果有分支，取第一个
+                branches = list(block.branches.values())
+                current_id = branches[0] if branches else None
+            else:
+                break
+        
+        return spine
+
+    def _identify_branches(self, program: BlockProgram) -> dict[int, list[int]]:
+        """识别分支结构"""
+        branches: dict[int, list[int]] = {}
+        
+        for block in program.blocks:
+            if block.has_branches():
+                targets = [t for t in block.branches.values() if t is not None]
+                if targets:
+                    branches[block.block_id] = targets
+        
+        return branches
+
+    def _relink_for_layout(self, program: BlockProgram) -> None:
+        """
+        根据新的布局顺序重新链接块
+        
+        这个方法确保即使物理位置改变，执行的逻辑流程保持不变。
+        它根据 execution_order 中块的新位置来设置 next_id。
+        """
+        if not program.execution_order:
+            return
+        
+        # 构建旧ID到新位置的映射
+        old_order = list(range(1, len(program.blocks) + 1))
+        old_to_new_pos = {bid: i for i, bid in enumerate(program.execution_order)}
+        new_to_old = {i: bid for i, bid in enumerate(program.execution_order)}
+        
+        # 为每个块计算新的 next_id
+        for new_pos, bid in enumerate(program.execution_order):
+            block = program.get_block(bid)
+            if block is None:
+                continue
+            
+            # 找到该块在物理顺序中的下一个块
+            if new_pos < len(program.execution_order) - 1:
+                next_bid = program.execution_order[new_pos + 1]
+                block.next_id = next_bid
+            else:
+                block.next_id = None
+
+    def _record_layout_change(self, program: BlockProgram) -> None:
+        """记录布局变化用于分析"""
+        change_record = {
+            "strategy": self.config.strategy.value,
+            "original_order": self._original_order,
+            "new_order": list(program.execution_order),
+            "original_to_new": {
+                old: new for old, new in zip(self._original_order, program.execution_order)
+            }
+        }
+        self.layout_history.append(change_record)
+
+    def get_layout_report(self) -> dict:
+        """获取布局随机化报告"""
+        if not self.layout_history:
+            return {"status": "no_randomization_applied"}
+        
+        latest = self.layout_history[-1]
+        return {
+            "strategy": latest["strategy"],
+            "block_count": len(latest["new_order"]),
+            "position_changes": sum(
+                1 for old, new in zip(latest["original_order"], latest["new_order"])
+                if old != new
+            ),
+            "original_order": latest["original_order"],
+            "new_order": latest["new_order"]
+        }
+
+
+class LayoutAnalyzer:
+    """
+    布局分析器
+    
+    分析代码布局对执行的影响，包括：
+    - 块之间的物理距离
+    - 跳转模式
+    - 缓存局部性
+    """
+
+    @staticmethod
+    def compute_block_distances(program: BlockProgram) -> dict[tuple[int, int], int]:
+        """计算块之间的物理距离"""
+        distances: dict[tuple[int, int], int] = {}
+        order = program.execution_order
+        
+        for i, bid1 in enumerate(order):
+            for j, bid2 in enumerate(order):
+                distances[(bid1, bid2)] = abs(i - j)
+        
+        return distances
+
+    @staticmethod
+    def compute_jump_cost(program: BlockProgram) -> int:
+        """计算跳转开销（跳转距离的总和）"""
+        total_cost = 0
+        
+        for block in program.blocks:
+            if block.next_id is not None:
+                try:
+                    current_pos = program.execution_order.index(block.block_id)
+                    target_pos = program.execution_order.index(block.next_id)
+                    total_cost += abs(target_pos - current_pos)
+                except ValueError:
+                    pass
+            
+            for target in block.branches.values():
+                if target is not None:
+                    try:
+                        current_pos = program.execution_order.index(block.block_id)
+                        target_pos = program.execution_order.index(target)
+                        total_cost += abs(target_pos - current_pos)
+                    except ValueError:
+                        pass
+        
+        return total_cost
+
+    @staticmethod
+    def analyze_locality(program: BlockProgram) -> dict:
+        """分析代码局部性"""
+        distances = LayoutAnalyzer.compute_block_distances(program)
+        
+        if not distances:
+            return {"locality_score": 0, "avg_distance": 0}
+        
+        avg_distance = sum(distances.values()) / len(distances)
+        max_distance = max(distances.values())
+        
+        # 局部性得分：距离越小得分越高
+        locality_score = 1.0 - (avg_distance / max_distance) if max_distance > 0 else 1.0
+        
+        return {
+            "locality_score": locality_score,
+            "avg_distance": avg_distance,
+            "max_distance": max_distance
+        }
+
+
 # ===== 多阶段代码生成架构：块到 Lua 函数的转换 =====
 
 
@@ -812,16 +2028,19 @@ class BlockGenerator:
         self.rng = rng
         self.function_name_prefix = random_lua_identifier(rng, "_blk")
 
-    def generate_function(self, block: CodeBlock, index: int) -> str:
-        """将单个块生成为 Lua 函数"""
+    def generate_function(self, block: CodeBlock, index: int, next_id: int | None = None) -> str:
+        """将单个块生成为 Lua 函数，返回 next_id 用于跳转"""
         func_name = f"{self.function_name_prefix}_{index}"
         block.content = block.content.strip()
 
+        next_expr = "return " + str(next_id) if next_id is not None else "return"
+
         if not block.content:
-            return f"local function {func_name}() end"
+            return f"local function {func_name}()\n    {next_expr}\nend"
 
         needs_return = not block.content.rstrip().endswith("end") and \
-                      not block.content.rstrip().endswith(";")
+                      not block.content.rstrip().endswith(";") and \
+                      not block.content.rstrip().endswith("return")
 
         if needs_return and block.block_type == BlockTypeLegacy.FUNCTION_DEF.value:
             needs_return = False
@@ -830,6 +2049,7 @@ class BlockGenerator:
             return (
                 f"local function {func_name}()\n"
                 f"{indent_lua(block.content, 4)}\n"
+                f"    {next_expr}\n"
                 f"end"
             )
 
@@ -849,6 +2069,50 @@ class BlockGenerator:
             if block:
                 func_name = f"{self.function_name_prefix}_{idx + 1}"
                 lines.append(f" [{idx + 1}] = {func_name},")
+
+        lines.append("}")
+        return "\n".join(lines)
+
+    def generate_block_metadata(self, program: BlockProgram) -> str:
+        """生成 block 元数据表（包含 next_id 信息）"""
+        lines: list[str] = []
+        lines.append(f"local {self.function_name_prefix}_meta = {{")
+
+        for idx, bid in enumerate(program.execution_order):
+            block = program.get_block(bid)
+            if block:
+                next_val = block.next_id if block.next_id is not None else "nil"
+                lines.append(
+                    f"    [{idx + 1}] = {{"
+                    f"type='{block.block_type}',"
+                    f"next={next_val}"
+                    f"}},"
+                )
+
+        lines.append("}")
+        return "\n".join(lines)
+
+    def generate_block_map(self, program: BlockProgram) -> str:
+        """生成完整的 block 结构（包含代码和元数据）"""
+        lines: list[str] = []
+        lines.append(f"local {self.function_name_prefix}_blocks = {{")
+
+        for idx, bid in enumerate(program.execution_order):
+            block = program.get_block(bid)
+            if block:
+                func_def = self.generate_function(block, idx + 1)
+                next_val = block.next_id if block.next_id is not None else "nil"
+                lines.append(f"    [{idx + 1}] = {{")
+                lines.append(f"        fn = function()")
+                for fn_line in func_def.split("\n"):
+                    if "local function" in fn_line:
+                        lines.append("            " + fn_line.strip())
+                    elif fn_line.strip():
+                        lines.append("            " + fn_line.strip())
+                lines.append(f"        end,")
+                lines.append(f"        type = '{block.block_type}',")
+                lines.append(f"        next_id = {next_val},")
+                lines.append(f"    }},")
 
         lines.append("}")
         return "\n".join(lines)
@@ -879,53 +2143,60 @@ class ExecutionDispatcher:
             return self._generate_sequential_dispatcher(program)
 
     def _generate_sequential_dispatcher(self, program: BlockProgram) -> str:
-        """顺序执行模式"""
-        lines: list[str] = []
-        tbl_name = self.tbl_name
-        pc = self.pc_name
-
-        lines.append(f"local {pc} = 1")
-        lines.append(f"while {pc} <= #{tbl_name} do")
-        lines.append(f"    local fn = {tbl_name}[{pc}]")
-        lines.append(f"    if not fn then error('Invalid block: '..tostring({pc})) end")
-        lines.append(f"    fn()")
-        lines.append(f"    {pc} = {pc} + 1")
-        lines.append("end")
-
-        return "\n".join(lines)
-
-    def _generate_random_dispatcher(self, program: BlockProgram) -> str:
-        """随机跳转执行模式"""
-        lines: list[str] = []
-        tbl_name = self.tbl_name
-        pc = self.pc_name
-        visited_name = random_lua_identifier(self.rng, "_visited")
-        remaining_name = random_lua_identifier(self.rng, "_rem")
-
-        lines.append(f"local {pc} = 1")
-        lines.append(f"local {visited_name} = {{}}")
-        lines.append(f"local {remaining_name} = {{}}")
-        lines.append(f"for i = 1, #{tbl_name} do {remaining_name}[i] = i end")
-        lines.append(f"while #{remaining_name} > 0 do")
-        lines.append(f"    local idx = math.random(1, #{remaining_name})")
-        lines.append(f"    local {pc} = table.remove({remaining_name}, idx)")
-        lines.append(f"    local fn = {tbl_name}[{pc}]")
-        lines.append(f"    if fn then fn() end")
-        lines.append("end")
-
-        return "\n".join(lines)
-
-    def _generate_indexed_dispatcher(self, program: BlockProgram) -> str:
-        """索引跳转执行模式（支持跨块跳转）"""
+        """顺序执行模式 - 使用 block 返回的 next_id 驱动"""
         lines: list[str] = []
         tbl_name = self.tbl_name
         pc = self.pc_name
 
         lines.append(f"local {pc} = {program.entry_block_id}")
         lines.append(f"while {pc} do")
-        lines.append(f"    local fn = {tbl_name}[{pc}]")
-        lines.append(f"    if not fn then error('Invalid block index: '..tostring({pc})) end")
-        lines.append(f"    {pc} = fn()")
+        lines.append(f"    local block = {tbl_name}[{pc}]")
+        lines.append(f"    if not block then error('Invalid block index: '..tostring({pc})) end")
+        lines.append(f"    if not block.fn then error('Block missing fn: '..tostring({pc})) end")
+        lines.append(f"    {pc} = block.fn()")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def _generate_random_dispatcher(self, program: BlockProgram) -> str:
+        """随机执行模式 - 使用 block 返回的 next_id 驱动"""
+        lines: list[str] = []
+        tbl_name = self.tbl_name
+        pc = self.pc_name
+        visited_name = random_lua_identifier(self.rng, "_visited")
+        remaining_name = random_lua_identifier(self.rng, "_rem")
+
+        lines.append(f"local {pc} = {program.entry_block_id}")
+        lines.append(f"local {visited_name} = {{}}")
+        lines.append(f"local {remaining_name} = {{}}")
+        lines.append(f"for i = 1, #{tbl_name} do {remaining_name}[i] = i end")
+        lines.append(f"while #{remaining_name} > 0 do")
+        lines.append(f"    local idx = math.random(1, #{remaining_name})")
+        lines.append(f"    {pc} = table.remove({remaining_name}, idx)")
+        lines.append(f"    local block = {tbl_name}[{pc}]")
+        lines.append(f"    if block and block.fn then")
+        lines.append(f"        local next_id = block.fn()")
+        lines.append(f"        if next_id and not {visited_name}[next_id] then")
+        lines.append(f"            {remaining_name}[#{remaining_name} + 1] = next_id")
+        lines.append(f"            {visited_name}[next_id] = true")
+        lines.append(f"        end")
+        lines.append(f"    end")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def _generate_indexed_dispatcher(self, program: BlockProgram) -> str:
+        """索引跳转执行模式 - 使用 block 返回的 next_id 驱动"""
+        lines: list[str] = []
+        tbl_name = self.tbl_name
+        pc = self.pc_name
+
+        lines.append(f"local {pc} = {program.entry_block_id}")
+        lines.append(f"while {pc} do")
+        lines.append(f"    local block = {tbl_name}[{pc}]")
+        lines.append(f"    if not block then error('Invalid block index: '..tostring({pc})) end")
+        lines.append(f"    if not block.fn then error('Block missing fn: '..tostring({pc})) end")
+        lines.append(f"    {pc} = block.fn()")
         lines.append("end")
 
         return "\n".join(lines)
@@ -943,27 +2214,75 @@ def build_block_program(
     profile: ProtectionProfile,
     rng: random.Random,
     randomize_order: bool = False,
-    execution_mode: str = "sequential"
-) -> tuple[str, str, BlockProgram]:
+    execution_mode: str = "sequential",
+    use_constant_pool: bool = False,
+    use_auxiliary_paths: bool = False
+) -> tuple[str, str, str, BlockProgram]:
     """
     多阶段代码生成主函数。
-    返回 (program_wrapper, dispatcher_code, BlockProgram)
+    返回 (program_wrapper, constant_pool_code, dispatcher_code, BlockProgram)
+
+    阶段流程:
+    1. 分词 (tokenize)
+    2. Token 重写 (rewrite_tokens)
+    3. 拆分为 blocks (split_into_blocks)
+    4. 依赖分析 (analyze_block_dependencies)
+    5. 块链接 (link_blocks_sequentially)
+    6. 常量池收集与替换 (apply_constant_pool_stage) - 可选
+    7. 辅助路径生成 (AuxiliaryPathGenerator) - 可选
+    8. 布局随机化 (BlockLayoutRandomizer) - 可选
+    9. 顺序随机化 (randomize_block_order) - 可选
+    10. 代码生成 (BlockGenerator)
+    11. 执行器生成 (ExecutionDispatcher)
     """
     tokens = tokenize(source)
     rewrite_tokens(tokens, profile, rng)
 
     blocks = split_into_blocks(tokens, rng)
     blocks = analyze_block_dependencies(blocks)
+    blocks = link_blocks_sequentially(blocks)
 
     for block in blocks:
         block.metadata["original_order"] = block.block_id
+
+    constant_pool = None
+    constant_pool_code = ""
+    replacer = None
+
+    if use_constant_pool:
+        blocks, constant_pool, replacer = apply_constant_pool_stage(
+            blocks, tokens, rng, use_pool=True
+        )
+        if constant_pool:
+            constant_pool_code = constant_pool.generate_pool_table() + "\n"
 
     program = BlockProgram(
         blocks=blocks,
         execution_order=list(range(1, len(blocks) + 1)),
         block_map={b.block_id: b for b in blocks},
-        entry_block_id=1
+        entry_block_id=1,
+        use_auxiliary_paths=use_auxiliary_paths,
+        constant_pool=constant_pool
     )
+
+    aux_generator = None
+    if use_auxiliary_paths:
+        aux_generator = AuxiliaryPathGenerator(rng)
+
+    # 布局随机化 - 使用 profile 中的配置
+    layout_randomizer = None
+    if profile.layout_randomization_enabled:
+        layout_config = LayoutConfig(
+            enabled=True,
+            strategy=profile.layout_strategy,
+            group_size=profile.layout_group_size,
+            swap_iterations=profile.layout_swap_iterations,
+            preserve_entry=profile.layout_preserve_entry,
+            preserve_exit=profile.layout_preserve_exit,
+            cluster_depth=profile.layout_cluster_depth
+        )
+        layout_randomizer = BlockLayoutRandomizer(rng, layout_config)
+        layout_randomizer.randomize(program)
 
     if randomize_order:
         randomize_block_order(program, rng, respect_deps=False)
@@ -977,17 +2296,57 @@ def build_block_program(
     for idx, bid in enumerate(program.execution_order):
         block = program.get_block(bid)
         if block:
-            func_def = generator.generate_function(block, idx + 1)
-            program_code_lines.append(f"    [{idx + 1}] = function()")
-            for line in func_def.split("\n"):
-                if "local function" in line:
+            if use_auxiliary_paths and aux_generator and block.block_type != BlockTypeLegacy.FUNCTION_DEF.value:
+                aux_generator.add_auxiliary_paths_to_block(block, block.next_id, max_paths=1)
+
+            next_id = block.next_id
+            func_def = generator.generate_function(block, idx + 1, next_id)
+
+            aux_code = ""
+            if block.has_auxiliary_paths():
+                for aux_path in block.auxiliary_paths:
+                    aux_code += "\n" + aux_path["content"]
+                program.increment_auxiliary_count()
+
+            next_id_val = next_id if next_id is not None else "nil"
+
+            branches_repr = "nil"
+            if block.has_branches():
+                branches_repr = "{"
+                branch_parts = []
+                for cond, target in block.branches.items():
+                    t = target if target is not None else "nil"
+                    branch_parts.append(f"{cond}={t}")
+                branches_repr += ", ".join(branch_parts) + "}"
+
+            aux_paths_repr = "nil"
+            if block.has_auxiliary_paths():
+                aux_paths_repr = "{"
+                path_parts = []
+                for aux_path in block.auxiliary_paths:
+                    target = aux_path["target_block_id"] if aux_path["target_block_id"] is not None else "nil"
+                    path_parts.append(
+                        f"{{id={aux_path['path_id']},type='{aux_path['path_type']}',target={target}}}"
+                    )
+                aux_paths_repr += ", ".join(path_parts) + "}"
+
+            program_code_lines.append(f"    [{idx + 1}] = {{")
+            program_code_lines.append(f"        fn = function()")
+            for fn_line in func_def.split("\n"):
+                if "local function" in fn_line:
                     continue
-                if line.strip().startswith("local function"):
-                    indented = "        " + line.strip()
-                    program_code_lines.append(indented)
-                elif line.strip():
-                    program_code_lines.append("        " + line.strip())
-            program_code_lines.append("    end,")
+                if fn_line.strip():
+                    program_code_lines.append("            " + fn_line.strip())
+            if aux_code:
+                for aux_line in aux_code.split("\n"):
+                    if aux_line.strip():
+                        program_code_lines.append("            " + aux_line.strip())
+            program_code_lines.append(f"        end,")
+            program_code_lines.append(f"        type = '{block.block_type}',")
+            program_code_lines.append(f"        next_id = {next_id_val},")
+            program_code_lines.append(f"        branches = {branches_repr},")
+            program_code_lines.append(f"        auxiliary_paths = {aux_paths_repr},")
+            program_code_lines.append(f"    }},")
 
     program_code_lines.append("}")
 
@@ -996,7 +2355,7 @@ def build_block_program(
     dispatcher = ExecutionDispatcher(profile, rng)
     dispatcher_code = dispatcher.generate_dispatcher(program, mode=execution_mode)
 
-    return program_wrapper, dispatcher_code, program
+    return program_wrapper, constant_pool_code, dispatcher_code, program
 
 
 def rewrite_tokens(tokens: list[Token], profile: ProtectionProfile, rng: random.Random) -> None:
@@ -3844,3 +5203,430 @@ def lua_toy_interpreter_source() -> str:
         "  end\n"
         "end\n"
     )
+
+
+# ===== 冗余 Block 生成器和结构实验系统 =====
+
+
+@dataclass
+class RedundantBlockConfig:
+    """冗余 Block 配置"""
+    enabled: bool = False
+    min_blocks: int = 1
+    max_blocks: int = 5
+    block_types: list[str] = None  # 可选的 block 类型过滤
+    inject_probability: float = 0.3  # 注入概率
+    semantic_preserving: bool = True  # 保持语义
+
+    def __post_init__(self):
+        if self.block_types is None:
+            self.block_types = ["redundant", "decoy", "skip"]
+
+
+class RedundantBlockGenerator:
+    """
+    冗余 Block 生成器
+
+    生成不会影响程序最终结果的额外代码块，用于增加代码结构复杂度。
+    这些块包括：
+    - 永远不会被执行的块
+    - 总是被跳过的块
+    - 语义上无效但结构上有效的块
+    """
+
+    def __init__(self, rng: random.Random, config: RedundantBlockConfig | None = None):
+        self.rng = rng
+        self.config = config if config else RedundantBlockConfig()
+        self.generated_count = 0
+        self.used_identifiers: set[str] = set()
+        self._id_counter = [0]
+
+    def _gen_id(self) -> int:
+        self._id_counter[0] += 1
+        return self._id_counter[0]
+
+    def _random_identifier(self, prefix: str = "_r") -> str:
+        """生成随机标识符"""
+        chars = string.ascii_lowercase + string.digits
+        for _ in range(10):
+            name = prefix + "_" + "".join(self.rng.choice(chars) for _ in range(6))
+            if name not in self.used_identifiers:
+                self.used_identifiers.add(name)
+                return name
+        return f"{prefix}_{self._gen_id()}"
+
+    def generate_redundant_block(self) -> CodeBlock:
+        """生成一个冗余 block"""
+        self.generated_count += 1
+
+        block_type = self.rng.choice(self.config.block_types)
+        content = self._generate_content_for_type(block_type)
+
+        block = CodeBlock(
+            block_id=-1 - self.generated_count,  # 使用负数或特殊ID表示冗余
+            content=content,
+            block_type="redundant",
+            next_id=None,
+            branches={},
+            auxiliary_paths=[],
+            dependencies=[],
+            metadata={
+                "is_redundant": True,
+                "redundant_type": block_type,
+                "never_executed": block_type in ["redundant", "decoy"],
+                "always_skipped": block_type == "skip"
+            }
+        )
+        return block
+
+    def _generate_content_for_type(self, block_type: str) -> str:
+        """根据类型生成内容"""
+        generators = {
+            "redundant": self._gen_dead_code_content,
+            "decoy": self._gen_decoy_content,
+            "skip": self._gen_skip_content,
+        }
+        gen = generators.get(block_type, self._gen_dead_code_content)
+        return gen()
+
+    def _gen_dead_code_content(self) -> str:
+        """生成死代码内容"""
+        var_name = self._random_identifier("_d")
+        patterns = [
+            f"local {var_name} = false\nif {var_name} then\n    error('unreachable')\nend",
+            f"if false then\n    local _unused = 0\nend",
+            f"do\n    local {var_name} = nil\n    if {var_name} then\n        {var_name} = 1\n    end\nend",
+            f"repeat\n    break\nuntil false",
+            f"while false do\n    break\nend",
+        ]
+        return self.rng.choice(patterns)
+
+    def _gen_decoy_content(self) -> str:
+        """生成诱饵块内容"""
+        var_a = self._random_identifier("_x")
+        var_b = self._random_identifier("_y")
+        patterns = [
+            f"local {var_a}, {var_b} = 0, 0\nlocal _temp = {var_a}\n{var_a} = {var_b}\n{var_b} = _temp",
+            f"local {var_a} = 1\n{var_a} = {var_a}\n{var_a} = {var_a}",
+            f"local {var_a} = nil\n{var_a} = {var_a}",
+            f"local {var_a} = {{}}\n{var_a} = {var_a}\nsetmetatable({var_a}, nil)",
+        ]
+        return self.rng.choice(patterns)
+
+    def _gen_skip_content(self) -> str:
+        """生成跳过块内容"""
+        patterns = [
+            "do end",
+            "(function() end)()",
+            "pcall(function() end)",
+            "select('#', nil)",
+            "next({})",
+            "setmetatable({}, {})",
+        ]
+        count = self.rng.randint(1, 3)
+        return "\n".join(self.rng.choice(patterns) for _ in range(count))
+
+    def inject_redundant_blocks(
+        self,
+        program: BlockProgram,
+        count: int | None = None
+    ) -> list[CodeBlock]:
+        """
+        向程序注入冗余 block
+
+        Args:
+            program: 目标程序
+            count: 要注入的数量，None 表示使用配置中的随机值
+
+        Returns:
+            注入的冗余 block 列表
+        """
+        if not self.config.enabled:
+            return []
+
+        if count is None:
+            count = self.rng.randint(self.config.min_blocks, self.config.max_blocks)
+
+        if self.rng.random() > self.config.inject_probability:
+            return []
+
+        injected_blocks = []
+        for _ in range(count):
+            if self.rng.random() > self.config.inject_probability:
+                break
+            redundant = self.generate_redundant_block()
+            injected_blocks.append(redundant)
+            program.blocks.append(redundant)
+            program.block_map[redundant.block_id] = redundant
+
+        return injected_blocks
+
+    def get_statistics(self) -> dict:
+        """获取生成统计"""
+        return {
+            "generated_count": self.generated_count,
+            "config": {
+                "enabled": self.config.enabled,
+                "min_blocks": self.config.min_blocks,
+                "max_blocks": self.config.max_blocks,
+                "inject_probability": self.config.inject_probability,
+            }
+        }
+
+
+class StructuralExperimentManager:
+    """
+    结构实验管理器
+
+    协调多种结构实验技术，用于测试代码结构复杂度对分析工具的影响。
+    """
+
+    def __init__(self, rng: random.Random):
+        self.rng = rng
+        self.redundant_gen = RedundantBlockGenerator(rng)
+        self.aux_gen = AuxiliaryPathGenerator(rng)
+        self.experiments_applied: list[dict] = []
+
+    def apply_structure_complexity(
+        self,
+        program: BlockProgram,
+        complexity_level: str = "medium"
+    ) -> dict:
+        """
+        应用结构复杂度增强
+
+        Args:
+            program: 目标程序
+            complexity_level: 复杂度级别 ("low", "medium", "high")
+
+        Returns:
+            应用结果统计
+        """
+        stats = {
+            "complexity_level": complexity_level,
+            "redundant_blocks_added": 0,
+            "auxiliary_paths_added": 0,
+            "branch_complexity_increased": False,
+        }
+
+        level_config = {
+            "low": {"redundant_prob": 0.2, "aux_prob": 0.1},
+            "medium": {"redundant_prob": 0.4, "aux_prob": 0.3},
+            "high": {"redundant_prob": 0.6, "aux_prob": 0.5},
+        }
+
+        config = level_config.get(complexity_level, level_config["medium"])
+
+        # 添加冗余 block
+        if self.rng.random() < config["redundant_prob"]:
+            self.redundant_gen.config.enabled = True
+            self.redundant_gen.config.inject_probability = config["redundant_prob"]
+            injected = self.redundant_gen.inject_redundant_blocks(program, count=2)
+            stats["redundant_blocks_added"] = len(injected)
+
+        # 添加辅助路径
+        if self.rng.random() < config["aux_prob"]:
+            for block in program.blocks:
+                if block.block_type != BlockTypeLegacy.FUNCTION_DEF.value:
+                    if self.rng.random() < 0.3:
+                        self.aux_gen.add_auxiliary_paths_to_block(
+                            block, block.next_id, max_paths=1
+                        )
+                        stats["auxiliary_paths_added"] += len(block.auxiliary_paths)
+
+        # 增加分支复杂度
+        if complexity_level in ("medium", "high") and self.rng.random() < 0.3:
+            self._add_decoy_branches(program)
+            stats["branch_complexity_increased"] = True
+
+        self.experiments_applied.append(stats)
+        return stats
+
+    def _add_decoy_branches(self, program: BlockProgram) -> None:
+        """添加诱饵分支"""
+        for block in program.blocks:
+            if not block.has_branches() and block.next_id is not None:
+                if self.rng.random() < 0.2:
+                    decoy_target = self.rng.choice(program.execution_order) if program.execution_order else None
+                    if decoy_target and decoy_target != block.block_id:
+                        block.branches["decoy"] = decoy_target
+
+    def add_skip_target_block(self, program: BlockProgram) -> CodeBlock | None:
+        """
+        添加跳转到目标块
+
+        创建一块总是被跳过的代码，增加 CFG 的复杂性。
+        """
+        if not program.execution_order:
+            return None
+
+        var_name = "_skip_" + "".join(self.rng.choice(string.ascii_lowercase) for _ in range(4))
+
+        content = f"local {var_name} = true\nif {var_name} then\n    {var_name} = false\nend"
+
+        skip_block = CodeBlock(
+            block_id=-(1000 + self._gen_skip_id()),
+            content=content,
+            block_type="skip_target",
+            next_id=None,
+            metadata={"is_skip_target": True, "always_skipped": True}
+        )
+
+        program.blocks.append(skip_block)
+        program.block_map[skip_block.block_id] = skip_block
+
+        return skip_block
+
+    def _gen_skip_id(self) -> int:
+        if not hasattr(self, "_skip_id_counter"):
+            self._skip_id_counter = 0
+        self._skip_id_counter += 1
+        return self._skip_id_counter
+
+    def generate_fake_loop(self, program: BlockProgram) -> CodeBlock | None:
+        """
+        生成虚假循环块
+
+        创建看起来像循环但永远不会真正循环的代码结构。
+        """
+        if not program.execution_order:
+            return None
+
+        loop_var = "_loop_" + "".join(self.rng.choice(string.ascii_lowercase) for _ in range(4))
+
+        patterns = [
+            f"local {loop_var} = 0\nwhile false do\n    {loop_var} = {loop_var} + 1\nend",
+            f"for _i = 1, 0 do\n    -- never runs\nend",
+            f"repeat\n    break\nuntil true",
+            f"while true do\n    break\nend",
+        ]
+
+        content = self.rng.choice(patterns)
+
+        loop_block = CodeBlock(
+            block_id=-(2000 + self._gen_skip_id()),
+            content=content,
+            block_type="dummy_loop",
+            next_id=None,
+            metadata={"is_dummy_loop": True, "never_iterates": True}
+        )
+
+        program.blocks.append(loop_block)
+        program.block_map[loop_block.block_id] = loop_block
+
+        return loop_block
+
+    def generate_nested_trap(self, program: BlockProgram) -> list[CodeBlock]:
+        """
+        生成嵌套陷阱
+
+        创建多层嵌套但总是跳出的代码结构，增加 AST 深度。
+        """
+        depth = self.rng.randint(2, 4)
+        blocks = []
+        current_id = -(3000 + self._gen_skip_id())
+
+        outer_var = "_trap_" + "".join(self.rng.choice(string.ascii_lowercase) for _ in range(4))
+
+        for i in range(depth):
+            content = f"do\n    local {outer_var}_{i} = false\n    if {outer_var}_{i} then\n        error('trap')\n    end\nend"
+
+            block = CodeBlock(
+                block_id=current_id - i,
+                content=content,
+                block_type="nested_trap",
+                next_id=None,
+                metadata={"nest_depth": i + 1, "is_trap": True}
+            )
+            blocks.append(block)
+
+        for block in blocks:
+            program.blocks.append(block)
+            program.block_map[block.block_id] = block
+
+        return blocks
+
+    def inject_semantic_noop(self, program: BlockProgram) -> None:
+        """
+        注入语义无操作
+
+        添加不影响程序结果的代码，如变量自赋值、无效计算等。
+        """
+        for block in program.blocks:
+            if self.rng.random() < 0.15:
+                noop_content = self._generate_semantic_noop()
+                block.content += "\n" + noop_content
+
+    def _generate_semantic_noop(self) -> str:
+        """生成语义无操作代码"""
+        patterns = [
+            "local _x = 0\n_x = _x",
+            "local _y = nil\n_y = _y",
+            "local _z = {}\n_z = _z",
+            "local _a = 1 + 0",
+            "local _b = 'a' .. ''",
+            "pcall(function() end)",
+            "(function() end)()",
+        ]
+        return self.rng.choice(patterns)
+
+    def get_experiment_summary(self) -> dict:
+        """获取实验总结"""
+        total_redundant = sum(e.get("redundant_blocks_added", 0) for e in self.experiments_applied)
+        total_aux = sum(e.get("auxiliary_paths_added", 0) for e in self.experiments_applied)
+
+        return {
+            "total_experiments": len(self.experiments_applied),
+            "total_redundant_blocks": total_redundant,
+            "total_auxiliary_paths": total_aux,
+            "branch_complexity_increases": sum(
+                1 for e in self.experiments_applied if e.get("branch_complexity_increased")
+            ),
+            "experiments": self.experiments_applied
+        }
+
+
+# ===== BlockProgram 便捷方法 =====
+
+
+def add_structural_complexity(
+    program: BlockProgram,
+    rng: random.Random,
+    level: str = "medium"
+) -> dict:
+    """
+    便捷函数：为程序添加结构复杂度
+
+    Args:
+        program: 目标程序
+        rng: 随机数生成器
+        level: 复杂度级别 ("low", "medium", "high")
+
+    Returns:
+        应用结果统计
+    """
+    manager = StructuralExperimentManager(rng)
+    return manager.apply_structure_complexity(program, level)
+
+
+def inject_redundant_blocks(
+    program: BlockProgram,
+    rng: random.Random,
+    count: int = 2,
+    enabled: bool = True
+) -> list[CodeBlock]:
+    """
+    便捷函数：注入冗余 block
+
+    Args:
+        program: 目标程序
+        rng: 随机数生成器
+        count: 要注入的数量
+        enabled: 是否启用
+
+    Returns:
+        注入的 block 列表
+    """
+    config = RedundantBlockConfig(enabled=enabled, max_blocks=count)
+    gen = RedundantBlockGenerator(rng, config)
+    return gen.inject_redundant_blocks(program, count=count)
