@@ -762,6 +762,357 @@ class ConstantPool:
         }
 
 
+# ===== 增强常量访问系统 =====
+
+
+class ConstantAccessorType(Enum):
+    """常量访问器类型"""
+    DIRECT = "direct"           # 直接访问
+    NEGATED = "negated"         # 取反（数字）
+    BIT_NOT = "bit_not"         # 位取反
+    ADD_ZERO = "add_zero"       # 加零
+    SUB_ZERO = "sub_zero"       # 减零
+    MUL_ONE = "mul_one"         # 乘一
+    DIV_ONE = "div_one"         # 除一
+    XOR_ZERO = "xor_zero"       # 异或零
+    AND_MAX = "and_max"         # 与最大值
+    OR_ZERO = "or_zero"         # 或零
+    TABLE_WRAP = "table_wrap"   # 表包裹
+    INDEX_OFFSET = "index_offset"  # 索引偏移
+
+
+@dataclass
+class ConstantAccessorConfig:
+    """常量访问器配置"""
+    enabled: bool = False
+    accessor_prefix: str = "_acc"
+    use_unified_entry: bool = True  # 使用统一入口
+    enable_diversity: bool = True    # 启用多样性
+    diversity_ratio: float = 0.3     # 多样化比例
+    preserve_semantics: bool = True  # 保持语义
+
+
+class EnhancedConstantAccessor:
+    """
+    增强常量访问器
+
+    为常量池中的每个常量提供多种访问方式，通过简单变换函数获取。
+    支持统一入口和多样化访问，增加代码结构复杂度而不影响语义。
+    """
+
+    def __init__(self, pool: ConstantPool, rng: random.Random | None = None, config: ConstantAccessorConfig | None = None):
+        self.pool = pool
+        self.rng = rng
+        self.config = config if config else ConstantAccessorConfig()
+        self.accessor_name = self.config.accessor_prefix if self.config.accessor_prefix else "_acc"
+        self.accessor_cache: dict[tuple[str, str], str] = {}  # (type, index) -> accessor_code
+        self._id_counter = [0]
+
+    def _gen_id(self) -> int:
+        self._id_counter[0] += 1
+        return self._id_counter[0]
+
+    def generate_accessors(self) -> str:
+        """
+        生成所有访问器函数代码
+
+        Returns:
+            Lua 访问器函数代码
+        """
+        if not self.config.enabled:
+            return ""
+
+        lines: list[str] = []
+
+        if self.config.use_unified_entry:
+            lines.extend(self._generate_unified_accessor())
+        else:
+            lines.extend(self._generate_separate_accessors())
+
+        return "\n".join(lines)
+
+    def _generate_unified_accessor(self) -> list[str]:
+        """生成统一入口访问器"""
+        lines: list[str] = []
+        prefix = self.accessor_name
+
+        if self.rng:
+            func_name = f"{prefix}_{random_lua_identifier(self.rng, 'get')}"
+        else:
+            func_name = f"{prefix}_get"
+
+        lines.append(f"local function {func_name}(t, k)")
+        lines.append(f"    if t == 'S' then")
+        lines.append(f"        return {self.pool.pool_prefix}_S[k]")
+        lines.append(f"    elseif t == 'N' then")
+        lines.append(f"        return {self.pool.pool_prefix}_N[k]")
+        lines.append(f"    elseif t == 'B' then")
+        lines.append(f"        return {self.pool.pool_prefix}_B[k]")
+        lines.append(f"    end")
+        lines.append(f"end")
+
+        return lines
+
+    def _generate_separate_accessors(self) -> list[str]:
+        """生成分离访问器（支持多样化）"""
+        lines: list[str] = []
+        prefix = self.accessor_name
+
+        # 字符串访问器
+        for value, idx in sorted(self.pool.strings.items(), key=lambda x: x[1]):
+            accessor_type = self._select_accessor_type("string")
+            code = self._generate_single_accessor("S", idx, value, accessor_type)
+            lines.extend(code)
+
+        # 数字访问器
+        for value, idx in sorted(self.pool.numbers.items(), key=lambda x: x[1]):
+            accessor_type = self._select_accessor_type("number")
+            code = self._generate_single_accessor("N", idx, value, accessor_type)
+            lines.extend(code)
+
+        # 布尔访问器
+        for value, idx in sorted(self.pool.booleans.items(), key=lambda x: x[1]):
+            accessor_type = self._select_accessor_type("boolean")
+            code = self._generate_single_accessor("B", idx, value, accessor_type)
+            lines.extend(code)
+
+        return lines
+
+    def _select_accessor_type(self, value_type: str) -> ConstantAccessorType:
+        """选择访问器类型"""
+        if not self.config.enable_diversity:
+            return ConstantAccessorType.DIRECT
+
+        if self.rng and self.rng.random() > self.config.diversity_ratio:
+            return ConstantAccessorType.DIRECT
+
+        if value_type == "string":
+            types = [ConstantAccessorType.DIRECT, ConstantAccessorType.TABLE_WRAP]
+        elif value_type == "number":
+            types = [
+                ConstantAccessorType.DIRECT,
+                ConstantAccessorType.NEGATED,
+                ConstantAccessorType.ADD_ZERO,
+                ConstantAccessorType.SUB_ZERO,
+                ConstantAccessorType.MUL_ONE,
+                ConstantAccessorType.XOR_ZERO,
+                ConstantAccessorType.AND_MAX,
+                ConstantAccessorType.INDEX_OFFSET,
+            ]
+        elif value_type == "boolean":
+            types = [ConstantAccessorType.DIRECT, ConstantAccessorType.NEGATED, ConstantAccessorType.XOR_ZERO]
+        else:
+            types = [ConstantAccessorType.DIRECT]
+
+        return self.rng.choice(types) if self.rng else ConstantAccessorType.DIRECT
+
+    def _generate_single_accessor(
+        self,
+        pool_type: str,
+        index: int,
+        value: Any,
+        accessor_type: ConstantAccessorType
+    ) -> list[str]:
+        """为单个常量生成访问器代码"""
+        lines: list[str] = []
+        prefix = self.accessor_name
+
+        if self.rng:
+            func_name = f"{prefix}_{pool_type.lower()}_{self._gen_id()}"
+        else:
+            func_name = f"{prefix}_{pool_type.lower()}_{index}"
+
+        lines.append(f"local function {func_name}()")
+
+        base_expr = f"{self.pool.pool_prefix}_{pool_type}[{index}]"
+
+        if accessor_type == ConstantAccessorType.DIRECT:
+            lines.append(f"    return {base_expr}")
+        elif accessor_type == ConstantAccessorType.NEGATED and pool_type == "N":
+            lines.append(f"    return -{base_expr}")
+        elif accessor_type == ConstantAccessorType.ADD_ZERO and pool_type == "N":
+            lines.append(f"    return {base_expr} + 0")
+        elif accessor_type == ConstantAccessorType.SUB_ZERO and pool_type == "N":
+            lines.append(f"    return {base_expr} - 0")
+        elif accessor_type == ConstantAccessorType.MUL_ONE and pool_type == "N":
+            lines.append(f"    return {base_expr} * 1")
+        elif accessor_type == ConstantAccessorType.DIV_ONE and pool_type == "N":
+            lines.append(f"    return {base_expr} / 1")
+        elif accessor_type == ConstantAccessorType.XOR_ZERO and pool_type in ("N", "B"):
+            lines.append(f"    return ({base_expr}) ~ 0")
+        elif accessor_type == ConstantAccessorType.AND_MAX and pool_type == "N":
+            lines.append(f"    return ({base_expr}) & 0xFFFFFFFF")
+        elif accessor_type == ConstantAccessorType.OR_ZERO and pool_type == "N":
+            lines.append(f"    return ({base_expr}) | 0")
+        elif accessor_type == ConstantAccessorType.INDEX_OFFSET and pool_type == "N":
+            lines.append(f"    return {base_expr} - 0 + 0")
+        elif accessor_type == ConstantAccessorType.TABLE_WRAP and pool_type == "S":
+            lines.append(f"    return ({{{base_expr}}})[1]")
+        elif accessor_type == ConstantAccessorType.NEGATED and pool_type == "B":
+            lines.append(f"    return not {base_expr}")
+        else:
+            lines.append(f"    return {base_expr}")
+
+        lines.append("end")
+
+        # 缓存映射
+        self.accessor_cache[(pool_type, str(index))] = func_name
+
+        return lines
+
+    def get_accessor_call(self, pool_type: str, index: int) -> str:
+        """
+        获取常量访问调用代码
+
+        Args:
+            pool_type: 池类型 ('S', 'N', 'B')
+            index: 常量索引
+
+        Returns:
+            访问器调用表达式
+        """
+        key = (pool_type, str(index))
+
+        if self.config.use_unified_entry and self.config.enabled:
+            if self.rng:
+                func_name = f"{self.accessor_name}_{random_lua_identifier(self.rng, 'get')}"
+            else:
+                func_name = f"{self.accessor_name}_get"
+            return f"{func_name}('{pool_type}', {index})"
+
+        if key in self.accessor_cache:
+            return f"{self.accessor_cache[key]}()"
+
+        if self.config.enabled:
+            accessor_type = self._select_accessor_type(
+                "string" if pool_type == "S" else ("number" if pool_type == "N" else "boolean")
+            )
+            value = self._get_value_for_index(pool_type, index)
+            if value is not None:
+                self._generate_single_accessor(pool_type, index, value, accessor_type)
+                return f"{self.accessor_cache[key]}()"
+
+        fallback = f"{self.pool.pool_prefix}_{pool_type}get({index})"
+        return fallback
+
+    def _get_value_for_index(self, pool_type: str, index: int) -> Any:
+        """根据索引获取常量值"""
+        if pool_type == "S":
+            for v, i in self.pool.strings.items():
+                if i == index:
+                    return v
+        elif pool_type == "N":
+            for v, i in self.pool.numbers.items():
+                if i == index:
+                    return v
+        elif pool_type == "B":
+            for v, i in self.pool.booleans.items():
+                if i == index:
+                    return v
+        return None
+
+    def generate_replacement_expr(self, literal: str, literal_type: str) -> str | None:
+        """生成常量替换表达式（使用增强访问器）"""
+        if not self.config.enabled:
+            return None
+
+        if literal_type == "string" and literal in self.pool.strings:
+            idx = self.pool.strings[literal]
+            return self.get_accessor_call("S", idx)
+        elif literal_type == "number":
+            try:
+                num_val = float(literal)
+                if num_val in self.pool.numbers:
+                    idx = self.pool.numbers[num_val]
+                    return self.get_accessor_call("N", idx)
+            except ValueError:
+                pass
+        elif literal_type == "boolean":
+            try:
+                bool_val = literal.lower() == "true"
+                if bool_val in self.pool.booleans:
+                    idx = self.pool.booleans[bool_val]
+                    return self.get_accessor_call("B", idx)
+            except ValueError:
+                pass
+        return None
+
+    def get_statistics(self) -> dict:
+        """获取增强访问器统计"""
+        return {
+            "enabled": self.config.enabled,
+            "use_unified_entry": self.config.use_unified_entry,
+            "enable_diversity": self.config.enable_diversity,
+            "accessor_count": len(self.accessor_cache),
+            "accessor_name": self.accessor_name,
+        }
+
+
+class ConstantPoolEnhancer:
+    """
+    常量池增强器
+
+    整合增强常量访问系统，提供完整的常量池增强功能。
+    """
+
+    def __init__(self, pool: ConstantPool, rng: random.Random | None = None):
+        self.pool = pool
+        self.rng = rng
+        self.accessor_config = ConstantAccessorConfig()
+        self.accessor: EnhancedConstantAccessor | None = None
+
+    def enable_enhanced_access(self, config: ConstantAccessorConfig | None = None) -> None:
+        """启用增强访问"""
+        if config:
+            self.accessor_config = config
+        self.accessor_config.enabled = True
+        self.accessor = EnhancedConstantAccessor(self.pool, self.rng, self.accessor_config)
+
+    def generate_enhanced_pool_code(self) -> str:
+        """生成增强后的常量池代码"""
+        lines: list[str] = []
+
+        lines.append(self.pool.generate_pool_table())
+
+        if self.accessor and self.accessor_config.enabled:
+            accessor_code = self.accessor.generate_accessors()
+            if accessor_code:
+                lines.append(accessor_code)
+
+        return "\n".join(lines)
+
+    def replace_literal(self, literal: str, literal_type: str) -> str:
+        """替换字面量为增强访问"""
+        if self.accessor and self.accessor_config.enabled:
+            expr = self.accessor.generate_replacement_expr(literal, literal_type)
+            if expr:
+                return expr
+
+        return self.pool.generate_replacement_expr(literal, literal_type) or literal
+
+    def replace_literals_in_content(self, content: str) -> str:
+        """在代码内容中替换字面量"""
+        result = content
+
+        for value, idx in self.pool.strings.items():
+            escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+            old_pattern = f'"{escaped}"'
+            new_expr = self.replace_literal(value, "string")
+            result = result.replace(old_pattern, new_expr)
+
+        for value, idx in self.pool.numbers.items():
+            old_pattern = str(value)
+            new_expr = self.replace_literal(str(value), "number")
+            result = result.replace(old_pattern, new_expr)
+
+        for value, idx in self.pool.booleans.items():
+            old_pattern = str(value).lower()
+            new_expr = self.replace_literal(str(value).lower(), "boolean")
+            result = result.replace(old_pattern, new_expr)
+
+        return result
+
+
 @dataclass
 class EncodedString:
     hex_payload: str
@@ -893,6 +1244,12 @@ class ProtectionProfile:
         self.layout_preserve_entry = rng.random() > 0.3
         self.layout_preserve_exit = rng.random() > 0.3
         self.layout_cluster_depth = 2 + rng.randint(0, 2)
+
+        # 增强常量访问配置
+        self.enhanced_accessor_enabled = rng.random() > 0.5
+        self.accessor_prefix = random_lua_identifier(rng, "_acc")
+        self.use_unified_accessor = rng.random() > 0.4
+        self.accessor_diversity_ratio = 0.2 + rng.random() * 0.3
 
         if self.expression_variant == 0:
             self.nil_expression = "({})[" + self.number_name + "(1,0)]"
@@ -5630,3 +5987,1576 @@ def inject_redundant_blocks(
     config = RedundantBlockConfig(enabled=enabled, max_blocks=count)
     gen = RedundantBlockGenerator(rng, config)
     return gen.inject_redundant_blocks(program, count=count)
+
+
+# ===== 执行路径变化系统 =====
+
+
+class ExecutionVariationType(Enum):
+    """执行路径变化类型"""
+    STATE_WRAPPER = "state_wrapper"       # 状态包装
+    FLAG_GATE = "flag_gate"               # 标志门控
+    COUNTER_SKIP = "counter_skip"         # 计数器跳过
+    LOOKUP_TABLE = "lookup_table"          # 查找表
+    XOR_TRANSFORM = "xor_transform"       # 异或变换
+    OFFSET_INDIRECT = "offset_indirect"   # 偏移间接
+
+
+@dataclass
+class ExecutionPathConfig:
+    """执行路径配置"""
+    enabled: bool = False
+    variation_types: list[ExecutionVariationType] = None
+    state_variable_prefix: str = "_st"
+    enable_state_wrappers: bool = True
+    enable_lookup_redirect: bool = True
+    enable_counter_variation: bool = True
+    preserve_semantics: bool = True
+    variation_probability: float = 0.3
+
+
+class BlockStateManager:
+    """
+    Block 状态管理器
+
+    为每个 block 管理执行状态变量，支持：
+    - 执行前后状态检查
+    - 标志位控制
+    - 计数器追踪
+    """
+
+    def __init__(self, rng: random.Random | None = None, prefix: str = "_st"):
+        self.rng = rng
+        self.prefix = prefix
+        self.state_variables: dict[int, dict] = {}  # block_id -> state_info
+        self._id_counter = [0]
+
+    def _gen_id(self) -> int:
+        self._id_counter[0] += 1
+        return self._id_counter[0]
+
+    def create_state_variable(self, block_id: int) -> str:
+        """为 block 创建状态变量名"""
+        var_name = f"{self.prefix}_{block_id}"
+        self.state_variables[block_id] = {
+            "name": var_name,
+            "initialized": False,
+            "pre_code": "",
+            "post_code": ""
+        }
+        return var_name
+
+    def generate_preamble(self, block_id: int) -> str:
+        """生成状态前置代码"""
+        if block_id not in self.state_variables:
+            self.create_state_variable(block_id)
+
+        var_name = self.state_variables[block_id]["name"]
+
+        if self.rng:
+            patterns = [
+                f"local {var_name} = {var_name} or 0",
+                f"if not {var_name} then {var_name} = 0 end",
+                f"{var_name} = ({var_name} or 0) + 0",
+            ]
+            return self.rng.choice(patterns)
+        return f"local {var_name} = {var_name} or 0"
+
+    def generate_postamble(self, block_id: int) -> str:
+        """生成状态后置代码"""
+        if block_id not in self.state_variables:
+            self.create_state_variable(block_id)
+
+        var_name = self.state_variables[block_id]["name"]
+
+        if self.rng:
+            patterns = [
+                f"{var_name} = ({var_name} or 0) + 1",
+                f"{var_name} = {var_name} or 1",
+                f"if {var_name} then {var_name} = {var_name} + 1 else {var_name} = 1 end",
+            ]
+            return self.rng.choice(patterns)
+        return f"{var_name} = ({var_name} or 0) + 1"
+
+    def generate_state_check(self, block_id: int, condition: str = "always") -> str:
+        """生成状态检查代码"""
+        if block_id not in self.state_variables:
+            self.create_state_variable(block_id)
+
+        var_name = self.state_variables[block_id]["name"]
+
+        if condition == "always":
+            return f"local _ = {var_name} or 0"
+        elif condition == "first":
+            return f"if not {var_name} then {var_name} = 1 end"
+        elif condition == "count":
+            return f"local _cnt = {var_name} or 0"
+        return ""
+
+    def get_state_code(self) -> str:
+        """生成所有状态变量声明代码"""
+        lines = []
+        for block_id, info in self.state_variables.items():
+            lines.append(f"local {info['name']} = 0")
+        return "\n".join(lines)
+
+
+class NextBlockResolver:
+    """
+    下一个 Block 解析器
+
+    通过简单映射或计算确定下一个要执行的 block：
+    - 直接映射表
+    - 偏移计算
+    - 异或变换
+    - 条件选择
+    """
+
+    def __init__(self, rng: random.Random | None = None, prefix: str = "_nxt"):
+        self.rng = rng
+        self.prefix = prefix
+        self.lookup_table: dict[int, int] = {}  # current_id -> next_id
+        self.offset_map: dict[int, int] = {}    # current_id -> offset
+        self.xor_key: int = 0
+        self._id_counter = [0]
+
+    def _gen_id(self) -> int:
+        self._id_counter[0] += 1
+        return self._id_counter[0]
+
+    def build_direct_lookup(self, execution_order: list[int]) -> None:
+        """构建直接映射表"""
+        self.lookup_table = {}
+        for i, bid in enumerate(execution_order):
+            if i < len(execution_order) - 1:
+                self.lookup_table[bid] = execution_order[i + 1]
+            else:
+                self.lookup_table[bid] = -1  # 结束
+
+    def build_offset_lookup(self, execution_order: list[int], offset: int = 1) -> None:
+        """构建偏移映射表"""
+        self.offset_map = {}
+        for i, bid in enumerate(execution_order):
+            next_pos = (i + offset) % len(execution_order)
+            if i == len(execution_order) - 1:
+                self.offset_map[bid] = -1  # 结束
+            else:
+                self.offset_map[bid] = next_pos
+
+    def set_xor_key(self, key: int) -> None:
+        """设置异或密钥"""
+        self.xor_key = key
+
+    def generate_lookup_function(self) -> str:
+        """生成查找表函数"""
+        lines = []
+
+        if self.rng:
+            func_name = f"{self.prefix}_{random_lua_identifier(self.rng, 'get')}"
+        else:
+            func_name = f"{self.prefix}_get"
+
+        lines.append(f"local function {func_name}(cur)")
+        lines.append("    local _next = -1")
+
+        for curr_id, next_id in sorted(self.lookup_table.items()):
+            lines.append(f"    if cur == {curr_id} then _next = {next_id} end")
+
+        lines.append("    return _next")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def generate_offset_function(self) -> str:
+        """生成偏移计算函数"""
+        lines = []
+
+        if self.rng:
+            func_name = f"{self.prefix}_{random_lua_identifier(self.rng, 'off')}"
+        else:
+            func_name = f"{self.prefix}_offset"
+
+        lines.append(f"local function {func_name}(cur, base)")
+        lines.append(f"    local _offset = {list(self.offset_map.values())[0] if self.offset_map else 1}")
+        lines.append("    return base + _offset")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def generate_xor_function(self) -> str:
+        """生成异或变换函数"""
+        if self.rng:
+            func_name = f"{self.prefix}_{random_lua_identifier(self.rng, 'xor')}"
+        else:
+            func_name = f"{self.prefix}_xor"
+
+        return (
+            f"local function {func_name}(v)\n"
+            f"    return v ~ {self.xor_key}\n"
+            f"end"
+        )
+
+    def resolve_next(self, current_id: int, default_next: int | None) -> int | None:
+        """解析下一个 block ID"""
+        if current_id in self.lookup_table:
+            next_id = self.lookup_table[current_id]
+            return next_id if next_id != -1 else None
+        return default_next
+
+    def get_resolver_code(self, resolver_type: ExecutionVariationType) -> str:
+        """获取解析器代码"""
+        if resolver_type == ExecutionVariationType.LOOKUP_TABLE:
+            return self.generate_lookup_function()
+        elif resolver_type == ExecutionVariationType.OFFSET_INDIRECT:
+            return self.generate_offset_function()
+        elif resolver_type == ExecutionVariationType.XOR_TRANSFORM:
+            return self.generate_xor_function()
+        return ""
+
+
+class ExecutionPathVariator:
+    """
+    执行路径变化器
+
+    为程序引入轻量级执行路径变化：
+    1. 状态变量包装
+    2. 查找表重定向
+    3. 计数器变化
+    """
+
+    def __init__(self, program: BlockProgram, rng: random.Random | None = None, config: ExecutionPathConfig | None = None):
+        self.program = program
+        self.rng = rng
+        self.config = config if config else ExecutionPathConfig()
+        self.state_manager = BlockStateManager(rng, self.config.state_variable_prefix)
+        self.resolver = NextBlockResolver(rng)
+        self.variation_info: dict[int, dict] = {}
+
+    def apply_variations(self) -> dict:
+        """
+        应用执行路径变化
+
+        Returns:
+            变化应用统计
+        """
+        if not self.config.enabled:
+            return {"status": "disabled"}
+
+        stats = {
+            "blocks_with_state": 0,
+            "blocks_with_lookup": 0,
+            "blocks_with_counter": 0,
+            "resolver_type": None
+        }
+
+        # 构建查找表
+        self.resolver.build_direct_lookup(self.program.execution_order)
+
+        for block in self.program.blocks:
+            variations = {}
+
+            if self.config.enable_state_wrappers and self.rng and self.rng.random() < self.config.variation_probability:
+                self._apply_state_wrapper(block)
+                variations["has_state"] = True
+                stats["blocks_with_state"] += 1
+
+            if self.config.enable_lookup_redirect and self.rng and self.rng.random() < self.config.variation_probability:
+                self._apply_lookup_redirect(block)
+                variations["has_lookup"] = True
+                stats["blocks_with_lookup"] += 1
+
+            if self.config.enable_counter_variation and self.rng and self.rng.random() < self.config.variation_probability:
+                self._apply_counter_variation(block)
+                variations["has_counter"] = True
+                stats["blocks_with_counter"] += 1
+
+            if variations:
+                self.variation_info[block.block_id] = variations
+
+        # 选择解析器类型
+        if self.rng:
+            resolver_types = [ExecutionVariationType.LOOKUP_TABLE]
+            stats["resolver_type"] = self.rng.choice(resolver_types).value
+
+        return stats
+
+    def _apply_state_wrapper(self, block: CodeBlock) -> None:
+        """应用状态包装"""
+        pre_code = self.state_manager.generate_preamble(block.block_id)
+        post_code = self.state_manager.generate_postamble(block.block_id)
+
+        block.metadata["state_wrapper"] = {
+            "pre_code": pre_code,
+            "post_code": post_code,
+            "enabled": True
+        }
+
+    def _apply_lookup_redirect(self, block: CodeBlock) -> None:
+        """应用查找表重定向"""
+        if block.next_id is not None:
+            # 在 metadata 中标记使用查找表
+            block.metadata["use_lookup"] = True
+            block.metadata["lookup_next"] = block.next_id
+
+    def _apply_counter_variation(self, block: CodeBlock) -> None:
+        """应用计数器变化"""
+        counter_var = f"_cnt_{block.block_id}"
+
+        if self.rng:
+            patterns = [
+                f"local {counter_var} = ({counter_var} or 0) + 1",
+                f"{counter_var} = ({counter_var} or 0) + 1",
+                f"local {counter_var} = 1",
+            ]
+            counter_code = self.rng.choice(patterns)
+        else:
+            counter_code = f"local {counter_var} = ({counter_var} or 0) + 1"
+
+        block.metadata["counter_variation"] = {
+            "counter_var": counter_var,
+            "code": counter_code,
+            "enabled": True
+        }
+
+    def generate_wrapper_code(self, block: CodeBlock) -> tuple[str, str]:
+        """
+        生成包装代码
+
+        Returns:
+            (pre_code, post_code) 元组
+        """
+        pre_parts = []
+        post_parts = []
+
+        # 状态包装
+        if "state_wrapper" in block.metadata and block.metadata["state_wrapper"].get("enabled"):
+            pre_parts.append(block.metadata["state_wrapper"]["pre_code"])
+            post_parts.append(block.metadata["state_wrapper"]["post_code"])
+
+        # 计数器变化
+        if "counter_variation" in block.metadata and block.metadata["counter_variation"].get("enabled"):
+            pre_parts.append(block.metadata["counter_variation"]["code"])
+
+        # 查找表重定向
+        if "use_lookup" in block.metadata and block.metadata["use_lookup"]:
+            lookup_var = f"_nxt_{block.block_id}"
+            next_id = block.metadata.get("lookup_next", block.next_id)
+            pre_parts.append(f"local {lookup_var} = {next_id}")
+
+        return ("\n".join(pre_parts), "\n".join(post_parts))
+
+    def generate_resolver_code(self) -> str:
+        """生成解析器代码"""
+        return self.resolver.generate_lookup_function()
+
+    def generate_state_code(self) -> str:
+        """生成状态变量代码"""
+        return self.state_manager.get_state_code()
+
+    def get_variation_report(self) -> dict:
+        """获取变化报告"""
+        return {
+            "total_blocks": len(self.program.blocks),
+            "varied_blocks": len(self.variation_info),
+            "variations": self.variation_info
+        }
+
+
+class ExecutionPathEnhancer:
+    """
+    执行路径增强器
+
+    整合所有执行路径变化功能，提供统一接口。
+    """
+
+    def __init__(self, program: BlockProgram, rng: random.Random | None = None):
+        self.program = program
+        self.rng = rng
+        self.config = ExecutionPathConfig()
+        self.variator: ExecutionPathVariator | None = None
+
+    def enable_variations(self, config: ExecutionPathConfig | None = None) -> None:
+        """启用执行路径变化"""
+        if config:
+            self.config = config
+        self.config.enabled = True
+        self.variator = ExecutionPathVariator(self.program, self.rng, self.config)
+
+    def apply(self) -> dict:
+        """应用所有变化"""
+        if not self.variator:
+            self.enable_variations()
+
+        stats = self.variator.apply_variations()
+        return stats
+
+    def generate_enhancement_code(self) -> str:
+        """生成增强代码"""
+        if not self.variator:
+            return ""
+
+        lines = []
+
+        # 状态变量
+        state_code = self.variator.generate_state_code()
+        if state_code:
+            lines.append(state_code)
+
+        # 解析器
+        resolver_code = self.variator.generate_resolver_code()
+        if resolver_code:
+            lines.append(resolver_code)
+
+        return "\n".join(lines)
+
+    def get_block_wrapper(self, block: CodeBlock) -> tuple[str, str]:
+        """获取 block 的包装代码"""
+        if self.variator:
+            return self.variator.generate_wrapper_code(block)
+        return ("", "")
+
+
+# ===== 便捷函数 =====
+
+
+def apply_execution_variations(
+    program: BlockProgram,
+    rng: random.Random,
+    enabled: bool = True,
+    probability: float = 0.3
+) -> dict:
+    """
+    便捷函数：应用执行路径变化
+
+    Args:
+        program: 目标程序
+        rng: 随机数生成器
+        enabled: 是否启用
+        probability: 变化概率
+
+    Returns:
+        应用结果统计
+    """
+    config = ExecutionPathConfig(
+        enabled=enabled,
+        variation_probability=probability
+    )
+    enhancer = ExecutionPathEnhancer(program, rng)
+    enhancer.enable_variations(config)
+    stats = enhancer.apply()
+    return stats
+
+
+def wrap_block_with_state(
+    block: CodeBlock,
+    rng: random.Random,
+    state_prefix: str = "_st"
+) -> tuple[str, str]:
+    """
+    便捷函数：为 block 添加状态包装
+
+    Args:
+        block: 目标 block
+        rng: 随机数生成器
+        state_prefix: 状态变量前缀
+
+    Returns:
+        (pre_code, post_code) 元组
+    """
+    manager = BlockStateManager(rng, state_prefix)
+    pre = manager.generate_preamble(block.block_id)
+    post = manager.generate_postamble(block.block_id)
+    return (pre, post)
+
+
+def create_lookup_resolver(
+    execution_order: list[int],
+    rng: random.Random | None = None,
+    prefix: str = "_nxt"
+) -> NextBlockResolver:
+    """
+    便捷函数：创建查找表解析器
+
+    Args:
+        execution_order: 执行顺序列表
+        rng: 随机数生成器
+        prefix: 函数前缀
+
+    Returns:
+        NextBlockResolver 实例
+    """
+    resolver = NextBlockResolver(rng, prefix)
+    resolver.build_direct_lookup(execution_order)
+    return resolver
+
+
+# ===== 辅助路径代码混入器 =====
+
+
+class AuxiliaryPathMixerConfig:
+    """辅助路径混入配置"""
+    def __init__(
+        self,
+        enabled: bool = False,
+        mix_probability: float = 0.25,
+        max_paths_per_block: int = 2,
+        prefer_skip_branches: bool = True,
+        prefer_dead_code: bool = True,
+        include_redundant_blocks: bool = True,
+        semantic_preserving: bool = True
+    ):
+        self.enabled = enabled
+        self.mix_probability = mix_probability
+        self.max_paths_per_block = max_paths_per_block
+        self.prefer_skip_branches = prefer_skip_branches
+        self.prefer_dead_code = prefer_dead_code
+        self.include_redundant_blocks = include_redundant_blocks
+        self.semantic_preserving = semantic_preserving
+
+
+class AuxiliaryPathMixer:
+    """
+    辅助路径代码混入器
+
+    在代码生成阶段将辅助路径混入到生成的代码中：
+    1. 插入不会被触发的分支
+    2. 添加始终被跳过的代码块
+    3. 混入不影响语义的冗余结构
+    """
+
+    def __init__(self, rng: random.Random | None = None, config: AuxiliaryPathMixerConfig | None = None):
+        self.rng = rng
+        self.config = config if config else AuxiliaryPathMixerConfig()
+        self._id_counter = [0]
+        self.used_identifiers: set[str] = set()
+        self.mixed_count = 0
+
+    def _gen_id(self) -> int:
+        self._id_counter[0] += 1
+        return self._id_counter[0]
+
+    def _random_name(self, prefix: str = "_m") -> str:
+        """生成随机标识符"""
+        chars = string.ascii_lowercase + string.digits
+        for _ in range(10):
+            name = prefix + "_" + "".join(self.rng.choice(chars) for _ in range(6))
+            if name not in self.used_identifiers:
+                self.used_identifiers.add(name)
+                return name
+        return f"{prefix}_{self._gen_id()}"
+
+    def generate_skip_branch(self) -> str:
+        """
+        生成始终被跳过的分支
+
+        示例: if false then ... end
+        """
+        if self.rng:
+            patterns = [
+                ("if false then\n    -- skipped\nend", None),
+                ("local _s = false\nif _s then\n    error('unreachable')\nend", "_s"),
+                ("if nil then\n    -- never\nend", None),
+                ("if 1 ~= 1 then\n    -- impossible\nend", None),
+            ]
+            content, var = self.rng.choice(patterns)
+            if var:
+                var_name = self._random_name("_skip")
+                content = content.replace(var, var_name)
+            return content
+        return "if false then\n    -- skipped\nend"
+
+    def generate_dead_code_block(self) -> str:
+        """
+        生成死代码块
+
+        示例: if false then ... end
+        """
+        if self.rng:
+            patterns = [
+                "if false then\n    local _d = 0\nend",
+                "do\n    local _dead = nil\n    if _dead then\n        _dead = 1\n    end\nend",
+                "repeat\n    break\nuntil false",
+            ]
+            content = self.rng.choice(patterns)
+            content = content.replace("_d", self._random_name("_d"))
+            content = content.replace("_dead", self._random_name("_dead"))
+            return content
+        return "if false then\n    -- dead code\nend"
+
+    def generate_redundant_block(self) -> str:
+        """
+        生成冗余代码块
+
+        不影响最终结果的代码片段
+        """
+        if self.rng:
+            patterns = [
+                "do end",
+                "(function() end)()",
+                "pcall(function() end)",
+                "select('#', nil)",
+                "next({})",
+                "setmetatable({}, {})",
+            ]
+            count = self.rng.randint(1, 2)
+            lines = [self.rng.choice(patterns) for _ in range(count)]
+            return "\n".join(lines)
+        return "do end"
+
+    def generate_decoy_variable(self) -> str:
+        """
+        生成诱饵变量操作
+
+        创建无用但结构有效的变量操作
+        """
+        if self.rng:
+            patterns = [
+                f"local _x = 0\n_x = _x\n_x = _x",
+                f"local _y = nil\n_y = _y",
+                f"local _z = {{}}\n_z = _z",
+            ]
+            content = self.rng.choice(patterns)
+            content = content.replace("_x", self._random_name("_x"))
+            content = content.replace("_y", self._random_name("_y"))
+            content = content.replace("_z", self._random_name("_z"))
+            return content
+        return f"local _tmp = 0\n_tmp = _tmp"
+
+    def generate_guard_branch(self) -> str:
+        """
+        生成守卫分支
+
+        条件永远为真或永远为假的守卫检查
+        """
+        if self.rng:
+            patterns = [
+                "local _g = true\nif not _g then\n    error('guard')\nend",
+                "local _safe = 1\nif _safe == 0 then\n    _safe = _safe + 1\nend",
+            ]
+            content = self.rng.choice(patterns)
+            content = content.replace("_g", self._random_name("_g"))
+            content = content.replace("_safe", self._random_name("_safe"))
+            return content
+        return "if true then\n    -- always\nend"
+
+    def generate_conditional_noop(self) -> str:
+        """
+        生成条件空操作
+
+        无论条件如何都不影响程序状态
+        """
+        if self.rng:
+            patterns = [
+                "local _cond = false\nif _cond then\n    _cond = not _cond\nend",
+                "local _val = 0\nif true then\n    _val = _val\nend",
+            ]
+            content = self.rng.choice(patterns)
+            content = content.replace("_cond", self._random_name("_cond"))
+            content = content.replace("_val", self._random_name("_val"))
+            return content
+        return "do end"
+
+    def generate_skip_block(self) -> str:
+        """
+        生成跳过块
+
+        通过标志控制的跳过代码
+        """
+        if self.rng:
+            var_name = self._random_name("_skip")
+            return (
+                f"local {var_name} = true\n"
+                f"if {var_name} then\n"
+                f"    {var_name} = false\n"
+                f"end"
+            )
+        return "local _skip = true\nif _skip then\n    _skip = false\nend"
+
+    def generate_fake_function_call(self) -> str:
+        """
+        生成假函数调用
+
+        调用一个空函数
+        """
+        if self.rng:
+            func_name = self._random_name("_dummy")
+            return (
+                f"local function {func_name}() end\n"
+                f"{func_name}()"
+            )
+        return "(function() end)()"
+
+    def select_mix_content(self) -> str:
+        """根据配置选择混入内容"""
+        if not self.config.enabled:
+            return ""
+
+        if self.rng and self.rng.random() > self.config.mix_probability:
+            return ""
+
+        generators = []
+
+        if self.config.prefer_skip_branches:
+            generators.append(self.generate_skip_branch)
+            generators.append(self.generate_guard_branch)
+
+        if self.config.prefer_dead_code:
+            generators.append(self.generate_dead_code_block)
+            generators.append(self.generate_conditional_noop)
+
+        if self.config.include_redundant_blocks:
+            generators.append(self.generate_redundant_block)
+            generators.append(self.generate_decoy_variable)
+            generators.append(self.generate_skip_block)
+            generators.append(self.generate_fake_function_call)
+
+        if self.rng and generators:
+            self.mixed_count += 1
+            return self.rng.choice(generators)()
+
+        return ""
+
+    def mix_into_block(self, block_content: str, block_id: int | None = None) -> str:
+        """
+        将辅助路径混入到 block 内容中
+
+        Args:
+            block_content: 原始 block 内容
+            block_id: block ID（可选）
+
+        Returns:
+            混入辅助路径后的内容
+        """
+        mix_content = self.select_mix_content()
+        if not mix_content:
+            return block_content
+
+        if self.rng:
+            position = self.rng.randint(0, 2)
+        else:
+            position = 0
+
+        if position == 0:
+            return mix_content + "\n" + block_content
+        elif position == 1:
+            lines = block_content.split("\n")
+            if len(lines) > 1:
+                mid = len(lines) // 2
+                return "\n".join(lines[:mid]) + "\n" + mix_content + "\n" + "\n".join(lines[mid:])
+            return block_content + "\n" + mix_content
+        else:
+            return block_content + "\n" + mix_content
+
+    def mix_into_function(self, func_body: str, func_name: str = "") -> str:
+        """
+        将辅助路径混入到函数体中
+
+        Args:
+            func_body: 函数体内容
+            func_name: 函数名（可选）
+
+        Returns:
+            混入后的函数体
+        """
+        mix_content = self.select_mix_content()
+        if not mix_content:
+            return func_body
+
+        if self.rng:
+            position = self.rng.randint(0, 2)
+        else:
+            position = 0
+
+        if position == 0:
+            return mix_content + "\n" + func_body
+        elif position == 1:
+            lines = func_body.split("\n")
+            if len(lines) > 2:
+                insert_pos = self.rng.randint(1, len(lines) - 1) if self.rng else 1
+                return "\n".join(lines[:insert_pos]) + "\n" + mix_content + "\n" + "\n".join(lines[insert_pos:])
+            return func_body + "\n" + mix_content
+        else:
+            return func_body + "\n" + mix_content
+
+    def generate_mixed_wrapper(self, original_code: str, wrapper_type: str = "do") -> str:
+        """
+        生成混入了辅助路径的代码包装
+
+        Args:
+            original_code: 原始代码
+            wrapper_type: 包装类型 ("do", "function", "if")
+
+        Returns:
+            包装后的代码
+        """
+        mix_content = self.select_mix_content()
+        if not mix_content:
+            return original_code
+
+        if wrapper_type == "do":
+            return f"do\n{mix_content}\n{original_code}\nend"
+        elif wrapper_type == "function":
+            func_name = self._random_name("_wrapped")
+            return (
+                f"local function {func_name}()\n"
+                f"{mix_content}\n"
+                f"{original_code}\n"
+                f"end\n"
+                f"{func_name}()"
+            )
+        elif wrapper_type == "if":
+            var_name = self._random_name("_run")
+            return (
+                f"local {var_name} = false\n"
+                f"if not {var_name} then\n"
+                f"{original_code}\n"
+                f"end\n"
+                f"{mix_content}"
+            )
+        return original_code
+
+    def get_statistics(self) -> dict:
+        """获取混入统计"""
+        return {
+            "enabled": self.config.enabled,
+            "mix_probability": self.config.mix_probability,
+            "mixed_count": self.mixed_count,
+            "config": {
+                "prefer_skip_branches": self.config.prefer_skip_branches,
+                "prefer_dead_code": self.config.prefer_dead_code,
+                "include_redundant_blocks": self.config.include_redundant_blocks,
+            }
+        }
+
+
+class RedundantBlockMixer:
+    """
+    冗余 Block 混入器
+
+    在代码生成阶段添加不影响最终结果的冗余 block
+    """
+
+    def __init__(self, rng: random.Random | None = None):
+        self.rng = rng
+        self._id_counter = [0]
+        self.blocks: list[dict] = []
+
+    def _gen_id(self) -> int:
+        self._id_counter[0] += 1
+        return self._id_counter[0]
+
+    def _random_name(self, prefix: str = "_rb") -> str:
+        chars = string.ascii_lowercase + string.digits
+        return prefix + "_" + "".join(self.rng.choice(chars) for _ in range(6)) if self.rng else f"{prefix}_{self._gen_id()}"
+
+    def generate_dead_block(self) -> dict:
+        """生成死代码 block"""
+        block_id = -self._gen_id()
+        patterns = [
+            "if false then\n    error('unreachable')\nend",
+            "repeat\n    break\nuntil false",
+            "while false do\n    break\nend",
+        ]
+        content = self.rng.choice(patterns) if self.rng else patterns[0]
+        return {
+            "block_id": block_id,
+            "type": "dead",
+            "content": content,
+            "executed": False
+        }
+
+    def generate_skip_block(self) -> dict:
+        """生成跳过 block"""
+        block_id = -self._gen_id()
+        var_name = self._random_name("_skip")
+        return {
+            "block_id": block_id,
+            "type": "skip",
+            "content": f"local {var_name} = true\nif {var_name} then\n    {var_name} = false\nend",
+            "executed": True,
+            "always_skips": True
+        }
+
+    def generate_nop_block(self) -> dict:
+        """生成空操作 block"""
+        block_id = -self._gen_id()
+        patterns = [
+            "do end",
+            "(function() end)()",
+            "pcall(function() end)",
+        ]
+        content = self.rng.choice(patterns) if self.rng else "do end"
+        return {
+            "block_id": block_id,
+            "type": "nop",
+            "content": content,
+            "executed": True,
+            "no_effect": True
+        }
+
+    def generate_decoy_block(self) -> dict:
+        """生成诱饵 block"""
+        block_id = -self._gen_id()
+        var_x = self._random_name("_x")
+        var_y = self._random_name("_y")
+        return {
+            "block_id": block_id,
+            "type": "decoy",
+            "content": f"local {var_x}, {var_y} = 0, 0\nlocal _t = {var_x}\n{var_x} = {var_y}\n{var_y} = _t",
+            "executed": True,
+            "no_effect": True
+        }
+
+    def create_redundant_blocks(self, count: int = 2) -> list[dict]:
+        """创建多个冗余 block"""
+        self.blocks = []
+        generators = [
+            self.generate_dead_block,
+            self.generate_skip_block,
+            self.generate_nop_block,
+            self.generate_decoy_block,
+        ]
+
+        for _ in range(count):
+            if self.rng:
+                block = self.rng.choice(generators)()
+            else:
+                block = generators[0]()
+            self.blocks.append(block)
+
+        return self.blocks
+
+    def get_blocks_code(self) -> str:
+        """获取所有冗余 block 的代码"""
+        lines = []
+        for block in self.blocks:
+            lines.append(f"-- Redundant block {block['block_id']} ({block['type']})")
+            lines.append(block["content"])
+            lines.append("")
+        return "\n".join(lines)
+
+    def inject_into_program(self, program_lines: list[str]) -> list[str]:
+        """将冗余 block 注入到程序代码中"""
+        if not self.blocks:
+            return program_lines
+
+        # 在程序开始处插入
+        inject_lines = ["", "-- Injected redundant blocks", self.get_blocks_code()]
+
+        if program_lines:
+            # 在 local program = { 之后插入
+            for i, line in enumerate(program_lines):
+                if "local program = {" in line:
+                    program_lines = program_lines[:i+1] + inject_lines + program_lines[i+1:]
+                    break
+            else:
+                # 如果找不到插入点，在开头插入
+                program_lines = inject_lines + program_lines
+
+        return program_lines
+
+
+# ===== 便捷函数 =====
+
+
+def mix_auxiliary_paths(
+    code: str,
+    rng: random.Random,
+    enabled: bool = True,
+    probability: float = 0.25
+) -> str:
+    """
+    便捷函数：混入辅助路径
+
+    Args:
+        code: 原始代码
+        rng: 随机数生成器
+        enabled: 是否启用
+        probability: 混入概率
+
+    Returns:
+        混入辅助路径后的代码
+    """
+    config = AuxiliaryPathMixerConfig(enabled=enabled, mix_probability=probability)
+    mixer = AuxiliaryPathMixer(rng, config)
+    return mixer.mix_into_block(code)
+
+
+def inject_redundant_blocks_to_code(
+    code_lines: list[str],
+    rng: random.Random,
+    count: int = 2
+) -> list[str]:
+    """
+    便捷函数：将冗余 block 注入到代码行列表
+
+    Args:
+        code_lines: 代码行列表
+        rng: 随机数生成器
+        count: 冗余 block 数量
+
+    Returns:
+        注入后的代码行列表
+    """
+    mixer = RedundantBlockMixer(rng)
+    mixer.create_redundant_blocks(count)
+    return mixer.inject_into_program(code_lines)
+
+
+# ===== 代码生成随机化策略系统 =====
+
+
+class CodeGenerationStrategy(Enum):
+    """代码生成策略枚举"""
+    # Block 组织方式
+    FUNCTION_TABLE = "function_table"      # 函数表方式
+    DIRECT_DISPATCH = "direct_dispatch"    # 直接分发方式
+    INDEXED_ACCESS = "indexed_access"     # 索引访问方式
+    NAMED_BLOCKS = "named_blocks"         # 命名块方式
+    CLOSURE_WRAPPER = "closure_wrapper"    # 闭包包装方式
+
+    # 结构组合方式
+    FLAT_SEQUENCE = "flat_sequence"        # 扁平顺序
+    NESTED_STRUCTURE = "nested_structure"  # 嵌套结构
+    GROUPED_BLOCKS = "grouped_blocks"     # 分组块
+
+    # 返回方式
+    RETURN_NEXT = "return_next"            # 返回下一个 ID
+    CALL_NEXT = "call_next"                # 调用下一个
+    YIELD_NEXT = "yield_next"             # 协程方式
+
+
+class StructureVariant(Enum):
+    """结构变体枚举"""
+    MINIMAL = "minimal"                    # 最小化结构
+    EXPANDED = "expanded"                  # 展开结构
+    COMPRESSED = "compressed"              # 压缩结构
+    ANNOTATED = "annotated"               # 带注释结构
+    WRAPPED = "wrapped"                    # 包装结构
+
+
+@dataclass
+class GenerationStrategyConfig:
+    """生成策略配置"""
+    block_organization: CodeGenerationStrategy = CodeGenerationStrategy.FUNCTION_TABLE
+    structure_type: StructureVariant = StructureVariant.EXPANDED
+    return_mechanism: CodeGenerationStrategy = CodeGenerationStrategy.RETURN_NEXT
+    enable_comments: bool = False
+    enable_metadata: bool = True
+    indent_style: str = "standard"  # "standard", "compact", "aligned"
+    naming_scheme: str = "random"   # "sequential", "random", "semantic"
+    include_structure_hints: bool = False
+
+
+class BlockOrganizationStrategy:
+    """
+    Block 组织策略
+
+    定义不同方式组织 block 的逻辑
+    """
+
+    @staticmethod
+    def function_table_style(rng: random.Random, prefix: str) -> dict:
+        """函数表方式"""
+        return {
+            "type": CodeGenerationStrategy.FUNCTION_TABLE,
+            "table_var": f"{prefix}_tbl" if rng else "_tbl",
+            "meta_var": f"{prefix}_meta" if rng else "_meta",
+            "index_style": "numeric",
+            "access_pattern": "table_lookup"
+        }
+
+    @staticmethod
+    def direct_dispatch_style(rng: random.Random, prefix: str) -> dict:
+        """直接分发方式"""
+        return {
+            "type": CodeGenerationStrategy.DIRECT_DISPATCH,
+            "dispatch_var": f"{prefix}_dispatch" if rng else "_dispatch",
+            "switch_style": "if_else",
+            "index_style": "branch"
+        }
+
+    @staticmethod
+    def indexed_access_style(rng: random.Random, prefix: str) -> dict:
+        """索引访问方式"""
+        return {
+            "type": CodeGenerationStrategy.INDEXED_ACCESS,
+            "array_var": f"{prefix}_arr" if rng else "_arr",
+            "access_method": "rawget",
+            "fallback": "nil"
+        }
+
+    @staticmethod
+    def named_blocks_style(rng: random.Random, prefix: str) -> dict:
+        """命名块方式"""
+        return {
+            "type": CodeGenerationStrategy.NAMED_BLOCKS,
+            "block_prefix": f"{prefix}_blk" if rng else "_blk",
+            "naming": "unique_random" if rng else "sequential",
+            "registry_var": f"{prefix}_registry" if rng else "_registry"
+        }
+
+    @staticmethod
+    def closure_wrapper_style(rng: random.Random, prefix: str) -> dict:
+        """闭包包装方式"""
+        return {
+            "type": CodeGenerationStrategy.CLOSURE_WRAPPER,
+            "wrapper_prefix": f"{prefix}_wrap" if rng else "_wrap",
+            "closure_scope": "isolated",
+            "capture_method": "upvalue"
+        }
+
+    @classmethod
+    def select_style(cls, rng: random.Random) -> dict:
+        """随机选择组织风格"""
+        styles = [
+            cls.function_table_style,
+            cls.indexed_access_style,
+            cls.named_blocks_style,
+            cls.closure_wrapper_style,
+        ]
+        return rng.choice(styles)(rng, f"_s{rng.randint(1000, 9999)}")
+
+
+class StructureVariantStrategy:
+    """
+    结构变体策略
+
+    定义代码结构的不同变体
+    """
+
+    @staticmethod
+    def minimal_variant(block: CodeBlock, func_name: str, next_id: int | None) -> list[str]:
+        """最小化结构"""
+        lines = [f"local function {func_name}()"]
+        if block.content.strip():
+            lines.append(f"{indent_lua(block.content.strip(), 4)}")
+        next_expr = f"return {next_id}" if next_id is not None else "return"
+        lines.append(f"    {next_expr}")
+        lines.append("end")
+        return lines
+
+    @staticmethod
+    def expanded_variant(block: CodeBlock, func_name: str, next_id: int | None) -> list[str]:
+        """展开结构"""
+        lines = [f"local function {func_name}()"]
+        if block.content.strip():
+            lines.append(indent_lua(block.content.strip(), 4))
+        else:
+            lines.append("    -- empty block")
+        next_expr = f"return {next_id}" if next_id is not None else "return"
+        lines.append(f"    {next_expr}")
+        lines.append("end")
+        return lines
+
+    @staticmethod
+    def compressed_variant(block: CodeBlock, func_name: str, next_id: int | None) -> list[str]:
+        """压缩结构"""
+        content = block.content.strip().replace("\n", ";") if block.content.strip() else ""
+        next_expr = f"return {next_id}" if next_id is not None else "return"
+        if content:
+            return [f"local function {func_name}(){content};{next_expr}end"]
+        return [f"local function {func_name}() {next_expr} end"]
+
+    @staticmethod
+    def annotated_variant(block: CodeBlock, func_name: str, next_id: int | None) -> list[str]:
+        """带注释结构"""
+        lines = [
+            f"-- Block {block.block_id} ({block.block_type})",
+            f"local function {func_name}()"
+        ]
+        if block.content.strip():
+            lines.append(indent_lua(block.content.strip(), 4))
+        else:
+            lines.append("    -- empty block")
+        next_expr = f"return {next_id}" if next_id is not None else "return"
+        lines.append(f"    {next_expr}")
+        lines.append("end")
+        lines.append(f"-- End {func_name}")
+        return lines
+
+    @staticmethod
+    def wrapped_variant(block: CodeBlock, func_name: str, next_id: int | None) -> list[str]:
+        """包装结构"""
+        lines = [
+            f"do",
+            f"    local function {func_name}()"
+        ]
+        if block.content.strip():
+            lines.append(indent_lua(block.content.strip(), 8))
+        else:
+            lines.append("        -- empty block")
+        next_expr = f"return {next_id}" if next_id is not None else "return"
+        lines.append(f"        {next_expr}")
+        lines.append("    end")
+        lines.append(f"end")
+        return lines
+
+    @classmethod
+    def apply_variant(cls, variant: StructureVariant, block: CodeBlock, func_name: str, next_id: int | None) -> list[str]:
+        """应用变体"""
+        if variant == StructureVariant.MINIMAL:
+            return cls.minimal_variant(block, func_name, next_id)
+        elif variant == StructureVariant.EXPANDED:
+            return cls.expanded_variant(block, func_name, next_id)
+        elif variant == StructureVariant.COMPRESSED:
+            return cls.compressed_variant(block, func_name, next_id)
+        elif variant == StructureVariant.ANNOTATED:
+            return cls.annotated_variant(block, func_name, next_id)
+        elif variant == StructureVariant.WRAPPED:
+            return cls.wrapped_variant(block, func_name, next_id)
+        return cls.expanded_variant(block, func_name, next_id)
+
+
+class ReturnMechanismStrategy:
+    """
+    返回机制策略
+
+    定义不同的 block 执行完毕后返回方式
+    """
+
+    @staticmethod
+    def return_next_style(next_id: int | None) -> str:
+        """返回下一个 ID"""
+        if next_id is not None:
+            return f"return {next_id}"
+        return "return"
+
+    @staticmethod
+    def call_next_style(func_name: str, program_var: str) -> str:
+        """调用下一个函数"""
+        return f"local _next = {program_var}[_idx + 1]; if _next then _next() end"
+
+    @staticmethod
+    def yield_style() -> str:
+        """协程方式"""
+        return "coroutine.yield()"
+
+
+class NamingStrategy:
+    """
+    命名策略
+
+    定义不同的标识符命名方式
+    """
+
+    @staticmethod
+    def sequential_name(prefix: str, index: int) -> str:
+        """顺序命名"""
+        return f"{prefix}_{index}"
+
+    @staticmethod
+    def random_name(rng: random.Random, prefix: str) -> str:
+        """随机命名"""
+        chars = string.ascii_lowercase
+        suffix = "".join(rng.choice(chars) for _ in range(6))
+        return f"{prefix}_{suffix}"
+
+    @staticmethod
+    def semantic_name(block_type: str, index: int) -> str:
+        """语义命名"""
+        type_map = {
+            "statement": "stmt",
+            "function": "func",
+            "control_flow": "ctrl",
+            "assignment": "assign",
+            "expression": "expr",
+        }
+        suffix = type_map.get(block_type, "blk")
+        return f"{suffix}_{index}"
+
+
+class CodeGenerationRandomizer:
+    """
+    代码生成随机化器
+
+    整合所有策略，提供随机化的代码生成
+    """
+
+    def __init__(self, rng: random.Random | None = None, config: GenerationStrategyConfig | None = None):
+        self.rng = rng
+        self.config = config if config else GenerationStrategyConfig()
+        self._name_cache: dict[int, str] = {}
+        self._generated_count = 0
+
+    def generate_block_function(self, block: CodeBlock, index: int, next_id: int | None) -> list[str]:
+        """生成单个 block 函数"""
+        self._generated_count += 1
+
+        # 生成函数名
+        if self.config.naming_scheme == "sequential":
+            func_name = NamingStrategy.sequential_name("_blk", index)
+        elif self.config.naming_scheme == "random" and self.rng:
+            func_name = NamingStrategy.random_name(self.rng, "_blk")
+        else:
+            func_name = NamingStrategy.semantic_name(block.block_type, index)
+
+        self._name_cache[block.block_id] = func_name
+
+        # 根据结构变体生成
+        return StructureVariantStrategy.apply_variant(
+            self.config.structure_type,
+            block,
+            func_name,
+            next_id
+        )
+
+    def generate_program_structure(self, program: BlockProgram) -> dict:
+        """生成程序结构"""
+        # 根据组织策略生成
+        if self.config.block_organization == CodeGenerationStrategy.FUNCTION_TABLE:
+            return self._generate_function_table(program)
+        elif self.config.block_organization == CodeGenerationStrategy.INDEXED_ACCESS:
+            return self._generate_indexed_access(program)
+        elif self.config.block_organization == CodeGenerationStrategy.NAMED_BLOCKS:
+            return self._generate_named_blocks(program)
+        elif self.config.block_organization == CodeGenerationStrategy.CLOSURE_WRAPPER:
+            return self._generate_closure_wrapper(program)
+        else:
+            return self._generate_function_table(program)
+
+    def _generate_function_table(self, program: BlockProgram) -> dict:
+        """生成函数表结构"""
+        prefix = "_tbl" if not self.rng else f"_s{self.rng.randint(1000, 9999)}"
+        return {
+            "type": CodeGenerationStrategy.FUNCTION_TABLE,
+            "table_var": f"{prefix}_tbl",
+            "meta_var": f"{prefix}_meta",
+            "style": BlockOrganizationStrategy.function_table_style(self.rng, prefix) if self.rng else {}
+        }
+
+    def _generate_indexed_access(self, program: BlockProgram) -> dict:
+        """生成索引访问结构"""
+        prefix = "_arr" if not self.rng else f"_s{self.rng.randint(1000, 9999)}"
+        return {
+            "type": CodeGenerationStrategy.INDEXED_ACCESS,
+            "array_var": f"{prefix}_arr",
+            "access_method": "rawget",
+            "style": BlockOrganizationStrategy.indexed_access_style(self.rng, prefix) if self.rng else {}
+        }
+
+    def _generate_named_blocks(self, program: BlockProgram) -> dict:
+        """生成命名块结构"""
+        prefix = "_blk" if not self.rng else f"_s{self.rng.randint(1000, 9999)}"
+        return {
+            "type": CodeGenerationStrategy.NAMED_BLOCKS,
+            "block_prefix": prefix,
+            "registry_var": f"{prefix}_registry",
+            "style": BlockOrganizationStrategy.named_blocks_style(self.rng, prefix) if self.rng else {}
+        }
+
+    def _generate_closure_wrapper(self, program: BlockProgram) -> dict:
+        """生成闭包包装结构"""
+        prefix = "_wrap" if not self.rng else f"_s{self.rng.randint(1000, 9999)}"
+        return {
+            "type": CodeGenerationStrategy.CLOSURE_WRAPPER,
+            "wrapper_prefix": prefix,
+            "style": BlockOrganizationStrategy.closure_wrapper_style(self.rng, prefix) if self.rng else {}
+        }
+
+    def generate_program_header(self, structure_info: dict) -> list[str]:
+        """生成程序头部"""
+        lines = []
+        struct_type = structure_info.get("type")
+
+        if struct_type == CodeGenerationStrategy.FUNCTION_TABLE:
+            lines.append(f"local {structure_info['table_var']} = {{}}")
+            if self.config.enable_metadata:
+                lines.append(f"local {structure_info['meta_var']} = {{}}")
+        elif struct_type == CodeGenerationStrategy.INDEXED_ACCESS:
+            lines.append(f"local {structure_info['array_var']} = {{}}")
+        elif struct_type == CodeGenerationStrategy.NAMED_BLOCKS:
+            lines.append(f"local {structure_info['registry_var']} = {{}}")
+        elif struct_type == CodeGenerationStrategy.CLOSURE_WRAPPER:
+            lines.append(f"local {structure_info['wrapper_prefix']}_env = {{}}")
+
+        return lines
+
+    def get_statistics(self) -> dict:
+        """获取统计信息"""
+        return {
+            "config": {
+                "block_organization": self.config.block_organization.value,
+                "structure_variant": self.config.structure_type.value,
+                "naming_scheme": self.config.naming_scheme,
+                "enable_metadata": self.config.enable_metadata,
+            },
+            "generated_blocks": self._generated_count,
+            "unique_names": len(self._name_cache)
+        }
+
+
+class RandomizedCodeGenerator:
+    """
+    随机化代码生成器
+
+    整合所有随机化策略，生成结构多样但语义一致的代码
+    """
+
+    def __init__(self, program: BlockProgram, rng: random.Random | None = None):
+        self.program = program
+        self.rng = rng
+        self.config = GenerationStrategyConfig()
+        self.randomizer = CodeGenerationRandomizer(rng, self.config)
+
+    def set_strategy(self, config: GenerationStrategyConfig) -> None:
+        """设置生成策略"""
+        self.config = config
+        self.randomizer.config = config
+
+    def randomize_strategy(self) -> GenerationStrategyConfig:
+        """随机化策略配置"""
+        if not self.rng:
+            return self.config
+
+        strategies = list(CodeGenerationStrategy)
+        variants = list(StructureVariant)
+
+        self.config = GenerationStrategyConfig(
+            block_organization=self.rng.choice(strategies),
+            structure_type=self.rng.choice(variants),
+            return_mechanism=self.rng.choice(strategies),
+            enable_comments=self.rng.random() > 0.5,
+            enable_metadata=self.rng.random() > 0.3,
+            naming_scheme=self.rng.choice(["sequential", "random", "semantic"]),
+        )
+        self.randomizer.config = self.config
+        return self.config
+
+    def generate(self) -> tuple[str, dict]:
+        """
+        生成随机化代码
+
+        Returns:
+            (generated_code, statistics) 元组
+        """
+        lines: list[str] = []
+
+        # 生成结构信息
+        structure_info = self.randomizer.generate_program_structure(self.program)
+
+        # 生成头部
+        header = self.randomizer.generate_program_header(structure_info)
+        lines.extend(header)
+        lines.append("")
+
+        # 生成各个 block
+        for idx, bid in enumerate(self.program.execution_order):
+            block = self.program.get_block(bid)
+            if block:
+                block_lines = self.randomizer.generate_block_function(
+                    block, idx + 1, block.next_id
+                )
+                lines.extend(block_lines)
+                lines.append("")
+
+        # 生成程序表
+        struct_type = structure_info.get("type")
+        if struct_type == CodeGenerationStrategy.FUNCTION_TABLE:
+            lines.append(f"for i, fn in ipairs({{")
+            for idx in range(len(self.program.execution_order)):
+                lines.append(f"    {idx + 1},")
+            lines.append(f"}}) do {structure_info['table_var']}[i] = fn end")
+
+        return "\n".join(lines), self.randomizer.get_statistics()
+
+    def generate_multiple_variants(self, count: int = 3) -> list[tuple[str, dict]]:
+        """
+        生成多个变体
+
+        Args:
+            count: 变体数量
+
+        Returns:
+            变体列表，每个元素为 (code, stats) 元组
+        """
+        variants = []
+
+        for _ in range(count):
+            self.randomize_strategy()
+            code, stats = self.generate()
+            variants.append((code, stats))
+
+        return variants
+
+
+# ===== 便捷函数 =====
+
+
+def create_randomized_generator(
+    program: BlockProgram,
+    rng: random.Random,
+    strategy: str = "random"
+) -> RandomizedCodeGenerator:
+    """
+    创建随机化代码生成器
+
+    Args:
+        program: 目标程序
+        rng: 随机数生成器
+        strategy: 策略类型 ("random", "minimal", "expanded", "annotated")
+
+    Returns:
+        RandomizedCodeGenerator 实例
+    """
+    generator = RandomizedCodeGenerator(program, rng)
+
+    if strategy == "minimal":
+        generator.set_strategy(GenerationStrategyConfig(
+            structure_type=StructureVariant.MINIMAL,
+            enable_comments=False,
+            naming_scheme="sequential"
+        ))
+    elif strategy == "expanded":
+        generator.set_strategy(GenerationStrategyConfig(
+            structure_type=StructureVariant.EXPANDED,
+            enable_comments=False,
+            naming_scheme="sequential"
+        ))
+    elif strategy == "annotated":
+        generator.set_strategy(GenerationStrategyConfig(
+            structure_type=StructureVariant.ANNOTATED,
+            enable_comments=True,
+            naming_scheme="semantic"
+        ))
+    elif strategy == "random":
+        generator.randomize_strategy()
+
+    return generator
+
+
+def generate_variant_code(
+    program: BlockProgram,
+    rng: random.Random,
+    variant: str = "expanded"
+) -> str:
+    """
+    生成指定变体的代码
+
+    Args:
+        program: 目标程序
+        rng: 随机数生成器
+        variant: 变体类型 ("minimal", "expanded", "compressed", "annotated", "wrapped")
+
+    Returns:
+        生成的代码
+    """
+    variant_map = {
+        "minimal": StructureVariant.MINIMAL,
+        "expanded": StructureVariant.EXPANDED,
+        "compressed": StructureVariant.COMPRESSED,
+        "annotated": StructureVariant.ANNOTATED,
+        "wrapped": StructureVariant.WRAPPED,
+    }
+
+    config = GenerationStrategyConfig(
+        structure_type=variant_map.get(variant, StructureVariant.EXPANDED)
+    )
+
+    generator = RandomizedCodeGenerator(program, rng)
+    generator.set_strategy(config)
+    code, _ = generator.generate()
+    return code
+
+
+
