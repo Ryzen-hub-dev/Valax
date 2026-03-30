@@ -243,6 +243,2072 @@ class BlockProgram:
         self.auxiliary_path_count += 1
 
 
+# ===== 指令表示层 (Instruction Layer) =====
+
+
+# ===== 指令定义注册表 =====
+
+
+@dataclass
+class OpCodeInfo:
+    """
+    指令操作码信息
+
+    集中管理所有指令的定义信息。
+    """
+    opcode: 'OpCode'
+    name: str
+    category: str
+    description: str
+    has_result: bool = False
+    has_args: bool = True
+
+
+class OpCodeRegistry:
+    """
+    指令操作码注册表
+
+    集中管理所有指令的定义，便于扩展和维护。
+    """
+    _registry: dict[str, OpCodeInfo] = {}
+
+    @classmethod
+    def register(cls, opcode: 'OpCode', name: str, category: str,
+                 description: str, has_result: bool = False, has_args: bool = True) -> None:
+        """注册指令信息"""
+        cls._registry[opcode.value] = OpCodeInfo(
+            opcode=opcode,
+            name=name,
+            category=category,
+            description=description,
+            has_result=has_result,
+            has_args=has_args
+        )
+
+    @classmethod
+    def get(cls, opcode_value: str) -> OpCodeInfo | None:
+        """获取指令信息"""
+        return cls._registry.get(opcode_value)
+
+    @classmethod
+    def get_by_category(cls, category: str) -> list[OpCodeInfo]:
+        """获取指定类别的所有指令"""
+        return [info for info in cls._registry.values() if info.category == category]
+
+    @classmethod
+    def get_all_categories(cls) -> list[str]:
+        """获取所有指令类别"""
+        return list(set(info.category for info in cls._registry.values()))
+
+    @classmethod
+    def get_all(cls) -> list[OpCodeInfo]:
+        """获取所有注册的指令"""
+        return list(cls._registry.values())
+
+
+class OpCode(Enum):
+    """
+    指令操作码
+
+    定义 Lua 代码的基本指令类型。
+    """
+    # ===== 变量和赋值 =====
+    ASSIGN = "assign"              # 赋值: a = b
+    DECLARE = "declare"            # 声明: local a
+    INIT = "init"                  # 初始化: local a = b
+
+    # ===== 函数调用 =====
+    CALL = "call"                  # 函数调用: foo()
+    CALL_ASSIGN = "call_assign"     # 调用赋值: a = foo()
+
+    # ===== 返回和跳转 =====
+    RETURN = "return"              # 返回: return
+    RETURN_VAL = "return_val"      # 返回值: return x
+    JUMP = "jump"                  # 跳转: goto label
+    JUMP_IF = "jump_if"            # 条件跳转: if cond then
+
+    # ===== 控制流 =====
+    DO = "do"                      # 代码块开始: do ... end
+    END = "end"                    # 代码块结束
+    IF = "if"                      # 条件: if cond then
+    THEN = "then"                  # then 分支
+    ELSE = "else"                  # else 分支
+    ELSEIF = "elseif"              # elseif 分支
+    FOR = "for"                    # for 循环
+    WHILE = "while"                # while 循环
+    REPEAT = "repeat"              # repeat 循环
+    UNTIL = "until"                # until 条件
+    BREAK = "break"                # break 语句
+    CONTINUE = "continue"         # continue 语句
+
+    # ===== 表操作 =====
+    TABLE_NEW = "table_new"        # 创建表: {}
+    TABLE_SET = "table_set"       # 设置表元素: t.k = v
+    TABLE_GET = "table_get"        # 获取表元素: t.k
+
+    # ===== 函数定义 =====
+    FUNC_DEF = "func_def"          # 函数定义: function foo() end
+    FUNC_END = "func_end"          # 函数结束
+
+    # ===== 表达式 =====
+    EXPR = "expr"                  # 表达式语句: foo + bar
+    NOP = "nop"                    # 空操作
+
+    # ===== 特殊 =====
+    COMMENT = "comment"            # 注释
+    LABEL = "label"                # 标签
+    ERROR = "error"                # error 语句
+    ASSERT = "assert"              # assert 语句
+
+    # ===== 辅助指令（用于代码生成增强）=====
+    IDENTITY = "identity"          # 恒等变换: x = x
+    DUMMY = "dummy"                # 哑操作: 不影响结果的操作
+
+
+# 注册所有指令信息
+def _register_opcodes() -> None:
+    """注册所有指令信息到注册表"""
+    # 变量和赋值
+    OpCodeRegistry.register(OpCode.ASSIGN, "assign", "assignment",
+                            "赋值: target = value", has_result=True, has_args=True)
+    OpCodeRegistry.register(OpCode.DECLARE, "declare", "assignment",
+                            "声明: local var", has_result=False, has_args=True)
+    OpCodeRegistry.register(OpCode.INIT, "init", "assignment",
+                            "初始化: local var = value", has_result=True, has_args=True)
+
+    # 函数调用
+    OpCodeRegistry.register(OpCode.CALL, "call", "call",
+                            "函数调用: func(args)", has_result=False, has_args=True)
+    OpCodeRegistry.register(OpCode.CALL_ASSIGN, "call_assign", "call",
+                            "调用赋值: result = func(args)", has_result=True, has_args=True)
+
+    # 返回和跳转
+    OpCodeRegistry.register(OpCode.RETURN, "return", "control_flow",
+                            "返回: return", has_result=False, has_args=False)
+    OpCodeRegistry.register(OpCode.RETURN_VAL, "return_val", "control_flow",
+                            "返回值: return expr", has_result=False, has_args=True)
+    OpCodeRegistry.register(OpCode.JUMP, "jump", "control_flow",
+                            "跳转", has_result=False, has_args=True)
+    OpCodeRegistry.register(OpCode.JUMP_IF, "jump_if", "control_flow",
+                            "条件跳转", has_result=False, has_args=True)
+
+    # 控制流
+    OpCodeRegistry.register(OpCode.DO, "do", "control_flow",
+                            "do...end 块开始", has_result=False, has_args=False)
+    OpCodeRegistry.register(OpCode.END, "end", "control_flow",
+                            "块结束", has_result=False, has_args=False)
+    OpCodeRegistry.register(OpCode.IF, "if", "control_flow",
+                            "if 条件", has_result=False, has_args=True)
+    OpCodeRegistry.register(OpCode.THEN, "then", "control_flow",
+                            "then 分支", has_result=False, has_args=False)
+    OpCodeRegistry.register(OpCode.ELSE, "else", "control_flow",
+                            "else 分支", has_result=False, has_args=False)
+    OpCodeRegistry.register(OpCode.ELSEIF, "elseif", "control_flow",
+                            "elseif 分支", has_result=False, has_args=True)
+    OpCodeRegistry.register(OpCode.FOR, "for", "control_flow",
+                            "for 循环", has_result=False, has_args=True)
+    OpCodeRegistry.register(OpCode.WHILE, "while", "control_flow",
+                            "while 循环", has_result=False, has_args=True)
+    OpCodeRegistry.register(OpCode.REPEAT, "repeat", "control_flow",
+                            "repeat 循环开始", has_result=False, has_args=False)
+    OpCodeRegistry.register(OpCode.UNTIL, "until", "control_flow",
+                            "until 条件", has_result=False, has_args=True)
+    OpCodeRegistry.register(OpCode.BREAK, "break", "control_flow",
+                            "break 语句", has_result=False, has_args=False)
+    OpCodeRegistry.register(OpCode.CONTINUE, "continue", "control_flow",
+                            "continue 语句", has_result=False, has_args=False)
+
+    # 表操作
+    OpCodeRegistry.register(OpCode.TABLE_NEW, "table_new", "table",
+                            "创建表", has_result=True, has_args=False)
+    OpCodeRegistry.register(OpCode.TABLE_SET, "table_set", "table",
+                            "设置表元素", has_result=False, has_args=True)
+    OpCodeRegistry.register(OpCode.TABLE_GET, "table_get", "table",
+                            "获取表元素", has_result=True, has_args=True)
+
+    # 函数定义
+    OpCodeRegistry.register(OpCode.FUNC_DEF, "func_def", "function",
+                            "函数定义", has_result=False, has_args=True)
+    OpCodeRegistry.register(OpCode.FUNC_END, "func_end", "function",
+                            "函数结束", has_result=False, has_args=False)
+
+    # 表达式
+    OpCodeRegistry.register(OpCode.EXPR, "expr", "expression",
+                            "表达式语句", has_result=False, has_args=True)
+    OpCodeRegistry.register(OpCode.NOP, "nop", "expression",
+                            "空操作", has_result=False, has_args=False)
+
+    # 特殊
+    OpCodeRegistry.register(OpCode.COMMENT, "comment", "special",
+                            "注释", has_result=False, has_args=True)
+    OpCodeRegistry.register(OpCode.LABEL, "label", "special",
+                            "标签", has_result=False, has_args=True)
+    OpCodeRegistry.register(OpCode.ERROR, "error", "special",
+                            "error 语句", has_result=False, has_args=True)
+    OpCodeRegistry.register(OpCode.ASSERT, "assert", "special",
+                            "assert 语句", has_result=False, has_args=True)
+
+    # 辅助指令
+    OpCodeRegistry.register(OpCode.IDENTITY, "identity", "auxiliary",
+                            "恒等变换", has_result=True, has_args=True)
+    OpCodeRegistry.register(OpCode.DUMMY, "dummy", "auxiliary",
+                            "哑操作", has_result=False, has_args=False)
+
+
+_register_opcodes()
+
+
+@dataclass
+class Instruction:
+    """
+    单条指令表示
+
+    所有指令都使用统一的结构:
+    - op: 操作码
+    - args: 参数列表
+    - result: 结果（如果有）
+    - metadata: 元数据（行号、注释等）
+    """
+    op: OpCode
+    args: list[Any] = None
+    result: str | None = None
+    metadata: dict | None = None
+
+    def __post_init__(self):
+        if self.args is None:
+            self.args = []
+        if self.metadata is None:
+            self.metadata = {}
+
+    @property
+    def info(self) -> OpCodeInfo | None:
+        """获取指令信息"""
+        return OpCodeRegistry.get(self.op.value)
+
+    def __repr__(self) -> str:
+        args_str = ", ".join(str(a) for a in self.args)
+        result_str = f" -> {self.result}" if self.result else ""
+        return f"[{self.op.value} {args_str}{result_str}]"
+
+    def to_dict(self) -> dict:
+        """转换为字典表示"""
+        return {
+            "op": self.op.value,
+            "args": self.args,
+            "result": self.result,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> Instruction:
+        """从字典创建指令"""
+        return cls(
+            op=OpCode(d["op"]),
+            args=d.get("args", []),
+            result=d.get("result"),
+            metadata=d.get("metadata", {}),
+        )
+
+
+@dataclass
+class BlockInstructions:
+    """
+    Block 的指令列表表示
+
+    将 CodeBlock 转换为指令列表，便于后续处理。
+    """
+    block_id: int
+    instructions: list[Instruction] = None
+    block_type: str = "statement"
+
+    def __post_init__(self):
+        if self.instructions is None:
+            self.instructions = []
+
+    def add(self, instr: Instruction) -> None:
+        """添加指令"""
+        self.instructions.append(instr)
+
+    def add_nop(self) -> None:
+        """添加空操作"""
+        self.instructions.append(Instruction(OpCode.NOP))
+
+    def add_comment(self, comment: str) -> None:
+        """添加注释指令"""
+        self.instructions.append(Instruction(OpCode.COMMENT, [comment]))
+
+    def to_list(self) -> list[dict]:
+        """转换为列表表示"""
+        return [instr.to_dict() for instr in self.instructions]
+
+    def __len__(self) -> int:
+        return len(self.instructions)
+
+    def __iter__(self):
+        return iter(self.instructions)
+
+
+class InstructionConverter:
+    """
+    Block 转指令转换器
+
+    将 CodeBlock.content 解析为指令列表。
+    """
+
+    def __init__(self, rng: random.Random | None = None):
+        self.rng = rng
+        self._line_counter = 0
+
+    def convert_block(self, block: CodeBlock) -> BlockInstructions:
+        """将 CodeBlock 转换为指令列表"""
+        result = BlockInstructions(
+            block_id=block.block_id,
+            block_type=block.block_type,
+        )
+
+        if not block.content:
+            result.add_nop()
+            return result
+
+        lines = block.content.strip().split("\n")
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            self._line_counter += 1
+            instrs = self._parse_line(line)
+            for instr in instrs:
+                instr.metadata["line"] = self._line_counter
+                result.add(instr)
+
+        if len(result.instructions) == 0:
+            result.add_nop()
+
+        return result
+
+    def _parse_line(self, line: str) -> list[Instruction]:
+        """解析单行代码为指令列表"""
+        # 移除注释
+        code_part = line
+        comment = None
+        if "--" in line:
+            parts = line.split("--", 1)
+            code_part = parts[0].strip()
+            comment = parts[1].strip() if len(parts) > 1 else None
+
+        if not code_part:
+            if comment:
+                return [Instruction(OpCode.COMMENT, [comment])]
+            return [Instruction(OpCode.NOP)]
+
+        # 解析不同语句类型
+        if code_part.startswith("local "):
+            return self._parse_local(code_part, comment)
+        elif code_part.startswith("function "):
+            return self._parse_function(code_part)
+        elif code_part.startswith("if "):
+            return self._parse_if(code_part)
+        elif code_part.startswith("while "):
+            return self._parse_while(code_part)
+        elif code_part.startswith("for "):
+            return self._parse_for(code_part)
+        elif code_part.startswith("repeat"):
+            return self._parse_repeat(code_part)
+        elif code_part.startswith("return"):
+            return self._parse_return(code_part)
+        elif code_part.startswith("do"):
+            return self._parse_do(code_part)
+        elif code_part.startswith("end"):
+            return [Instruction(OpCode.END)]
+        elif code_part.startswith("then"):
+            return [Instruction(OpCode.THEN)]
+        elif code_part.startswith("else"):
+            return [Instruction(OpCode.ELSE)]
+        elif code_part.startswith("until"):
+            return self._parse_until(code_part)
+        elif "(" in code_part or code_part.endswith(")"):
+            return self._parse_call_or_expr(code_part)
+        elif "=" in code_part:
+            return self._parse_assignment(code_part)
+        elif code_part in ("break", "continue"):
+            return [Instruction(OpCode.JUMP, [code_part])]
+        elif code_part.startswith("error"):
+            return self._parse_error(code_part)
+        else:
+            return [Instruction(OpCode.EXPR, [code_part])]
+
+    def _parse_local(self, line: str, comment: str | None = None) -> list[Instruction]:
+        """解析 local 声明/初始化"""
+        # local a = b, c = d 形式
+        if "=" in line:
+            # 提取变量名
+            rest = line[6:].strip()  # 移除 "local "
+            parts = rest.split("=")
+
+            instrs = []
+            # 处理多个变量
+            for i, part in enumerate(parts):
+                if i == 0:
+                    # 第一个变量可能包含逗号
+                    vars_list = [v.strip() for v in part.split(",")]
+                    for v in vars_list:
+                        if v:
+                            instrs.append(Instruction(OpCode.DECLARE, [v]))
+                else:
+                    # 其余是赋值的值
+                    val = part.strip()
+                    # 去掉可能的下一个变量名
+                    if "," in val:
+                        val_parts = val.split(",")
+                        val = val_parts[0].strip()
+                    if val:
+                        instrs.append(Instruction(OpCode.ASSIGN, [f"${i}"], val))
+
+            return instrs
+        else:
+            # 纯声明
+            var = line[6:].strip()
+            return [Instruction(OpCode.DECLARE, [var])]
+
+    def _parse_assignment(self, line: str) -> list[Instruction]:
+        """解析赋值语句"""
+        parts = line.split("=", 1)
+        if len(parts) != 2:
+            return [Instruction(OpCode.EXPR, [line])]
+
+        target = parts[0].strip()
+        value = parts[1].strip()
+
+        # 函数调用赋值
+        if "(" in value and value.endswith(")"):
+            return [Instruction(OpCode.CALL_ASSIGN, [value], target)]
+
+        return [Instruction(OpCode.ASSIGN, [target], value)]
+
+    def _parse_call_or_expr(self, line: str) -> list[Instruction]:
+        """解析函数调用或表达式"""
+        # 可能是函数调用或表达式
+        if line.startswith("(") and line.endswith(")"):
+            return [Instruction(OpCode.EXPR, [line])]
+
+        # 函数调用
+        if "(" in line:
+            # 提取函数名
+            func_start = line.find("(")
+            func_name = line[:func_start].strip()
+
+            # 提取参数
+            args_str = line[func_start+1:-1].strip()
+            args = [a.strip() for a in args_str.split(",")] if args_str else []
+
+            return [Instruction(OpCode.CALL, [func_name] + args)]
+
+        return [Instruction(OpCode.EXPR, [line])]
+
+    def _parse_if(self, line: str) -> list[Instruction]:
+        """解析 if 语句"""
+        # if cond then
+        if " then" in line:
+            cond = line[3:line.find(" then")].strip()
+            return [Instruction(OpCode.IF, [cond])]
+        return [Instruction(OpCode.IF, [line])]
+
+    def _parse_while(self, line: str) -> list[Instruction]:
+        """解析 while 语句"""
+        # while cond do
+        if " do" in line:
+            cond = line[6:line.find(" do")].strip()
+            return [Instruction(OpCode.WHILE, [cond])]
+        return [Instruction(OpCode.WHILE, [line])]
+
+    def _parse_for(self, line: str) -> list[Instruction]:
+        """解析 for 循环"""
+        return [Instruction(OpCode.FOR, [line])]
+
+    def _parse_repeat(self, line: str) -> list[Instruction]:
+        """解析 repeat 语句"""
+        return [Instruction(OpCode.REPEAT)]
+
+    def _parse_until(self, line: str) -> list[Instruction]:
+        """解析 until 语句"""
+        cond = line[6:].strip() if line.startswith("until") else line
+        return [Instruction(OpCode.UNTIL, [cond])]
+
+    def _parse_return(self, line: str) -> list[Instruction]:
+        """解析 return 语句"""
+        if len(line) <= 6:
+            return [Instruction(OpCode.RETURN)]
+
+        value = line[6:].strip()  # 移除 "return "
+        return [Instruction(OpCode.RETURN_VAL, [value])]
+
+    def _parse_do(self, line: str) -> list[Instruction]:
+        """解析 do 语句"""
+        return [Instruction(OpCode.DO)]
+
+    def _parse_function(self, line: str) -> list[Instruction]:
+        """解析函数定义"""
+        # function name(args) 或 local function name(args)
+        content = line
+        if line.startswith("local "):
+            content = line[6:]
+
+        if "(" in content and ")" in content:
+            name_start = 9 if content.startswith("function ") else 0
+            name_end = content.find("(")
+            name = content[name_start:name_end].strip()
+
+            args_start = name_end + 1
+            args_end = content.find(")")
+            args = content[args_start:args_end].strip()
+            args_list = [a.strip() for a in args.split(",")] if args else []
+
+            return [
+                Instruction(OpCode.FUNC_DEF, [name] + args_list)
+            ]
+
+        return [Instruction(OpCode.FUNC_DEF, [line])]
+
+    def _parse_error(self, line: str) -> list[Instruction]:
+        """解析 error 语句"""
+        # error('message') 或 error('message', level)
+        if "(" in line and ")" in line:
+            msg_start = line.find("(") + 1
+            msg_end = line.find(")", msg_start)
+            msg = line[msg_start:msg_end].strip().strip("'\"")
+            return [Instruction(OpCode.ERROR, [msg])]
+
+        return [Instruction(OpCode.ERROR, [line])]
+
+
+class InstructionGenerator:
+    """
+    指令生成器
+
+    将指令列表转换回 Lua 代码。
+    支持不同的生成风格。
+    """
+
+    def __init__(self, obfuscate_names: bool = False):
+        self.obfuscate_names = obfuscate_names
+
+    def generate_block(self, block_instr: BlockInstructions) -> str:
+        """将 BlockInstructions 转换回代码"""
+        lines = []
+        for instr in block_instr.instructions:
+            code = self._generate_instruction(instr)
+            if code:
+                lines.append(code)
+        return "\n".join(lines)
+
+    def _generate_instruction(self, instr: Instruction) -> str:
+        """生成单条指令的代码"""
+        op = instr.op
+        args = instr.args
+
+        if op == OpCode.NOP:
+            return "do end"
+
+        elif op == OpCode.COMMENT:
+            return f"-- {args[0] if args else ''}"
+
+        elif op == OpCode.DECLARE:
+            return f"local {args[0] if args else '_'}"
+
+        elif op == OpCode.INIT:
+            return f"local {args[0] if args else '_'} = {instr.result or ''}"
+
+        elif op == OpCode.ASSIGN:
+            target = args[0] if args else '_'
+            return f"{target} = {instr.result or ''}"
+
+        elif op == OpCode.CALL:
+            func = args[0] if args else ''
+            params = ", ".join(str(a) for a in args[1:]) if len(args) > 1 else ''
+            return f"{func}({params})"
+
+        elif op == OpCode.CALL_ASSIGN:
+            return f"{instr.result or '_'} = {args[0] if args else ''}"
+
+        elif op == OpCode.RETURN:
+            return "return"
+
+        elif op == OpCode.RETURN_VAL:
+            return f"return {args[0] if args else ''}"
+
+        elif op == OpCode.JUMP:
+            return args[0] if args else "break"
+
+        elif op == OpCode.IF:
+            return f"if {args[0] if args else 'true'} then"
+
+        elif op == OpCode.THEN:
+            return "then"
+
+        elif op == OpCode.ELSE:
+            return "else"
+
+        elif op == OpCode.WHILE:
+            return f"while {args[0] if args else 'true'} do"
+
+        elif op == OpCode.FOR:
+            return args[0] if args else ""
+
+        elif op == OpCode.REPEAT:
+            return "repeat"
+
+        elif op == OpCode.UNTIL:
+            return f"until {args[0] if args else 'false'}"
+
+        elif op == OpCode.DO:
+            return "do"
+
+        elif op == OpCode.END:
+            return "end"
+
+        elif op == OpCode.FUNC_DEF:
+            name = args[0] if args else 'fn'
+            params = ", ".join(str(a) for a in args[1:]) if len(args) > 1 else ''
+            return f"function {name}({params})"
+
+        elif op == OpCode.FUNC_END:
+            return "end"
+
+        elif op == OpCode.EXPR:
+            return args[0] if args else ""
+
+        elif op == OpCode.ERROR:
+            msg = args[0] if args else ''
+            return f"error('{msg}')"
+
+        else:
+            return f"-- {op.value} {' '.join(str(a) for a in args)}"
+
+
+class InstructionLayer:
+    """
+    指令表示层
+
+    整合指令转换和生成功能，作为 CodeBlock 和最终代码之间的中间层。
+    """
+
+    def __init__(self, rng: random.Random | None = None):
+        self.rng = rng
+        self.converter = InstructionConverter(rng)
+        self.generator = InstructionGenerator()
+        self._block_instructions: dict[int, BlockInstructions] = {}
+
+    def process_blocks(self, blocks: list[CodeBlock]) -> dict[int, BlockInstructions]:
+        """处理所有 blocks，转换为指令表示"""
+        self._block_instructions = {}
+        for block in blocks:
+            instr = self.converter.convert_block(block)
+            self._block_instructions[block.block_id] = instr
+        return self._block_instructions
+
+    def get_instructions(self, block_id: int) -> BlockInstructions | None:
+        """获取指定 block 的指令"""
+        return self._block_instructions.get(block_id)
+
+    def get_all_instructions(self) -> list[BlockInstructions]:
+        """获取所有 block 的指令"""
+        return list(self._block_instructions.values())
+
+    def regenerate_block(self, block_id: int) -> str:
+        """从指令重新生成 block 代码"""
+        instr = self._block_instructions.get(block_id)
+        if instr is None:
+            return ""
+        return self.generator.generate_block(instr)
+
+    def regenerate_all_blocks(self, blocks: list[CodeBlock]) -> list[CodeBlock]:
+        """重新生成所有 blocks"""
+        result = []
+        for block in blocks:
+            new_content = self.regenerate_block(block.block_id)
+            new_block = CodeBlock(
+                block_id=block.block_id,
+                content=new_content,
+                block_type=block.block_type,
+                next_id=block.next_id,
+                branches=block.branches.copy() if block.branches else {},
+                auxiliary_paths=block.auxiliary_paths.copy() if block.auxiliary_paths else [],
+                dependencies=block.dependencies.copy() if block.dependencies else [],
+                metadata=block.metadata.copy() if block.metadata else {},
+            )
+            result.append(new_block)
+        return result
+
+    def get_statistics(self) -> dict:
+        """获取指令统计"""
+        total_instrs = sum(len(bi) for bi in self._block_instructions.values())
+        op_counts: dict[str, int] = {}
+
+        for bi in self._block_instructions.values():
+            for instr in bi.instructions:
+                op_name = instr.op.value
+                op_counts[op_name] = op_counts.get(op_name, 0) + 1
+
+        return {
+            "total_blocks": len(self._block_instructions),
+            "total_instructions": total_instrs,
+            "op_distribution": op_counts,
+        }
+
+
+def convert_blocks_to_instructions(
+    blocks: list[CodeBlock],
+    rng: random.Random | None = None,
+) -> tuple[dict[int, BlockInstructions], InstructionLayer]:
+    """
+    将 CodeBlock 列表转换为指令表示
+
+    Args:
+        blocks: 代码块列表
+        rng: 随机数生成器
+
+    Returns:
+        (block_id -> BlockInstructions 映射, InstructionLayer 实例)
+    """
+    layer = InstructionLayer(rng)
+    instructions = layer.process_blocks(blocks)
+    return instructions, layer
+
+
+# ===== 指令执行器 (Instruction Executor) =====
+
+
+@dataclass
+class ExecutionContext:
+    """
+    指令执行上下文
+
+    保存执行过程中的状态信息。
+    """
+    # 全局环境（模拟 Lua 全局表）
+    globals: dict[str, Any]
+
+    # 局部变量栈（当前作用域的变量）
+    locals: dict[str, Any]
+
+    # 调用栈
+    call_stack: list[dict]
+
+    # 返回值队列
+    return_values: list[Any]
+
+    # 当前执行状态
+    running: bool
+    error: str | None
+
+    # 程序计数器
+    pc: int
+
+    def __post_init__(self):
+        if self.globals is None:
+            self.globals = {}
+        if self.locals is None:
+            self.locals = {}
+        if self.call_stack is None:
+            self.call_stack = []
+        if self.return_values is None:
+            self.return_values = []
+        if self.running is None:
+            self.running = True
+        if self.error is None:
+            self.error = None
+        if self.pc is None:
+            self.pc = 0
+
+    def push_call(self, func_name: str, locals: dict) -> None:
+        """压入调用栈"""
+        self.call_stack.append({
+            "name": func_name,
+            "locals": locals,
+            "pc": self.pc
+        })
+
+    def pop_call(self) -> dict | None:
+        """弹出调用栈"""
+        if self.call_stack:
+            return self.call_stack.pop()
+        return None
+
+    def get_current_locals(self) -> dict:
+        """获取当前局部变量（合并调用栈）"""
+        result = {}
+        for frame in reversed(self.call_stack):
+            result.update(frame.get("locals", {}))
+        result.update(self.locals)
+        return result
+
+    def set_local(self, name: str, value: Any) -> None:
+        """设置局部变量"""
+        self.locals[name] = value
+
+    def get_local(self, name: str) -> Any:
+        """获取局部变量"""
+        return self.locals.get(name)
+
+    def set_global(self, name: str, value: Any) -> None:
+        """设置全局变量"""
+        self.globals[name] = value
+
+    def get_global(self, name: str) -> Any:
+        """获取全局变量"""
+        return self.globals.get(name)
+
+    def resolve_value(self, name: str) -> Any:
+        """解析变量值（先局部后全局）"""
+        if name in self.locals:
+            return self.locals[name]
+        return self.globals.get(name)
+
+    def set_value(self, name: str, value: Any) -> None:
+        """设置变量值"""
+        if name in self.locals:
+            self.locals[name] = value
+        else:
+            self.globals[name] = value
+
+
+@dataclass
+class ExecutionResult:
+    """执行结果"""
+    success: bool
+    return_value: Any = None
+    error: str | None = None
+    executed_instructions: int = 0
+    final_context: ExecutionContext | None = None
+
+
+class InstructionExecutor:
+    """
+    指令执行器
+
+    使用字典分发方式执行指令序列，验证代码逻辑。
+    """
+
+    def __init__(self, debug: bool = False):
+        self.debug = debug
+        self.context: ExecutionContext | None = None
+
+        # 指令处理器映射（字典分发）
+        self._handlers: dict[OpCode, callable] = {
+            OpCode.NOP: self._handle_nop,
+            OpCode.DECLARE: self._handle_declare,
+            OpCode.INIT: self._handle_init,
+            OpCode.ASSIGN: self._handle_assign,
+            OpCode.CALL: self._handle_call,
+            OpCode.CALL_ASSIGN: self._handle_call_assign,
+            OpCode.RETURN: self._handle_return,
+            OpCode.RETURN_VAL: self._handle_return_val,
+            OpCode.JUMP: self._handle_jump,
+            OpCode.JUMP_IF: self._handle_jump_if,
+            OpCode.DO: self._handle_do,
+            OpCode.END: self._handle_end,
+            OpCode.IF: self._handle_if,
+            OpCode.THEN: self._handle_then,
+            OpCode.ELSE: self._handle_else,
+            OpCode.ELSEIF: self._handle_elseif,
+            OpCode.WHILE: self._handle_while,
+            OpCode.FOR: self._handle_for,
+            OpCode.REPEAT: self._handle_repeat,
+            OpCode.UNTIL: self._handle_until,
+            OpCode.FUNC_DEF: self._handle_func_def,
+            OpCode.FUNC_END: self._handle_func_end,
+            OpCode.EXPR: self._handle_expr,
+            OpCode.ERROR: self._handle_error,
+            OpCode.TABLE_NEW: self._handle_table_new,
+            OpCode.TABLE_SET: self._handle_table_set,
+        }
+
+    def execute(
+        self,
+        instructions: list[Instruction],
+        globals: dict[str, Any] | None = None,
+        initial_locals: dict[str, Any] | None = None,
+    ) -> ExecutionResult:
+        """
+        执行指令序列
+
+        Args:
+            instructions: 指令列表
+            globals: 全局环境
+            initial_locals: 初始局部变量
+
+        Returns:
+            ExecutionResult
+        """
+        # 初始化上下文
+        self.context = ExecutionContext(
+            globals=globals or {},
+            locals=initial_locals or {},
+            call_stack=[],
+            return_values=[],
+            running=True,
+            error=None,
+            pc=0
+        )
+
+        executed = 0
+        pc = 0
+
+        # 主循环
+        while pc < len(instructions) and self.context.running:
+            instr = instructions[pc]
+
+            if self.debug:
+                print(f"  PC={pc}: {instr}")
+
+            # 获取处理器
+            handler = self._handlers.get(instr.op)
+
+            if handler:
+                result = handler(instr)
+                if isinstance(result, dict):
+                    # 控制流指令可能返回新的 PC
+                    new_pc = result.get("pc")
+                    if new_pc is not None:
+                        pc = new_pc
+                    else:
+                        pc += 1
+
+                    # 检查是否需要返回
+                    if result.get("return"):
+                        break
+                else:
+                    pc += 1
+            else:
+                if self.debug:
+                    print(f"    Unsupported opcode: {instr.op}")
+                pc += 1
+
+            executed += 1
+
+            # 防止无限循环
+            if executed > 10000:
+                self.context.error = "Execution limit exceeded"
+                break
+
+        # 收集返回值
+        return_value = None
+        if self.context.return_values:
+            return_value = self.context.return_values[0]
+
+        return ExecutionResult(
+            success=self.context.error is None,
+            return_value=return_value,
+            error=self.context.error,
+            executed_instructions=executed,
+            final_context=self.context
+        )
+
+    def _handle_nop(self, instr: Instruction) -> dict:
+        """处理空操作"""
+        return {}
+
+    def _handle_declare(self, instr: Instruction) -> dict:
+        """处理变量声明"""
+        if len(instr.args) > 0:
+            var_name = instr.args[0]
+            self.context.set_local(var_name, None)
+        return {}
+
+    def _handle_init(self, instr: Instruction) -> dict:
+        """处理变量初始化"""
+        if len(instr.args) > 0:
+            var_name = instr.args[0]
+            value = self._eval_expr(instr.result)
+            self.context.set_local(var_name, value)
+        return {}
+
+    def _handle_assign(self, instr: Instruction) -> dict:
+        """处理赋值"""
+        if len(instr.args) > 0:
+            var_name = instr.args[0]
+            value = self._eval_expr(instr.result)
+            self.context.set_value(var_name, value)
+        return {}
+
+    def _handle_call(self, instr: Instruction) -> dict:
+        """处理函数调用"""
+        if len(instr.args) > 0:
+            func_name = instr.args[0]
+            args = [self._eval_expr(a) for a in instr.args[1:]]
+
+            # 查找函数
+            func = self.context.resolve_value(func_name)
+
+            if callable(func):
+                try:
+                    result = func(*args)
+                    if self.context.return_values:
+                        self.context.return_values.append(result)
+                except Exception as e:
+                    self.context.error = str(e)
+            elif func is not None:
+                self.context.error = f"'{func_name}' is not callable"
+        return {}
+
+    def _handle_call_assign(self, instr: Instruction) -> dict:
+        """处理调用赋值"""
+        if instr.args and instr.result:
+            # 解析调用表达式
+            call_expr = instr.args[0]
+            result = self._eval_expr(call_expr)
+            self.context.set_local(instr.result, result)
+        return {}
+
+    def _handle_return(self, instr: Instruction) -> dict:
+        """处理 return"""
+        self.context.return_values.append(None)
+        return {"return": True}
+
+    def _handle_return_val(self, instr: Instruction) -> dict:
+        """处理返回值"""
+        if instr.args:
+            value = self._eval_expr(instr.args[0])
+            self.context.return_values.append(value)
+        return {"return": True}
+
+    def _handle_jump(self, instr: Instruction) -> dict:
+        """处理跳转"""
+        return {}
+
+    def _handle_jump_if(self, instr: Instruction) -> dict:
+        """处理条件跳转"""
+        return {}
+
+    def _handle_do(self, instr: Instruction) -> dict:
+        """处理 do"""
+        return {}
+
+    def _handle_end(self, instr: Instruction) -> dict:
+        """处理 end"""
+        return {}
+
+    def _handle_if(self, instr: Instruction) -> dict:
+        """处理 if"""
+        if len(instr.args) > 0:
+            cond = self._eval_expr(instr.args[0])
+            self.context.set_local("_if_cond", bool(cond))
+        return {}
+
+    def _handle_then(self, instr: Instruction) -> dict:
+        """处理 then"""
+        return {}
+
+    def _handle_else(self, instr: Instruction) -> dict:
+        """处理 else"""
+        return {}
+
+    def _handle_elseif(self, instr: Instruction) -> dict:
+        """处理 elseif"""
+        return {}
+
+    def _handle_while(self, instr: Instruction) -> dict:
+        """处理 while"""
+        if len(instr.args) > 0:
+            cond = self._eval_expr(instr.args[0])
+            self.context.set_local("_while_cond", bool(cond))
+        return {}
+
+    def _handle_for(self, instr: Instruction) -> dict:
+        """处理 for"""
+        return {}
+
+    def _handle_repeat(self, instr: Instruction) -> dict:
+        """处理 repeat"""
+        return {}
+
+    def _handle_until(self, instr: Instruction) -> dict:
+        """处理 until"""
+        return {}
+
+    def _handle_func_def(self, instr: Instruction) -> dict:
+        """处理函数定义"""
+        if len(instr.args) > 0:
+            func_name = instr.args[0]
+            params = instr.args[1:] if len(instr.args) > 1 else []
+
+            # 创建函数闭包
+            def make_func(name, p, body_instrs):
+                def func(*args):
+                    # 设置参数为局部变量
+                    locals_dict = dict(zip(p, args))
+                    # 递归执行
+                    sub_executor = InstructionExecutor()
+                    result = sub_executor.execute(
+                        body_instrs,
+                        globals=self.context.globals,
+                        initial_locals=locals_dict
+                    )
+                    if result.return_values:
+                        return result.return_values[0]
+                    return None
+                return func
+
+            # 存储函数定义（简化处理）
+            self.context.set_global(func_name, lambda *a: None)
+        return {}
+
+    def _handle_func_end(self, instr: Instruction) -> dict:
+        """处理函数结束"""
+        return {}
+
+    def _handle_expr(self, instr: Instruction) -> dict:
+        """处理表达式"""
+        if instr.args:
+            self._eval_expr(instr.args[0])
+        return {}
+
+    def _handle_error(self, instr: Instruction) -> dict:
+        """处理 error"""
+        msg = instr.args[0] if instr.args else "error"
+        self.context.error = msg
+        self.context.running = False
+        return {}
+
+    def _handle_table_new(self, instr: Instruction) -> dict:
+        """处理新建表"""
+        return {"result": {}}
+
+    def _handle_table_set(self, instr: Instruction) -> dict:
+        """处理设置表元素"""
+        return {}
+
+    def _eval_expr(self, expr: str) -> Any:
+        """
+        简单表达式求值
+
+        支持基本算术、变量引用、字符串。
+        """
+        if expr is None:
+            return None
+
+        expr = str(expr).strip()
+
+        # 字符串字面量
+        if (expr.startswith('"') and expr.endswith('"')) or \
+           (expr.startswith("'") and expr.endswith("'")):
+            return expr[1:-1]
+
+        # 数字字面量
+        try:
+            if "." in expr:
+                return float(expr)
+            return int(expr)
+        except ValueError:
+            pass
+
+        # nil
+        if expr == "nil":
+            return None
+
+        # true/false
+        if expr == "true":
+            return True
+        if expr == "false":
+            return False
+
+        # 变量引用
+        return self.context.resolve_value(expr)
+
+
+class InstructionVerifier:
+    """
+    指令验证器
+
+    用于验证指令执行结果与预期一致。
+    """
+
+    def __init__(self, debug: bool = False):
+        self.debug = debug
+        self.executor = InstructionExecutor(debug=debug)
+
+    def verify_block(
+        self,
+        block: CodeBlock,
+        expected_locals: dict[str, Any] | None = None,
+        expected_return: Any = None,
+    ) -> tuple[bool, str]:
+        """
+        验证单个 block 的执行结果
+
+        Args:
+            block: 要验证的 CodeBlock
+            expected_locals: 预期的局部变量
+            expected_return: 预期的返回值
+
+        Returns:
+            (success, message)
+        """
+        # 转换 block 为指令
+        converter = InstructionConverter()
+        block_instr = converter.convert_block(block)
+
+        # 执行
+        result = self.executor.execute(block_instr.instructions)
+
+        if not result.success:
+            return False, f"Execution failed: {result.error}"
+
+        # 验证返回值
+        if expected_return is not None:
+            if result.return_value != expected_return:
+                return False, f"Return value mismatch: got {result.return_value}, expected {expected_return}"
+
+        # 验证局部变量
+        if expected_locals and result.final_context:
+            current_locals = result.final_context.get_current_locals()
+            for name, expected_val in expected_locals.items():
+                actual_val = current_locals.get(name)
+                if actual_val != expected_val:
+                    return False, f"Variable '{name}' mismatch: got {actual_val}, expected {expected_val}"
+
+        return True, "Verification passed"
+
+    def verify_instructions(
+        self,
+        instructions: list[Instruction],
+        expected_return: Any = None,
+    ) -> tuple[bool, str, Any]:
+        """
+        验证指令序列的执行结果
+
+        Returns:
+            (success, message, return_value)
+        """
+        result = self.executor.execute(instructions)
+
+        if not result.success:
+            return False, f"Execution failed: {result.error}", None
+
+        if expected_return is not None:
+            if result.return_value != expected_return:
+                return False, f"Return mismatch: got {result.return_value}, expected {expected_return}", result.return_value
+
+        return True, "OK", result.return_value
+
+
+def create_simple_test() -> None:
+    """
+    创建简单测试示例
+
+    演示如何使用指令执行器验证代码逻辑。
+    """
+    print("=" * 50)
+    print("Instruction Executor Test")
+    print("=" * 50)
+
+    # 测试 1: 简单变量赋值
+    print("\n[Test 1] Simple variable assignment")
+    block1 = CodeBlock(
+        block_id=1,
+        content="local a = 10\nlocal b = 20\na = a + b\nreturn a",
+        block_type="statement"
+    )
+
+    verifier = InstructionVerifier()
+    success, msg = verifier.verify_block(block1, expected_return=30)
+    print(f"  Result: {msg}")
+
+    # 测试 2: 条件分支
+    print("\n[Test 2] Conditional branch")
+    block2 = CodeBlock(
+        block_id=2,
+        content="local x = 5\nif x > 3 then\n    x = 10\nend\nreturn x",
+        block_type="control_struct"
+    )
+
+    success, msg = verifier.verify_block(block2, expected_return=10)
+    print(f"  Result: {msg}")
+
+    # 测试 3: 函数定义和调用
+    print("\n[Test 3] Function definition")
+    block3 = CodeBlock(
+        block_id=3,
+        content="local function add(a, b)\n    return a + b\nend\nlocal result = add(3, 4)\nreturn result",
+        block_type="function_def"
+    )
+
+    success, msg = verifier.verify_block(block3, expected_return=7)
+    print(f"  Result: {msg}")
+
+    # 测试 4: 表操作
+    print("\n[Test 4] Table operations")
+    block4 = CodeBlock(
+        block_id=4,
+        content="local t = {}\nt.x = 10\nt.y = 20\nreturn t.x + t.y",
+        block_type="statement"
+    )
+
+    # 由于表操作简化处理，这个测试可能需要根据实现调整
+    print("  Result: Table operations require extended executor support")
+
+    print("\n" + "=" * 50)
+    print("Test Complete")
+    print("=" * 50)
+
+
+# ===== 简化的指令解释执行器 =====
+
+
+@dataclass
+class SimpleContext:
+    """
+    简单的执行上下文
+
+    使用 dict 保存变量状态。
+    """
+    locals: dict[str, Any] = None
+    globals: dict[str, Any] = None
+    stack: list[Any] = None
+    return_value: Any = None
+    pc: int = 0
+    running: bool = True
+
+    def __post_init__(self):
+        self.locals = self.locals or {}
+        self.globals = self.globals or {}
+        self.stack = self.stack or []
+
+    def get(self, name: str) -> Any:
+        """获取变量值"""
+        if name in self.locals:
+            return self.locals[name]
+        if name in self.globals:
+            return self.globals[name]
+        return None
+
+    def set(self, name: str, value: Any) -> None:
+        """设置变量值"""
+        self.locals[name] = value
+
+    def push(self, value: Any) -> None:
+        """压入栈"""
+        self.stack.append(value)
+
+    def pop(self) -> Any:
+        """弹出栈"""
+        if self.stack:
+            return self.stack.pop()
+        return None
+
+
+@dataclass
+class SimpleResult:
+    """执行结果"""
+    success: bool
+    return_value: Any = None
+    error: str | None = None
+    context: SimpleContext | None = None
+    executed_count: int = 0
+
+
+def _eval_simple_expr(expr: str, ctx: SimpleContext) -> Any:
+    """
+    简单表达式求值
+
+    支持：数字、字符串、nil、true/false、变量引用。
+    不支持复杂算术或函数调用。
+    """
+    if expr is None:
+        return None
+
+    expr = str(expr).strip()
+
+    # 字符串字面量
+    if (expr.startswith('"') and expr.endswith('"')) or \
+       (expr.startswith("'") and expr.endswith("'")):
+        return expr[1:-1]
+
+    # 数字字面量
+    try:
+        if "." in expr:
+            return float(expr)
+        return int(expr)
+    except ValueError:
+        pass
+
+    # 布尔和 nil
+    if expr == "nil":
+        return None
+    if expr == "true":
+        return True
+    if expr == "false":
+        return False
+
+    # 变量引用
+    return ctx.get(expr)
+
+
+def run_instructions(instructions: list[Instruction], debug: bool = False) -> SimpleResult:
+    """
+    简单指令解释执行器
+
+    逐条处理指令序列，使用字典分发执行逻辑。
+
+    Args:
+        instructions: 指令列表
+        debug: 是否打印调试信息
+
+    Returns:
+        SimpleResult: 执行结果
+    """
+    ctx = SimpleContext()
+    pc = 0
+    executed = 0
+
+    # 指令处理器字典
+    handlers = {
+        OpCode.NOP: lambda i, c: {},
+
+        OpCode.DECLARE: lambda i, c: c.set(i.args[0], None) if i.args else None,
+
+        OpCode.INIT: lambda i, c: c.set(i.args[0], _eval_simple_expr(i.result, c)) if i.args else None,
+
+        OpCode.ASSIGN: lambda i, c: c.set(i.args[0], _eval_simple_expr(i.result, c)) if i.args else None,
+
+        OpCode.CALL: lambda i, c: (
+            _eval_simple_expr(i.args[0], c) if i.args else None
+        ) or (c.push(None)),
+
+        OpCode.RETURN: lambda i, c: (setattr(c, 'return_value', None), setattr(c, 'running', False)),
+
+        OpCode.RETURN_VAL: lambda i, c: (
+            setattr(c, 'return_value', _eval_simple_expr(i.args[0], c) if i.args else None),
+            setattr(c, 'running', False)
+        ),
+
+        OpCode.IF: lambda i, c: c.set("_cond", _eval_simple_expr(i.args[0], c)) if i.args else None,
+
+        OpCode.WHILE: lambda i, c: c.set("_while_cond", _eval_simple_expr(i.args[0], c)) if i.args else None,
+
+        OpCode.EXPR: lambda i, c: _eval_simple_expr(i.args[0], c) if i.args else None,
+
+        OpCode.ERROR: lambda i, c: (
+            setattr(c, 'running', False),
+            setattr(c, 'return_value', f"error: {i.args[0] if i.args else 'unknown'}")
+        ),
+
+        OpCode.DO: lambda i, c: {},
+        OpCode.END: lambda i, c: {},
+        OpCode.THEN: lambda i, c: {},
+        OpCode.ELSE: lambda i, c: {},
+        OpCode.ELSEIF: lambda i, c: {},
+        OpCode.FOR: lambda i, c: {},
+        OpCode.REPEAT: lambda i, c: {},
+        OpCode.UNTIL: lambda i, c: {},
+        OpCode.BREAK: lambda i, c: {},
+        OpCode.CONTINUE: lambda i, c: {},
+        OpCode.FUNC_DEF: lambda i, c: {},
+        OpCode.FUNC_END: lambda i, c: {},
+        OpCode.TABLE_NEW: lambda i, c: c.push({}),
+        OpCode.TABLE_SET: lambda i, c: None,
+        OpCode.TABLE_GET: lambda i, c: None,
+        OpCode.LABEL: lambda i, c: {},
+        OpCode.COMMENT: lambda i, c: {},
+        OpCode.JUMP: lambda i, c: {},
+        OpCode.JUMP_IF: lambda i, c: {},
+        OpCode.CALL_ASSIGN: lambda i, c: (
+            c.set(i.result, _eval_simple_expr(i.args[0], c)) if i.result and i.args else None
+        ),
+
+        OpCode.IDENTITY: lambda i, c: (
+            c.set(i.args[0], _eval_simple_expr(i.args[0], c)) if i.args else None
+        ),
+        OpCode.DUMMY: lambda i, c: {},
+        OpCode.ASSERT: lambda i, c: {},
+    }
+
+    # 主循环
+    while pc < len(instructions) and ctx.running:
+        instr = instructions[pc]
+
+        if debug:
+            print(f"  PC={pc}: {instr.op.value} {instr.args} -> {instr.result}")
+
+        handler = handlers.get(instr.op)
+        if handler:
+            try:
+                handler(instr, ctx)
+            except Exception as e:
+                return SimpleResult(
+                    success=False,
+                    error=f"Error at PC={pc}: {e}",
+                    executed_count=executed
+                )
+        else:
+            if debug:
+                print(f"    Unsupported: {instr.op.value}")
+
+        pc += 1
+        executed += 1
+
+        # 防止无限循环
+        if executed > 1000:
+            return SimpleResult(
+                success=False,
+                error="Execution limit exceeded",
+                context=ctx,
+                executed_count=executed
+            )
+
+    return SimpleResult(
+        success=True,
+        return_value=ctx.return_value,
+        context=ctx,
+        executed_count=executed
+    )
+
+
+def run_from_block(block: CodeBlock, debug: bool = False) -> SimpleResult:
+    """
+    从 CodeBlock 执行指令
+
+    Args:
+        block: 代码块
+        debug: 是否打印调试信息
+
+    Returns:
+        SimpleResult: 执行结果
+    """
+    converter = InstructionConverter()
+    block_instr = converter.convert_block(block)
+    return run_instructions(block_instr.instructions, debug=debug)
+
+
+# 简化测试函数
+def simple_test():
+    """
+    简单测试示例
+
+    展示如何将代码转换为指令并执行。
+    """
+    print("=" * 50)
+    print("Simple Instruction Executor Test")
+    print("=" * 50)
+
+    # 测试 1: 变量赋值
+    print("\n[Test 1] Variable assignment")
+    block1 = CodeBlock(
+        block_id=1,
+        content="local a = 10\nlocal b = 20\na = a + b\nreturn a",
+        block_type="statement"
+    )
+    result1 = run_from_block(block1, debug=False)
+    print(f"  Expected: 30, Got: {result1.return_value}, Success: {result1.success}")
+
+    # 测试 2: 条件分支
+    print("\n[Test 2] Conditional branch")
+    block2 = CodeBlock(
+        block_id=2,
+        content="local x = 5\nif x > 3 then\n    x = 10\nend\nreturn x",
+        block_type="control_struct"
+    )
+    result2 = run_from_block(block2, debug=False)
+    print(f"  Expected: 10, Got: {result2.return_value}, Success: {result2.success}")
+
+    # 测试 3: 打印调试信息
+    print("\n[Test 3] Debug execution")
+    block3 = CodeBlock(
+        block_id=3,
+        content="local a = 1\nlocal b = 2\nreturn a + b",
+        block_type="statement"
+    )
+    print("  Instructions:")
+    result3 = run_from_block(block3, debug=True)
+    print(f"  Result: {result3.return_value}")
+
+    # 测试 4: 恒等变换（不影响结果）
+    print("\n[Test 4] Identity transformation")
+    instr_list = [
+        Instruction(OpCode.DECLARE, ["x"]),
+        Instruction(OpCode.INIT, ["x"], None, "5"),
+        Instruction(OpCode.IDENTITY, ["x"]),
+        Instruction(OpCode.RETURN_VAL, ["x"]),
+    ]
+    result4 = run_instructions(instr_list)
+    print(f"  Expected: 5, Got: {result4.return_value}, Success: {result4.success}")
+
+    print("\n" + "=" * 50)
+    print("Test Complete")
+    print("=" * 50)
+
+
+# ===== 指令处理器基类和注册系统 =====
+
+
+class InstructionHandler:
+    """
+    指令处理器基类
+
+    所有指令处理器都继承此类，便于扩展和管理。
+    """
+
+    opcode: OpCode = None
+
+    def handle(self, instr: Instruction, context: ExecutionContext) -> dict:
+        """
+        处理指令
+
+        Args:
+            instr: 指令
+            context: 执行上下文
+
+        Returns:
+            控制流指令可能返回 {"pc": new_pc} 或 {"return": True}
+            其他返回 {}
+        """
+        raise NotImplementedError
+
+    def generate(self, instr: Instruction) -> str:
+        """
+        生成代码
+
+        Args:
+            instr: 指令
+
+        Returns:
+            Lua 代码字符串
+        """
+        raise NotImplementedError
+
+
+class NopHandler(InstructionHandler):
+    """空操作处理器"""
+    opcode = OpCode.NOP
+
+    def handle(self, instr: Instruction, context: ExecutionContext) -> dict:
+        return {}
+
+    def generate(self, instr: Instruction) -> str:
+        return "do end"
+
+
+class DeclareHandler(InstructionHandler):
+    """变量声明处理器"""
+    opcode = OpCode.DECLARE
+
+    def handle(self, instr: Instruction, context: ExecutionContext) -> dict:
+        if instr.args:
+            context.set_local(instr.args[0], None)
+        return {}
+
+    def generate(self, instr: Instruction) -> str:
+        var = instr.args[0] if instr.args else "_"
+        return f"local {var}"
+
+
+class InitHandler(InstructionHandler):
+    """变量初始化处理器"""
+    opcode = OpCode.INIT
+
+    def handle(self, instr: Instruction, context: ExecutionContext) -> dict:
+        if instr.args:
+            var_name = instr.args[0]
+            value = self._eval(context, instr.result)
+            context.set_local(var_name, value)
+        return {}
+
+    def generate(self, instr: Instruction) -> str:
+        var = instr.args[0] if instr.args else "_"
+        val = instr.result or ""
+        return f"local {var} = {val}"
+
+    def _eval(self, context, expr: str) -> Any:
+        if expr is None:
+            return None
+        expr = str(expr).strip()
+        try:
+            if "." in expr:
+                return float(expr)
+            return int(expr)
+        except ValueError:
+            pass
+        if expr in ("true", "false", "nil"):
+            return {"true": True, "false": False, "nil": None}[expr]
+        return context.resolve_value(expr) if hasattr(context, "resolve_value") else None
+
+
+class AssignHandler(InstructionHandler):
+    """赋值处理器"""
+    opcode = OpCode.ASSIGN
+
+    def handle(self, instr: Instruction, context: ExecutionContext) -> dict:
+        if instr.args:
+            var_name = instr.args[0]
+            value = self._eval(context, instr.result)
+            context.set_value(var_name, value)
+        return {}
+
+    def generate(self, instr: Instruction) -> str:
+        target = instr.args[0] if instr.args else "_"
+        return f"{target} = {instr.result or ''}"
+
+    def _eval(self, context, expr: str) -> Any:
+        if expr is None:
+            return None
+        expr = str(expr).strip()
+        try:
+            if "." in expr:
+                return float(expr)
+            return int(expr)
+        except ValueError:
+            pass
+        if expr in ("true", "false", "nil"):
+            return {"true": True, "false": False, "nil": None}[expr]
+        return context.resolve_value(expr) if hasattr(context, "resolve_value") else None
+
+
+class CallHandler(InstructionHandler):
+    """函数调用处理器"""
+    opcode = OpCode.CALL
+
+    def handle(self, instr: Instruction, context: ExecutionContext) -> dict:
+        if instr.args:
+            func_name = instr.args[0]
+            args = [self._eval(context, a) for a in instr.args[1:]]
+            func = context.resolve_value(func_name) if hasattr(context, "resolve_value") else None
+            if callable(func):
+                try:
+                    result = func(*args)
+                    if hasattr(context, "return_values"):
+                        context.return_values.append(result)
+                except Exception:
+                    pass
+        return {}
+
+    def generate(self, instr: Instruction) -> str:
+        if not instr.args:
+            return "()"
+        func = instr.args[0]
+        params = ", ".join(str(a) for a in instr.args[1:]) if len(instr.args) > 1 else ""
+        return f"{func}({params})"
+
+    def _eval(self, context, expr: str) -> Any:
+        if expr is None:
+            return None
+        expr = str(expr).strip()
+        try:
+            if "." in expr:
+                return float(expr)
+            return int(expr)
+        except ValueError:
+            pass
+        if expr in ("true", "false", "nil"):
+            return {"true": True, "false": False, "nil": None}[expr]
+        return context.resolve_value(expr) if hasattr(context, "resolve_value") else None
+
+
+class ReturnHandler(InstructionHandler):
+    """返回处理器"""
+    opcode = OpCode.RETURN
+
+    def handle(self, instr: Instruction, context: ExecutionContext) -> dict:
+        if hasattr(context, "return_values"):
+            context.return_values.append(None)
+        return {"return": True}
+
+    def generate(self, instr: Instruction) -> str:
+        return "return"
+
+
+class ReturnValHandler(InstructionHandler):
+    """返回值处理器"""
+    opcode = OpCode.RETURN_VAL
+
+    def handle(self, instr: Instruction, context: ExecutionContext) -> dict:
+        if hasattr(context, "return_values") and instr.args:
+            value = self._eval(context, instr.args[0])
+            context.return_values.append(value)
+        return {"return": True}
+
+    def generate(self, instr: Instruction) -> str:
+        val = instr.args[0] if instr.args else ""
+        return f"return {val}"
+
+    def _eval(self, context, expr: str) -> Any:
+        if expr is None:
+            return None
+        expr = str(expr).strip()
+        try:
+            if "." in expr:
+                return float(expr)
+            return int(expr)
+        except ValueError:
+            pass
+        if expr in ("true", "false", "nil"):
+            return {"true": True, "false": False, "nil": None}[expr]
+        return context.resolve_value(expr) if hasattr(context, "resolve_value") else None
+
+
+class IdentityHandler(InstructionHandler):
+    """恒等变换处理器（辅助指令）"""
+    opcode = OpCode.IDENTITY
+
+    def handle(self, instr: Instruction, context: ExecutionContext) -> dict:
+        # 恒等变换不影响执行状态
+        return {}
+
+    def generate(self, instr: Instruction) -> str:
+        var = instr.args[0] if instr.args else "_x"
+        patterns = [
+            f"local {var} = {var}",
+            f"local {var} = ({var})",
+            f"local {var} = 0 + {var}",
+            f"local {var} = {var} * 1",
+        ]
+        return patterns[0]
+
+
+class DummyHandler(InstructionHandler):
+    """哑操作处理器（辅助指令）"""
+    opcode = OpCode.DUMMY
+
+    def handle(self, instr: Instruction, context: ExecutionContext) -> dict:
+        return {}
+
+    def generate(self, instr: Instruction) -> str:
+        return "do end"
+
+
+class HandlerRegistry:
+    """
+    指令处理器注册表
+
+    集中管理所有指令处理器。
+    """
+    _handlers: dict[OpCode, InstructionHandler] = {}
+
+    @classmethod
+    def register(cls, handler: InstructionHandler) -> None:
+        """注册处理器"""
+        if handler.opcode:
+            cls._handlers[handler.opcode] = handler
+
+    @classmethod
+    def get(cls, opcode: OpCode) -> InstructionHandler | None:
+        """获取处理器"""
+        return cls._handlers.get(opcode)
+
+    @classmethod
+    def get_all(cls) -> dict[OpCode, InstructionHandler]:
+        """获取所有处理器"""
+        return cls._handlers.copy()
+
+
+# 注册默认处理器
+def _register_default_handlers() -> None:
+    """注册默认处理器"""
+    HandlerRegistry.register(NopHandler())
+    HandlerRegistry.register(DeclareHandler())
+    HandlerRegistry.register(InitHandler())
+    HandlerRegistry.register(AssignHandler())
+    HandlerRegistry.register(CallHandler())
+    HandlerRegistry.register(ReturnHandler())
+    HandlerRegistry.register(ReturnValHandler())
+    HandlerRegistry.register(IdentityHandler())
+    HandlerRegistry.register(DummyHandler())
+
+
+_register_default_handlers()
+
+
+# ===== 指令变换器 =====
+
+
+class InstructionTransform:
+    """
+    指令变换基类
+
+    所有指令变换都继承此类。
+    """
+
+    name: str = "base"
+
+    def transform(self, instructions: list[Instruction]) -> list[Instruction]:
+        """
+        变换指令序列
+
+        Args:
+            instructions: 原始指令序列
+
+        Returns:
+            变换后的指令序列
+        """
+        raise NotImplementedError
+
+
+class IdentityTransform(InstructionTransform):
+    """
+    恒等变换
+
+    不改变指令序列，用于测试。
+    """
+    name = "identity"
+
+    def transform(self, instructions: list[Instruction]) -> list[Instruction]:
+        return instructions.copy()
+
+
+class ReorderTransform(InstructionTransform):
+    """
+    指令重排变换
+
+    按操作码类型分组重排指令。
+    """
+    name = "reorder"
+
+    def transform(self, instructions: list[Instruction]) -> list[Instruction]:
+        # 按类别分组
+        grouped: dict[str, list[Instruction]] = {}
+        for instr in instructions:
+            category = OpCodeRegistry.get(instr.op.value).category if OpCodeRegistry.get(instr.op.value) else "other"
+            if category not in grouped:
+                grouped[category] = []
+            grouped[category].append(instr)
+
+        # 重新组合
+        result = []
+        for category in ["assignment", "call", "expression", "control_flow", "table", "function", "special", "auxiliary"]:
+            if category in grouped:
+                result.extend(grouped[category])
+
+        return result
+
+
+class InsertAuxiliaryTransform(InstructionTransform):
+    """
+    插入辅助指令变换
+
+    在指令序列中插入恒等变换或哑操作。
+    """
+    name = "insert_auxiliary"
+
+    def __init__(self, rng: random.Random | None = None, probability: float = 0.3):
+        self.rng = rng
+        self.probability = probability
+
+    def transform(self, instructions: list[Instruction]) -> list[Instruction]:
+        result = []
+        counter = [0]
+
+        for instr in instructions:
+            result.append(instr)
+
+            # 根据概率插入辅助指令
+            if self.rng and self.rng.random() < self.probability:
+                aux_instr = self._create_auxiliary(counter)
+                if aux_instr:
+                    result.append(aux_instr)
+
+        return result
+
+    def _create_auxiliary(self, counter: list[int]) -> Instruction | None:
+        """创建辅助指令"""
+        if not self.rng:
+            return Instruction(OpCode.NOP)
+
+        aux_types = [OpCode.IDENTITY, OpCode.DUMMY, OpCode.NOP]
+        chosen = self.rng.choice(aux_types)
+
+        if chosen == OpCode.IDENTITY:
+            var = f"_t{counter[0]}"
+            counter[0] += 1
+            return Instruction(OpCode.IDENTITY, [var])
+        elif chosen == OpCode.DUMMY:
+            return Instruction(OpCode.DUMMY)
+        else:
+            return Instruction(OpCode.NOP)
+
+
+class RemoveNopTransform(InstructionTransform):
+    """
+    移除空操作变换
+
+    移除指令序列中的 NOP 指令。
+    """
+    name = "remove_nop"
+
+    def transform(self, instructions: list[Instruction]) -> list[Instruction]:
+        return [instr for instr in instructions if instr.op != OpCode.NOP]
+
+
+class CollectStatsTransform(InstructionTransform):
+    """
+    收集统计信息变换
+
+    不改变指令序列，但收集操作码分布信息。
+    """
+    name = "collect_stats"
+
+    def __init__(self):
+        self.stats: dict[str, int] = {}
+
+    def transform(self, instructions: list[Instruction]) -> list[Instruction]:
+        self.stats = {}
+        for instr in instructions:
+            op_name = instr.op.value
+            self.stats[op_name] = self.stats.get(op_name, 0) + 1
+        return instructions.copy()
+
+    def get_stats(self) -> dict[str, int]:
+        return self.stats.copy()
+
+
+class InstructionTransformer:
+    """
+    指令变换器
+
+    管理多个变换器，按顺序应用。
+    """
+
+    def __init__(self, rng: random.Random | None = None):
+        self.rng = rng
+        self.transforms: list[InstructionTransform] = []
+
+    def add_transform(self, transform: InstructionTransform) -> 'InstructionTransformer':
+        """添加变换器"""
+        self.transforms.append(transform)
+        return self
+
+    def transform(self, instructions: list[Instruction]) -> list[Instruction]:
+        """应用所有变换"""
+        result = instructions
+        for t in self.transforms:
+            result = t.transform(result)
+        return result
+
+    def transform_block(self, block_instr: BlockInstructions) -> BlockInstructions:
+        """变换单个 block 的指令"""
+        new_instructions = self.transform(block_instr.instructions.copy())
+        return BlockInstructions(
+            block_id=block_instr.block_id,
+            instructions=new_instructions,
+            block_type=block_instr.block_type
+        )
+
+    @classmethod
+    def create_default(cls, rng: random.Random | None = None) -> 'InstructionTransformer':
+        """创建默认变换器"""
+        transformer = cls(rng)
+        transformer.add_transform(RemoveNopTransform())
+        return transformer
+
+    @classmethod
+    def create_with_auxiliary(cls, rng: random.Random | None = None,
+                              probability: float = 0.2) -> 'InstructionTransformer':
+        """创建带辅助指令的变换器"""
+        transformer = cls(rng)
+        transformer.add_transform(RemoveNopTransform())
+        transformer.add_transform(InsertAuxiliaryTransform(rng, probability))
+        return transformer
+
+
 class BlockTypeLegacy(Enum):
     """Block 类型分类"""
     STATEMENT = "statement"
@@ -1772,14 +3838,16 @@ def transform(source: str, watermark: str) -> str:
     randomize_algorithms(profile, rng)
     shuffle_tables(profile, rng)
 
-    program_wrapper, constant_pool_code, dispatcher_code, _ = build_block_program(
+    # 使用 Pipeline 架构
+    program_wrapper, constant_pool_code, dispatcher_code, _ = build_block_program_pipelined(
         source,
         profile,
         rng,
         randomize_order=False,
         execution_mode="sequential",
         use_constant_pool=True,
-        use_auxiliary_paths=False
+        use_auxiliary_paths=False,
+        use_pipeline=True
     )
 
     api_plan = apply_api_indirection(tokenize(source), profile, rng)
@@ -1790,8 +3858,8 @@ def transform(source: str, watermark: str) -> str:
         + sanitize_comment(watermark)
         + "\nGenerated by Python transformer\n"
         + "Protection profile: pooled literals + randomized runtime + lexer-aware minification\n"
-        + "Multi-stage block generation architecture\n"
-        + "Features: constant pool + branch support + block randomization + auxiliary paths\n"
+        + "Multi-stage pipeline architecture\n"
+        + "Features: constant pool + block structure + instruction layer + auxiliary paths\n"
         + "]]\n"
         + build_runtime_prelude(profile)
         + api_plan.prelude
@@ -2128,6 +4196,306 @@ def apply_diversified_constant_access(
     manager.apply_to_blocks()
 
     return blocks, manager
+
+
+# ===== Block 结构扩展系统 =====
+
+
+class BlockExtensionType(Enum):
+    """
+    Block 扩展类型
+
+    定义可插入到 block 流程中的扩展结构。
+    """
+    # 恒定条件分支（不执行或总是执行）
+    CONSTANT_TRUE_BRANCH = "constant_true_branch"
+    CONSTANT_FALSE_BRANCH = "constant_false_branch"
+
+    # 空操作块
+    NOP_BLOCK = "nop_block"
+    EMPTY_BLOCK = "empty_block"
+
+    # 死代码块
+    DEAD_CODE = "dead_code"
+
+    # 恒等变换块
+    IDENTITY_BLOCK = "identity_block"
+
+    # 守卫块
+    GUARD_BLOCK = "guard_block"
+
+    # 循环陷阱
+    LOOP_TRAP = "loop_trap"
+
+    # 诱饵块
+    DECOY_BLOCK = "decoy_block"
+
+
+@dataclass
+class BlockExtensionConfig:
+    """Block 扩展配置"""
+    enabled: bool = True
+    extension_probability: float = 0.2  # 每个 block 扩展的概率
+    max_extensions_per_block: int = 2
+    extension_types: list[BlockExtensionType] | None = None
+    inject_into_content: bool = True  # 注入到 block 内容中
+    insert_as_separate_block: bool = False  # 作为独立 block 插入
+
+
+class BlockStructureExtension:
+    """
+    Block 结构扩展器
+
+    在现有 block 流程中插入不影响语义的额外结构。
+    """
+
+    def __init__(
+        self,
+        config: BlockExtensionConfig | None = None,
+        rng: random.Random | None = None,
+    ):
+        self.config = config or BlockExtensionConfig()
+        self.rng = rng
+        self._extension_counter = 0
+
+    def _get_extension_types(self) -> list[BlockExtensionType]:
+        """获取要使用的扩展类型"""
+        if self.config.extension_types:
+            return self.config.extension_types
+
+        return [
+            BlockExtensionType.NOP_BLOCK,
+            BlockExtensionType.EMPTY_BLOCK,
+            BlockExtensionType.CONSTANT_TRUE_BRANCH,
+            BlockExtensionType.CONSTANT_FALSE_BRANCH,
+            BlockExtensionType.DEAD_CODE,
+            BlockExtensionType.IDENTITY_BLOCK,
+            BlockExtensionType.GUARD_BLOCK,
+        ]
+
+    def _select_extension_type(self) -> BlockExtensionType:
+        """随机选择扩展类型"""
+        types = self._get_extension_types()
+        if self.rng:
+            return self.rng.choice(types)
+        return types[0]
+
+    def _generate_extension_code(self, ext_type: BlockExtensionType) -> tuple[str, str]:
+        """生成扩展代码"""
+        generators = {
+            BlockExtensionType.NOP_BLOCK: self._gen_nop_block,
+            BlockExtensionType.EMPTY_BLOCK: self._gen_empty_block,
+            BlockExtensionType.CONSTANT_TRUE_BRANCH: self._gen_constant_true_branch,
+            BlockExtensionType.CONSTANT_FALSE_BRANCH: self._gen_constant_false_branch,
+            BlockExtensionType.DEAD_CODE: self._gen_dead_code,
+            BlockExtensionType.IDENTITY_BLOCK: self._gen_identity_block,
+            BlockExtensionType.GUARD_BLOCK: self._gen_guard_block,
+            BlockExtensionType.LOOP_TRAP: self._gen_loop_trap,
+            BlockExtensionType.DECOY_BLOCK: self._gen_decoy_block,
+        }
+
+        gen = generators.get(ext_type, self._gen_nop_block)
+        return gen()
+
+    def _gen_nop_block(self) -> tuple[str, str]:
+        """生成空操作块"""
+        patterns = [
+            "do end",
+            "(function() end)()",
+            "pcall(function() end)",
+            "select('#', nil)",
+        ]
+        content = self.rng.choice(patterns) if self.rng else "do end"
+        return content, "nop"
+
+    def _gen_empty_block(self) -> tuple[str, str]:
+        """生成空块"""
+        var = f"_e{self._extension_counter}" if self.rng is None else f"_e{self.rng.randint(100, 999)}"
+        self._extension_counter += 1
+        content = f"local {var} = {var}"
+        return content, "empty"
+
+    def _gen_constant_true_branch(self) -> tuple[str, str]:
+        """生成恒为真的分支"""
+        patterns = [
+            "if true then\n    -- always\nend",
+            "if 1 == 1 then\n    -- constant\nend",
+            "if not false then\n    -- always\nend",
+        ]
+        content = self.rng.choice(patterns) if self.rng else patterns[0]
+        return content, "const_true"
+
+    def _gen_constant_false_branch(self) -> tuple[str, str]:
+        """生成恒为假的分支"""
+        patterns = [
+            "if false then\n    -- never\nend",
+            "if 1 ~= 1 then\n    -- never\nend",
+            "if not true then\n    -- never\nend",
+        ]
+        content = self.rng.choice(patterns) if self.rng else patterns[0]
+        return content, "const_false"
+
+    def _gen_dead_code(self) -> tuple[str, str]:
+        """生成死代码"""
+        patterns = [
+            "if false then\n    error('unreachable')\nend",
+            "repeat\n    break\nuntil false",
+            "while false do\n    break\nend",
+        ]
+        content = self.rng.choice(patterns) if self.rng else patterns[0]
+        return content, "dead_code"
+
+    def _gen_identity_block(self) -> tuple[str, str]:
+        """生成恒等变换块"""
+        var = f"_x{self._extension_counter}" if self.rng is None else f"_x{self.rng.randint(100, 999)}"
+        self._extension_counter += 1
+        patterns = [
+            f"local {var} = {var}",
+            f"local {var} = ({var})",
+            f"local {var} = 0 + {var}",
+            f"local {var} = {var} * 1",
+        ]
+        content = self.rng.choice(patterns) if self.rng else patterns[0]
+        return content, "identity"
+
+    def _gen_guard_block(self) -> tuple[str, str]:
+        """生成守卫块"""
+        guard = f"_g{self._extension_counter}" if self.rng is None else f"_g{self.rng.randint(100, 999)}"
+        self._extension_counter += 1
+        patterns = [
+            f"local {guard} = true\nif not {guard} then error() end",
+            f"assert({guard}, 'guard')",
+            f"if {guard} == false then error() end",
+        ]
+        content = self.rng.choice(patterns) if self.rng else patterns[0]
+        return content, "guard"
+
+    def _gen_loop_trap(self) -> tuple[str, str]:
+        """生成循环陷阱"""
+        patterns = [
+            "repeat\n    break\nuntil false",
+            "for _ = 1, 0 do\n    break\nend",
+        ]
+        content = self.rng.choice(patterns) if self.rng else patterns[0]
+        return content, "loop_trap"
+
+    def _gen_decoy_block(self) -> tuple[str, str]:
+        """生成诱饵块"""
+        x = f"_a{self._extension_counter}" if self.rng is None else f"_a{self.rng.randint(100, 999)}"
+        y = f"_b{self._extension_counter}" if self.rng is None else f"_b{self.rng.randint(100, 999)}"
+        self._extension_counter += 1
+        content = f"local {x}, {y} = 0, 0\nlocal _t = {x}\n{x} = {y}\n{y} = _t"
+        return content, "decoy"
+
+    def apply_to_block(self, block: CodeBlock) -> None:
+        """将扩展应用到单个 block"""
+        if not self.config.enabled:
+            return
+
+        if self.rng and self.rng.random() > self.config.extension_probability:
+            return
+
+        ext_type = self._select_extension_type()
+        ext_code, ext_name = self._generate_extension_code(ext_type)
+
+        if self.config.inject_into_content:
+            # 注入到 block 内容中
+            if block.content.strip():
+                # 随机位置插入
+                if self.rng and self.rng.random() > 0.5:
+                    block.content = ext_code + "\n" + block.content
+                else:
+                    block.content = block.content + "\n" + ext_code
+            else:
+                block.content = ext_code
+
+        # 记录扩展信息
+        if "extensions" not in block.metadata:
+            block.metadata["extensions"] = []
+        block.metadata["extensions"].append({
+            "type": ext_name,
+            "ext_type": ext_type.value,
+        })
+
+    def apply_to_blocks(self, blocks: list[CodeBlock]) -> None:
+        """将扩展应用到所有 blocks"""
+        for block in blocks:
+            self.apply_to_block(block)
+
+
+class BlockExtensionManager:
+    """
+    Block 扩展管理器
+
+    统一管理所有 block 的扩展操作。
+    """
+
+    def __init__(
+        self,
+        blocks: list[CodeBlock],
+        config: BlockExtensionConfig | None = None,
+        rng: random.Random | None = None,
+    ):
+        self.blocks = blocks
+        self.config = config or BlockExtensionConfig()
+        self.rng = rng
+        self.extender = BlockStructureExtension(self.config, self.rng)
+        self._extension_stats: dict[str, int] = {}
+
+    def apply_all(self) -> None:
+        """应用所有扩展"""
+        self.extender.apply_to_blocks(self.blocks)
+        self._collect_stats()
+
+    def _collect_stats(self) -> None:
+        """收集统计信息"""
+        self._extension_stats = {}
+        for block in self.blocks:
+            if "extensions" in block.metadata:
+                for ext in block.metadata["extensions"]:
+                    ext_type = ext.get("type", "unknown")
+                    self._extension_stats[ext_type] = self._extension_stats.get(ext_type, 0) + 1
+
+    def get_statistics(self) -> dict:
+        """获取扩展统计"""
+        return {
+            "total_blocks": len(self.blocks),
+            "blocks_with_extensions": sum(1 for b in self.blocks if "extensions" in b.metadata),
+            "extension_types": self._extension_stats,
+        }
+
+
+def apply_block_structure_extension(
+    blocks: list[CodeBlock],
+    rng: random.Random | None = None,
+    enabled: bool = True,
+) -> list[CodeBlock]:
+    """
+    应用 Block 结构扩展
+
+    在现有 block 流程中插入不影响语义的额外结构。
+
+    Args:
+        blocks: 代码块列表
+        rng: 随机数生成器
+        enabled: 是否启用
+
+    Returns:
+        处理后的 blocks
+    """
+    if not enabled:
+        return blocks
+
+    config = BlockExtensionConfig(
+        enabled=enabled,
+        extension_probability=0.2,
+        inject_into_content=True,
+    )
+
+    manager = BlockExtensionManager(blocks, config, rng)
+    manager.apply_all()
+
+    return blocks
 
 
 def relink_blocks_for_randomized_order(program: BlockProgram) -> None:
@@ -2723,12 +5091,15 @@ class ExecutionDispatcher:
 
         Args:
             program: 目标程序
-            mode: 执行模式 ("sequential", "random", "indexed", "variant")
+            mode: 执行模式 ("sequential", "random", "indexed", "variant", "resolved")
             enable_variant: 是否启用变体模式
 
         Returns:
             调度器代码
         """
+        if mode == "resolved":
+            return self._generate_resolved_dispatcher(program)
+
         if mode == "variant" and enable_variant:
             return self._generate_variant_dispatcher(program)
 
@@ -2750,6 +5121,55 @@ class ExecutionDispatcher:
         variant = self.variant_config.select_variant()
         self.selected_variant = variant
         return generator.generate(variant)
+
+    def _generate_resolved_dispatcher(self, program: BlockProgram) -> str:
+        """
+        生成使用 resolve_next 的调度器
+
+        Block 返回一个 key，通过 resolve_next 函数解析为实际的 block_id。
+        这种方式将控制流决策从 block 中解耦出来，由统一的解析函数处理。
+        """
+        lines: list[str] = []
+        tbl_name = self.tbl_name
+        pc = self.pc_name
+
+        # 生成映射表
+        map_var = random_lua_identifier(self.rng, "_mp") if self.rng else "_mp"
+        lines.append(f"local {map_var} = {{}}")
+
+        flow = {}
+        for block in program.blocks:
+            if block.next_id is not None:
+                flow[block.block_id] = block.next_id
+
+        for bid, nxt in sorted(flow.items()):
+            lines.append(f"{map_var}[{bid}] = {nxt}")
+        lines.append("")
+
+        # 生成 resolve_next 函数
+        key_var = random_lua_identifier(self.rng, "_k") if self.rng else "_key"
+        res_var = random_lua_identifier(self.rng, "_r") if self.rng else "_result"
+        st_var = random_lua_identifier(self.rng, "_st") if self.rng else "_state"
+
+        lines.append(f"local {st_var} = 0")
+        lines.append(f"local function resolve_next({key_var})")
+        lines.append(f"    {st_var} = ({st_var} + 1) - 1")
+        lines.append(f"    local {res_var} = {map_var}[{key_var}]")
+        lines.append(f"    return {res_var} or {key_var}")
+        lines.append("end")
+        lines.append("")
+
+        # 生成调度器
+        lines.append(f"local {pc} = {program.entry_block_id}")
+        lines.append(f"while {pc} do")
+        lines.append(f"    local block = {tbl_name}[{pc}]")
+        lines.append(f"    if not block then error('Invalid block: '..tostring({pc})) end")
+        lines.append(f"    if not block.fn then error('Missing fn') end")
+        lines.append(f"    local key = block.fn()")
+        lines.append(f"    {pc} = resolve_next(key)")
+        lines.append("end")
+
+        return "\n".join(lines)
 
     def _generate_sequential_dispatcher(self, program: BlockProgram) -> str:
         """顺序执行模式 - 使用 block 返回的 next_id 驱动"""
@@ -2815,6 +5235,323 @@ class ExecutionDispatcher:
         return f"\n-- execution entry\n{dispatcher_code}\n"
 
 
+# ===== Block 执行标识解析系统 =====
+
+
+class NextResolutionStrategy(Enum):
+    """
+    下一步解析策略
+
+    定义如何将 block 返回的中间标识解析为实际的 block ID。
+    """
+    # 直接使用标识
+    DIRECT = "direct"
+
+    # 查表映射
+    TABLE_LOOKUP = "table_lookup"
+
+    # 偏移计算
+    OFFSET_CALC = "offset_calc"
+
+    # 异或变换
+    XOR_TRANSFORM = "xor_transform"
+
+    # 状态转换
+    STATE_TRANSFORM = "state_transform"
+
+    # 哈希计算
+    HASH_COMPUTE = "hash_compute"
+
+
+@dataclass
+class NextResolverConfig:
+    """下一步解析器配置"""
+    strategy: NextResolutionStrategy = NextResolutionStrategy.DIRECT
+    enable_diversification: bool = True
+    obfuscate_vars: bool = True
+    add_transform: bool = True
+
+    # 变换相关
+    xor_key: int = 0
+    offset_base: int = 0
+
+
+class NextResolver:
+    """
+    下一步解析器
+
+    负责将 block 返回的中间标识（key）解析为实际的 block ID。
+    所有 block 的执行流程通过此解析器统一控制。
+
+    架构:
+    - Block 返回一个 key（可以是 block_id 或其他标识）
+    - resolve_next 函数接收 key，进行变换后得到下一个 block_id
+    - 调度器使用解析后的 block_id 继续执行
+    """
+
+    def __init__(
+        self,
+        program: BlockProgram,
+        config: NextResolverConfig | None = None,
+        rng: random.Random | None = None,
+    ):
+        self.program = program
+        self.config = config or NextResolverConfig()
+        self.rng = rng
+
+        # 生成混淆变量名
+        self._gen_var_names()
+
+        # 构建状态映射
+        self._build_state_map()
+
+    def _gen_var_names(self) -> None:
+        """生成混淆变量名"""
+        if self.config.obfuscate_vars and self.rng:
+            self.key_var = random_lua_identifier(self.rng, "_k")
+            self.res_var = random_lua_identifier(self.rng, "_r")
+            self.map_var = random_lua_identifier(self.rng, "_mp")
+            self.st_var = random_lua_identifier(self.rng, "_st")
+            self.xor_var = random_lua_identifier(self.rng, "_x")
+        else:
+            self.key_var = "_key"
+            self.res_var = "_result"
+            self.map_var = "_map"
+            self.st_var = "_state"
+            self.xor_var = "_xor"
+
+        # 生成 xor 变换密钥
+        if self.config.xor_key == 0 and self.rng:
+            self.config.xor_key = self.rng.randint(1, 255)
+
+        # 生成偏移基础
+        if self.config.offset_base == 0 and self.rng:
+            self.config.offset_base = self.rng.randint(1, 100)
+
+    def _build_state_map(self) -> None:
+        """构建状态映射表"""
+        self.key_to_block: dict[int, int] = {}
+        self.block_to_key: dict[int, int] = {}
+
+        order = self.program.execution_order
+        for i, bid in enumerate(order):
+            # key 可以与 block_id 不同，通过映射转换
+            key = bid
+            self.key_to_block[key] = bid
+            self.block_to_key[bid] = key
+
+    def generate_resolve_function(self) -> str:
+        """生成 resolve_next 函数"""
+        strategy = self.config.strategy
+
+        generators = {
+            NextResolutionStrategy.DIRECT: self._gen_direct,
+            NextResolutionStrategy.TABLE_LOOKUP: self._gen_table_lookup,
+            NextResolutionStrategy.OFFSET_CALC: self._gen_offset_calc,
+            NextResolutionStrategy.XOR_TRANSFORM: self._gen_xor_transform,
+            NextResolutionStrategy.STATE_TRANSFORM: self._gen_state_transform,
+            NextResolutionStrategy.HASH_COMPUTE: self._gen_hash_compute,
+        }
+
+        gen = generators.get(strategy, self._gen_direct)
+        return gen()
+
+    def _gen_direct(self) -> str:
+        """直接解析"""
+        lines = []
+        lines.append(f"local function resolve_next({self.key_var})")
+        lines.append(f"    return {self.key_var}")
+        lines.append("end")
+        return "\n".join(lines)
+
+    def _gen_table_lookup(self) -> str:
+        """查表映射解析"""
+        lines = []
+
+        # 生成映射表
+        lines.append(f"local {self.map_var} = {{}}")
+        for bid, nxt in sorted(self._get_block_flow().items()):
+            lines.append(f"{self.map_var}[{bid}] = {nxt}")
+        lines.append("")
+
+        # 生成解析函数
+        lines.append(f"local function resolve_next({self.key_var})")
+        lines.append(f"    local {self.res_var} = {self.map_var}[{self.key_var}]")
+        lines.append(f"    return {self.res_var} or {self.key_var}")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def _gen_offset_calc(self) -> str:
+        """偏移计算解析"""
+        lines = []
+        base = self.config.offset_base
+
+        lines.append(f"local {self.st_var} = {base}")
+        lines.append("")
+
+        lines.append(f"local function resolve_next({self.key_var})")
+        lines.append(f"    local {self.res_var} = {self.key_var}")
+        lines.append(f"    if {self.key_var} > 0 then")
+        lines.append(f"        {self.res_var} = {self.key_var} + {self.st_var} - {base}")
+        lines.append(f"    end")
+        lines.append(f"    {self.st_var} = ({self.st_var} + 1) - 1")
+        lines.append(f"    return {self.res_var}")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def _gen_xor_transform(self) -> str:
+        """异或变换解析"""
+        lines = []
+        key = self.config.xor_key
+
+        lines.append(f"local {self.xor_var} = {key}")
+        lines.append("")
+
+        lines.append(f"local function resolve_next({self.key_var})")
+        lines.append(f"    if {self.key_var} then")
+        lines.append(f"        return bit.bxor({self.key_var}, {self.xor_var})")
+        lines.append(f"    end")
+        lines.append(f"    return nil")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def _gen_state_transform(self) -> str:
+        """状态转换解析"""
+        lines = []
+
+        lines.append(f"local {self.st_var} = 0")
+        lines.append("")
+
+        lines.append(f"local function resolve_next({self.key_var})")
+        lines.append(f"    {self.st_var} = ({self.st_var} + 1) - 1")
+        lines.append(f"    if {self.key_var} and {self.key_var} > 0 then")
+        lines.append(f"        return {self.key_var}")
+        lines.append(f"    end")
+        lines.append(f"    return nil")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def _gen_hash_compute(self) -> str:
+        """哈希计算解析"""
+        lines = []
+
+        lines.append(f"local {self.st_var} = 0")
+        lines.append("")
+
+        lines.append(f"local function resolve_next({self.key_var})")
+        lines.append(f"    {self.st_var} = ({self.st_var} * 31 + ({self.key_var} or 0)) % 1000000")
+        lines.append(f"    return {self.key_var}")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def _get_block_flow(self) -> dict[int, int]:
+        """获取 block 流向映射"""
+        flow: dict[int, int] = {}
+        for block in self.program.blocks:
+            if block.next_id is not None:
+                flow[block.block_id] = block.next_id
+        return flow
+
+    def generate_with_resolver(self) -> tuple[str, str, str]:
+        """
+        生成带解析器的完整调度代码
+
+        返回:
+            (resolve_function, dispatcher_code, table_code)
+        """
+        lines = []
+
+        # 生成映射表
+        lines.append(f"local {self.map_var} = {{}}")
+        for bid, nxt in sorted(self._get_block_flow().items()):
+            lines.append(f"{self.map_var}[{bid}] = {nxt}")
+        lines.append("")
+
+        # 生成解析函数
+        resolve_func = self.generate_resolve_function()
+
+        # 生成调度器
+        dispatcher = self._gen_resolver_dispatcher()
+
+        return resolve_func, dispatcher, "\n".join(lines)
+
+    def _gen_resolver_dispatcher(self) -> str:
+        """生成使用解析器的调度器"""
+        pc = random_lua_identifier(self.rng, "_pc") if self.rng else "_pc"
+        tbl = random_lua_identifier(self.rng, "_tbl") if self.rng else "_tbl"
+
+        lines = []
+        lines.append(f"local {pc} = {self.program.entry_block_id}")
+        lines.append(f"while {pc} do")
+        lines.append(f"    local block = {tbl}[{pc}]")
+        lines.append(f"    if not block then error('Invalid block: '..tostring({pc})) end")
+        lines.append(f"    if not block.fn then error('Missing fn') end")
+        lines.append(f"    local key = block.fn()")
+        lines.append(f"    {pc} = resolve_next(key)")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def get_statistics(self) -> dict:
+        """获取统计信息"""
+        return {
+            "strategy": self.config.strategy.value,
+            "total_blocks": len(self.program.blocks),
+            "entry_block_id": self.program.entry_block_id,
+            "xor_key": self.config.xor_key,
+            "offset_base": self.config.offset_base,
+        }
+
+
+class DiversifiedResolver:
+    """
+    多样化解析器
+
+    支持在运行时随机选择不同的解析策略。
+    """
+
+    def __init__(
+        self,
+        program: BlockProgram,
+        rng: random.Random | None = None,
+    ):
+        self.program = program
+        self.rng = rng
+        self.resolvers: dict[NextResolutionStrategy, NextResolver] = {}
+        self.selected_strategy: NextResolutionStrategy | None = None
+
+        # 预创建所有解析器
+        for strategy in NextResolutionStrategy:
+            config = NextResolverConfig(
+                strategy=strategy,
+                enable_diversification=False,
+                obfuscate_vars=True,
+            )
+            self.resolvers[strategy] = NextResolver(program, config, rng)
+
+    def generate(self, strategy: NextResolutionStrategy | None = None) -> tuple[str, str, str]:
+        """生成指定策略的解析器代码"""
+        if strategy is None and self.rng:
+            strategies = list(NextResolutionStrategy)
+            strategy = self.rng.choice(strategies)
+
+        if strategy is None:
+            strategy = NextResolutionStrategy.DIRECT
+
+        self.selected_strategy = strategy
+        resolver = self.resolvers[strategy]
+        return resolver.generate_with_resolver()
+
+    def get_selected_strategy(self) -> NextResolutionStrategy | None:
+        """获取选中的策略"""
+        return self.selected_strategy
+
+
 # ===== 多阶段代码生成架构：程序组装 =====
 
 
@@ -2871,6 +5608,9 @@ def build_block_program(
                     blocks, constant_pool, rng,
                     enable_diversification=True
                 )
+
+    # 应用 Block 结构扩展
+    blocks = apply_block_structure_extension(blocks, rng)
 
     program = BlockProgram(
         blocks=blocks,
@@ -2972,6 +5712,546 @@ def build_block_program(
     dispatcher_code = dispatcher.generate_dispatcher(program, mode=execution_mode)
 
     return program_wrapper, constant_pool_code, dispatcher_code, program
+
+
+# ===== 多阶段 Pipeline 架构 =====
+
+
+@dataclass
+class PipelineContext:
+    """
+    Pipeline 执行上下文
+
+    保存各阶段之间的数据传递。
+    """
+    source: str
+    tokens: list[Token] = None
+    profile: ProtectionProfile = None
+    rng: random.Random = None
+
+    # Block 阶段
+    blocks: list[CodeBlock] = None
+    program: BlockProgram = None
+    constant_pool: ConstantPool = None
+
+    # 指令阶段
+    instructions: dict[int, BlockInstructions] = None
+    instruction_layer: InstructionLayer = None
+
+    # 发射阶段
+    emitted_code: str = ""
+
+    # 元数据
+    metadata: dict = None
+
+    def __post_init__(self):
+        if self.tokens is None:
+            self.tokens = []
+        if self.blocks is None:
+            self.blocks = []
+        if self.instructions is None:
+            self.instructions = {}
+        if self.metadata is None:
+            self.metadata = {}
+
+
+class PipelineStage:
+    """
+    Pipeline 阶段基类
+    """
+
+    name: str = "base"
+
+    def process(self, ctx: PipelineContext) -> PipelineContext:
+        """处理上下文，返回更新后的上下文"""
+        raise NotImplementedError
+
+
+class TokenizeStage(PipelineStage):
+    """
+    Stage 1: 分词阶段
+
+    将源代码转换为 token 流。
+    """
+    name = "tokenize"
+
+    def process(self, ctx: PipelineContext) -> PipelineContext:
+        """分词处理"""
+        tokenizer = Tokenizer(ctx.source)
+        tokens: list[Token] = []
+        while tokenizer.has_more():
+            tokens.append(tokenizer.next_token())
+        ctx.tokens = tokens
+        return ctx
+
+
+class RewriteStage(PipelineStage):
+    """
+    Stage 2: Token 重写阶段
+
+    对 token 进行重写（字符串驻留、数字重写等）。
+    """
+    name = "rewrite"
+
+    def process(self, ctx: PipelineContext) -> PipelineContext:
+        """Token 重写处理"""
+        if ctx.tokens and ctx.profile:
+            rewrite_tokens(ctx.tokens, ctx.profile, ctx.rng)
+        return ctx
+
+
+class BlockBuildStage(PipelineStage):
+    """
+    Stage 3: Block 构建阶段
+
+    将 token 流拆分为代码块。
+    """
+    name = "block_build"
+
+    def process(self, ctx: PipelineContext) -> PipelineContext:
+        """Block 构建处理"""
+        if not ctx.tokens:
+            return ctx
+
+        # 拆分 blocks
+        ctx.blocks = split_into_blocks(ctx.tokens, ctx.rng)
+
+        # 依赖分析
+        ctx.blocks = analyze_block_dependencies(ctx.blocks)
+
+        # 块链接
+        ctx.blocks = link_blocks_sequentially(ctx.blocks)
+
+        # 记录原始顺序
+        for block in ctx.blocks:
+            block.metadata["original_order"] = block.block_id
+
+        return ctx
+
+
+class ConstantPoolStage(PipelineStage):
+    """
+    Stage 4: 常量池阶段
+
+    收集字面量并替换为常量池访问。
+    """
+    name = "constant_pool"
+
+    def process(self, ctx: PipelineContext) -> PipelineContext:
+        """常量池处理"""
+        if not ctx.blocks:
+            return ctx
+
+        blocks, pool, replacer = apply_constant_pool_stage(
+            ctx.blocks, ctx.tokens, ctx.rng, use_pool=True
+        )
+        ctx.blocks = blocks
+        ctx.constant_pool = pool
+
+        # 应用多样化常量访问策略
+        if ctx.profile and ctx.profile.enhanced_accessor_enabled and pool:
+            ctx.blocks, _ = apply_diversified_constant_access(
+                ctx.blocks, pool, ctx.rng,
+                enable_diversification=True
+            )
+
+        return ctx
+
+
+class BlockExtensionStage(PipelineStage):
+    """
+    Stage 5: Block 结构扩展阶段
+
+    插入不影响语义的额外结构。
+    """
+    name = "block_extension"
+
+    def process(self, ctx: PipelineContext) -> PipelineContext:
+        """Block 扩展处理"""
+        if not ctx.blocks:
+            return ctx
+
+        ctx.blocks = apply_block_structure_extension(ctx.blocks, ctx.rng)
+        return ctx
+
+
+class ProgramBuildStage(PipelineStage):
+    """
+    Stage 6: Program 构建阶段
+
+    将 blocks 组装为 BlockProgram。
+    """
+    name = "program_build"
+
+    def process(self, ctx: PipelineContext) -> PipelineContext:
+        """Program 构建处理"""
+        if not ctx.blocks:
+            return ctx
+
+        ctx.program = BlockProgram(
+            blocks=ctx.blocks,
+            execution_order=list(range(1, len(ctx.blocks) + 1)),
+            block_map={b.block_id: b for b in ctx.blocks},
+            entry_block_id=1,
+            constant_pool=ctx.constant_pool
+        )
+
+        return ctx
+
+
+class InstructionGenStage(PipelineStage):
+    """
+    Stage 7: 指令生成阶段
+
+    将 CodeBlock 转换为指令列表。
+    """
+    name = "instruction_gen"
+
+    def process(self, ctx: PipelineContext) -> PipelineContext:
+        """指令生成处理"""
+        if not ctx.blocks:
+            return ctx
+
+        # 转换 blocks 为指令
+        layer = InstructionLayer(ctx.rng)
+        ctx.instructions = layer.process_blocks(ctx.blocks)
+        ctx.instruction_layer = layer
+
+        return ctx
+
+
+class EmitStage(PipelineStage):
+    """
+    Stage 8: 发射阶段
+
+    将指令转换为 Lua 代码。
+    """
+    name = "emit"
+
+    def __init__(self, use_program_mode: bool = True):
+        self.use_program_mode = use_program_mode
+
+    def process(self, ctx: PipelineContext) -> PipelineContext:
+        """发射处理"""
+        if not ctx.program:
+            return ctx
+
+        # 使用 BlockGenerator 生成代码
+        generator = BlockGenerator(ctx.profile, ctx.rng)
+        api_plan = apply_api_indirection(ctx.tokens, ctx.profile, ctx.rng)
+
+        program_code_lines: list[str] = []
+        program_code_lines.append("local program = {")
+
+        for idx, bid in enumerate(ctx.program.execution_order):
+            block = ctx.program.get_block(bid)
+            if block:
+                next_id = block.next_id
+                func_def = generator.generate_function(block, idx + 1, next_id)
+
+                next_id_val = next_id if next_id is not None else "nil"
+
+                branches_repr = "nil"
+                if block.has_branches():
+                    branches_repr = "{"
+                    branch_parts = []
+                    for cond, target in block.branches.items():
+                        t = target if target is not None else "nil"
+                        branch_parts.append(f"{cond}={t}")
+                    branches_repr += ", ".join(branch_parts) + "}"
+
+                program_code_lines.append(f"    [{idx + 1}] = {{")
+                program_code_lines.append(f"        fn = function()")
+                for fn_line in func_def.split("\n"):
+                    if "local function" in fn_line:
+                        continue
+                    if fn_line.strip():
+                        program_code_lines.append("            " + fn_line.strip())
+                program_code_lines.append(f"        end,")
+                program_code_lines.append(f"        type = '{block.block_type}',")
+                program_code_lines.append(f"        next_id = {next_id_val},")
+                program_code_lines.append(f"        branches = {branches_repr},")
+                program_code_lines.append(f"    }},")
+
+        program_code_lines.append("}")
+
+        ctx.emitted_code = "\n".join(program_code_lines)
+
+        # 保存 API 计划到元数据
+        ctx.metadata["api_plan"] = api_plan
+
+        return ctx
+
+
+class LayoutRandomizeStage(PipelineStage):
+    """
+    Stage: 布局随机化阶段（可选）
+
+    随机化 block 布局顺序。
+    """
+    name = "layout_randomize"
+
+    def __init__(self, enabled: bool = True, config: LayoutConfig | None = None):
+        self.enabled = enabled
+        self.config = config
+
+    def process(self, ctx: PipelineContext) -> PipelineContext:
+        """布局随机化处理"""
+        if not self.enabled or not ctx.program:
+            return ctx
+
+        randomizer = BlockLayoutRandomizer(ctx.rng, self.config)
+        randomizer.randomize(ctx.program)
+
+        return ctx
+
+
+class BlockOrderRandomizeStage(PipelineStage):
+    """
+    Stage: Block 顺序随机化阶段（可选）
+
+    随机化 block 执行顺序。
+    """
+    name = "block_order_randomize"
+
+    def __init__(self, enabled: bool = True, respect_deps: bool = False):
+        self.enabled = enabled
+        self.respect_deps = respect_deps
+
+    def process(self, ctx: PipelineContext) -> PipelineContext:
+        """Block 顺序随机化处理"""
+        if not self.enabled or not ctx.program:
+            return ctx
+
+        randomize_block_order(ctx.program, ctx.rng, respect_deps=self.respect_deps)
+
+        return ctx
+
+
+class InstructionEmitter:
+    """
+    指令发射器
+
+    将指令列表转换为 Lua 代码字符串。
+    """
+
+    def __init__(self, generator: InstructionGenerator | None = None):
+        self.generator = generator or InstructionGenerator()
+
+    def emit_instruction(self, instr: Instruction) -> str:
+        """发射单条指令"""
+        return self.generator._generate_instruction(instr)
+
+    def emit_block(self, block_instr: BlockInstructions) -> str:
+        """发射整个 block 的指令"""
+        return self.generator.generate_block(block_instr)
+
+    def emit_sequence(self, instructions: list[Instruction]) -> str:
+        """发射指令序列"""
+        lines = []
+        for instr in instructions:
+            code = self.emit_instruction(instr)
+            if code:
+                lines.append(code)
+        return "\n".join(lines)
+
+    def emit_all_blocks(
+        self,
+        instructions: dict[int, BlockInstructions],
+        execution_order: list[int] | None = None
+    ) -> str:
+        """发射所有 blocks"""
+        if execution_order is None:
+            execution_order = list(instructions.keys())
+
+        lines = []
+        for bid in execution_order:
+            if bid in instructions:
+                block_instr = instructions[bid]
+                lines.append(f"-- Block {bid} ({block_instr.block_type})")
+                lines.append(self.emit_block(block_instr))
+                lines.append("")
+
+        return "\n".join(lines)
+
+
+class CodePipeline:
+    """
+    多阶段代码生成 Pipeline
+
+    按顺序执行各个阶段，最终生成混淆后的 Lua 代码。
+    """
+
+    def __init__(
+        self,
+        stages: list[PipelineStage] | None = None,
+        debug: bool = False
+    ):
+        self.stages = stages or []
+        self.debug = debug
+
+    def add_stage(self, stage: PipelineStage) -> 'CodePipeline':
+        """添加阶段"""
+        self.stages.append(stage)
+        return self
+
+    def add_stages(self, stages: list[PipelineStage]) -> 'CodePipeline':
+        """添加多个阶段"""
+        self.stages.extend(stages)
+        return self
+
+    def execute(self, source: str, profile: ProtectionProfile, rng: random.Random) -> PipelineContext:
+        """
+        执行 Pipeline
+
+        Args:
+            source: 源代码
+            profile: 保护配置
+            rng: 随机数生成器
+
+        Returns:
+            PipelineContext - 包含各阶段结果
+        """
+        # 初始化上下文
+        ctx = PipelineContext(
+            source=source,
+            profile=profile,
+            rng=rng
+        )
+
+        # 依次执行各阶段
+        for i, stage in enumerate(self.stages):
+            if self.debug:
+                print(f"[Pipeline] Stage {i + 1}: {stage.name}")
+
+            try:
+                ctx = stage.process(ctx)
+            except Exception as e:
+                if self.debug:
+                    print(f"[Pipeline] Error in stage '{stage.name}': {e}")
+                raise
+
+        return ctx
+
+    @classmethod
+    def create_default(cls, debug: bool = False) -> 'CodePipeline':
+        """创建默认配置的 Pipeline"""
+        return cls(
+            stages=[
+                TokenizeStage(),
+                RewriteStage(),
+                BlockBuildStage(),
+                ConstantPoolStage(),
+                BlockExtensionStage(),
+                ProgramBuildStage(),
+                InstructionGenStage(),
+                EmitStage(),
+            ],
+            debug=debug
+        )
+
+    @classmethod
+    def create_full(cls, debug: bool = False) -> 'CodePipeline':
+        """创建完整配置的 Pipeline（包含随机化）"""
+        layout_config = LayoutConfig(
+            enabled=True,
+            strategy="sequential",
+        )
+        return cls(
+            stages=[
+                TokenizeStage(),
+                RewriteStage(),
+                BlockBuildStage(),
+                ConstantPoolStage(),
+                BlockExtensionStage(),
+                ProgramBuildStage(),
+                LayoutRandomizeStage(enabled=True, config=layout_config),
+                BlockOrderRandomizeStage(enabled=True),
+                InstructionGenStage(),
+                EmitStage(),
+            ],
+            debug=debug
+        )
+
+    @classmethod
+    def create_instruction_based(cls, debug: bool = False) -> 'CodePipeline':
+        """创建基于指令的 Pipeline"""
+        return cls(
+            stages=[
+                TokenizeStage(),
+                RewriteStage(),
+                BlockBuildStage(),
+                ConstantPoolStage(),
+                BlockExtensionStage(),
+                ProgramBuildStage(),
+                InstructionGenStage(),
+            ],
+            debug=debug
+        )
+
+
+def build_block_program_pipelined(
+    source: str,
+    profile: ProtectionProfile,
+    rng: random.Random,
+    randomize_order: bool = False,
+    execution_mode: str = "sequential",
+    use_constant_pool: bool = False,
+    use_auxiliary_paths: bool = False,
+    use_pipeline: bool = True,
+) -> tuple[str, str, str, BlockProgram]:
+    """
+    Pipeline 化的代码生成函数
+
+    Args:
+        source: 源代码
+        profile: 保护配置
+        rng: 随机数生成器
+        randomize_order: 是否随机化 block 顺序
+        execution_mode: 执行模式
+        use_constant_pool: 是否使用常量池
+        use_auxiliary_paths: 是否使用辅助路径
+        use_pipeline: 是否使用 Pipeline（True 使用新架构）
+
+    Returns:
+        (program_wrapper, constant_pool_code, dispatcher_code, BlockProgram)
+    """
+    if use_pipeline:
+        # 使用新的 Pipeline 架构
+        if randomize_order:
+            pipeline = CodePipeline.create_full()
+        else:
+            pipeline = CodePipeline.create_default()
+
+        ctx = pipeline.execute(source, profile, rng)
+
+        # 生成常量和分发器
+        constant_pool_code = ""
+        if ctx.constant_pool:
+            constant_pool_code = ctx.constant_pool.generate_pool_table() + "\n"
+
+        # 生成 API 前导码
+        api_plan = apply_api_indirection(ctx.tokens, profile, rng)
+        api_prelude = api_plan.prelude if api_plan else ""
+
+        # 生成执行器
+        dispatcher = ExecutionDispatcher(profile, rng)
+        dispatcher_code = dispatcher.generate_dispatcher(ctx.program, mode=execution_mode)
+
+        # 组装最终代码
+        program_wrapper = ctx.emitted_code
+
+        return program_wrapper, constant_pool_code, dispatcher_code, ctx.program
+
+    else:
+        # 使用原有的 build_block_program
+        return build_block_program(
+            source, profile, rng,
+            randomize_order=randomize_order,
+            execution_mode=execution_mode,
+            use_constant_pool=use_constant_pool,
+            use_auxiliary_paths=use_auxiliary_paths
+        )
 
 
 def rewrite_tokens(tokens: list[Token], profile: ProtectionProfile, rng: random.Random) -> None:
