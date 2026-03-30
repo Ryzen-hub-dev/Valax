@@ -2095,6 +2095,41 @@ def apply_constant_pool_stage(
     return blocks, pool, replacer
 
 
+def apply_diversified_constant_access(
+    blocks: list[CodeBlock],
+    pool: ConstantPool,
+    rng: random.Random,
+    enable_diversification: bool = True,
+) -> tuple[list[CodeBlock], BlockConstantAccessManager]:
+    """
+    多样化常量访问阶段
+
+    为不同 block 分配不同的常量访问策略，增加代码结构多样性。
+
+    Args:
+        blocks: 代码块列表
+        pool: 常量池
+        rng: 随机数生成器
+        enable_diversification: 是否启用多样化策略
+
+    Returns:
+        (blocks, manager) 元组
+    """
+    if not enable_diversification or not pool:
+        return blocks, None
+
+    config = BlockConstantAccessConfig(
+        rng=rng,
+        enable_diversification=enable_diversification,
+        cache_size=3,
+    )
+
+    manager = BlockConstantAccessManager(pool, blocks, config)
+    manager.apply_to_blocks()
+
+    return blocks, manager
+
+
 def relink_blocks_for_randomized_order(program: BlockProgram) -> None:
     """
     在顺序打乱后重新设置跳转关系。
@@ -2661,7 +2696,12 @@ class BlockGenerator:
 
 
 class ExecutionDispatcher:
-    """生成代码块执行调度器"""
+    """
+    生成代码块执行调度器
+
+    支持多种执行模式，包括传统的顺序/随机/索引模式，
+    以及新的多样化变体调度模式。
+    """
 
     def __init__(self, profile: ProtectionProfile, rng: random.Random):
         self.profile = profile
@@ -2669,17 +2709,47 @@ class ExecutionDispatcher:
         self.pc_name = random_lua_identifier(rng, "_pc")
         self.tbl_name = random_lua_identifier(rng, "_tbl")
         self.entry_name = random_lua_identifier(rng, "_entry")
+        self.variant_config: DispatcherVariantConfig | None = None
+        self.selected_variant: DispatchVariant | None = None
 
-    def generate_dispatcher(self, program: BlockProgram, mode: str = "sequential") -> str:
-        """生成执行调度器代码"""
+    def generate_dispatcher(
+        self,
+        program: BlockProgram,
+        mode: str = "sequential",
+        enable_variant: bool = True,
+    ) -> str:
+        """
+        生成执行调度器代码
+
+        Args:
+            program: 目标程序
+            mode: 执行模式 ("sequential", "random", "indexed", "variant")
+            enable_variant: 是否启用变体模式
+
+        Returns:
+            调度器代码
+        """
+        if mode == "variant" and enable_variant:
+            return self._generate_variant_dispatcher(program)
+
         if mode == "sequential":
             return self._generate_sequential_dispatcher(program)
         elif mode == "random":
             return self._generate_random_dispatcher(program)
         elif mode == "indexed":
             return self._generate_indexed_dispatcher(program)
+        elif mode == "variant":
+            return self._generate_variant_dispatcher(program)
         else:
             return self._generate_sequential_dispatcher(program)
+
+    def _generate_variant_dispatcher(self, program: BlockProgram) -> str:
+        """生成多样化变体调度器"""
+        self.variant_config = DispatcherVariantConfig(rng=self.rng)
+        generator = DispatchVariantGenerator(program, self.variant_config)
+        variant = self.variant_config.select_variant()
+        self.selected_variant = variant
+        return generator.generate(variant)
 
     def _generate_sequential_dispatcher(self, program: BlockProgram) -> str:
         """顺序执行模式 - 使用 block 返回的 next_id 驱动"""
@@ -2794,6 +2864,13 @@ def build_block_program(
         )
         if constant_pool:
             constant_pool_code = constant_pool.generate_pool_table() + "\n"
+
+            # 应用多样化常量访问策略
+            if profile.enhanced_accessor_enabled:
+                blocks, _ = apply_diversified_constant_access(
+                    blocks, constant_pool, rng,
+                    enable_diversification=True
+                )
 
     program = BlockProgram(
         blocks=blocks,
@@ -8159,6 +8236,482 @@ class ConstantAccessStrategy(Enum):
     WRAPPED_GETTER = "wrapped_getter"  # 包装 getter
 
 
+class BlockConstantAccessStrategy(Enum):
+    """
+    Block 级常量访问策略
+
+    定义单个 Block 内访问常量池的方式，支持不同 Block 使用不同策略。
+    语义等价但形式多样的访问方式。
+    """
+    # 直接表访问
+    DIRECT_TABLE = "direct_table"
+
+    # 标准 getter 函数调用
+    GETTER_CALL = "getter_call"
+
+    # 统一入口函数调用
+    UNIFIED_CALL = "unified_call"
+
+    # 带索引的 getter 调用
+    INDEXED_CALL = "indexed_call"
+
+    # 局部变量缓存访问
+    LOCAL_CACHE = "local_cache"
+
+    # 闭包包装访问
+    CLOSURE_WRAP = "closure_wrap"
+
+    # 元编程访问（使用 rawget）
+    METATABLE_ACCESS = "metatable_access"
+
+    # 多步计算访问（中间变量）
+    MULTI_STEP = "multi_step"
+
+
+class BlockConstantAccessConfig:
+    """
+    Block 级常量访问配置
+
+    控制 Block 级别常量访问的多样化行为。
+    """
+
+    def __init__(
+        self,
+        rng: random.Random | None = None,
+        enable_diversification: bool = True,
+        strategy_weights: dict[BlockConstantAccessStrategy, float] | None = None,
+        cache_enabled: bool = True,
+        cache_size: int = 3,
+        local_prefix: str = "_lc",
+    ):
+        self.rng = rng
+        self.enable_diversification = enable_diversification
+        self.strategy_weights = strategy_weights or self._default_weights()
+        self.cache_enabled = cache_enabled
+        self.cache_size = cache_size
+        self.local_prefix = local_prefix
+
+        if rng:
+            self.local_prefix = random_lua_identifier(rng, local_prefix)
+
+    def _default_weights(self) -> dict[BlockConstantAccessStrategy, float]:
+        """默认策略权重"""
+        return {
+            BlockConstantAccessStrategy.DIRECT_TABLE: 0.20,
+            BlockConstantAccessStrategy.GETTER_CALL: 0.25,
+            BlockConstantAccessStrategy.UNIFIED_CALL: 0.15,
+            BlockConstantAccessStrategy.INDEXED_CALL: 0.15,
+            BlockConstantAccessStrategy.LOCAL_CACHE: 0.10,
+            BlockConstantAccessStrategy.CLOSURE_WRAP: 0.05,
+            BlockConstantAccessStrategy.METATABLE_ACCESS: 0.05,
+            BlockConstantAccessStrategy.MULTI_STEP: 0.05,
+        }
+
+    def select_strategy(self) -> BlockConstantAccessStrategy:
+        """根据权重随机选择策略"""
+        if not self.enable_diversification:
+            return BlockConstantAccessStrategy.GETTER_CALL
+
+        if not self.rng:
+            return BlockConstantAccessStrategy.GETTER_CALL
+
+        strategies = list(self.strategy_weights.keys())
+        weights = list(self.strategy_weights.values())
+
+        if sum(weights) != 1.0:
+            total = sum(weights)
+            weights = [w / total for w in weights]
+
+        return self.rng.choices(strategies, weights=weights, k=1)[0]
+
+
+@dataclass
+class ConstantAccessVariant:
+    """
+    单个常量的访问变体
+
+    记录一个常量值的不同访问表达式。
+    """
+    value: Any           # 常量原始值
+    value_type: str       # "string", "number", "boolean"
+    index: int            # 在常量池中的索引
+    pool_type: str        # "S", "N", "B"
+
+    # 不同策略生成的表达式
+    direct_expr: str = ""      # 直接表访问
+    getter_expr: str = ""      # getter 调用
+    unified_expr: str = ""     # 统一函数调用
+    indexed_expr: str = ""     # 索引函数调用
+    cache_expr: str = ""       # 局部缓存表达式
+    closure_expr: str = ""     # 闭包包装表达式
+    metatable_expr: str = ""   # 元表访问表达式
+    multi_step_expr: str = ""  # 多步计算表达式
+
+
+class BlockConstantAccessor:
+    """
+    Block 级常量访问器
+
+    为每个 Block 生成该 Block 专用的常量访问代码和表达式。
+    不同 Block 可使用不同策略，保持语义一致。
+    """
+
+    def __init__(
+        self,
+        pool: ConstantPool,
+        config: BlockConstantAccessConfig | None = None,
+    ):
+        self.pool = pool
+        self.config = config or BlockConstantAccessConfig()
+        self._local_vars: dict[str, str] = {}  # 缓存已生成的局部变量
+        self._closure_vars: dict[str, str] = {}  # 缓存闭包变量
+        self._generated_header: list[str] = []  # 生成的局部变量声明
+
+    def generate_block_access_code(
+        self,
+        block: CodeBlock,
+        strategy: BlockConstantAccessStrategy | None = None,
+    ) -> tuple[str, list[str]]:
+        """
+        为单个 Block 生成常量访问代码
+
+        Args:
+            block: 目标代码块
+            strategy: 指定的访问策略，None 时随机选择
+
+        Returns:
+            (header_code, expression_mapping) 元组
+            - header_code: 需要添加到 block 开头的局部变量声明
+            - expression_mapping: 该 block 中使用的常量访问表达式映射
+        """
+        if strategy is None:
+            strategy = self.config.select_strategy()
+
+        header_lines: list[str] = []
+        mappings: dict[str, str] = {}
+
+        # 根据策略生成代码
+        if strategy == BlockConstantAccessStrategy.DIRECT_TABLE:
+            header_lines, mappings = self._generate_direct_table(block)
+        elif strategy == BlockConstantAccessStrategy.GETTER_CALL:
+            header_lines, mappings = self._generate_getter_call(block)
+        elif strategy == BlockConstantAccessStrategy.UNIFIED_CALL:
+            header_lines, mappings = self._generate_unified_call(block)
+        elif strategy == BlockConstantAccessStrategy.INDEXED_CALL:
+            header_lines, mappings = self._generate_indexed_call(block)
+        elif strategy == BlockConstantAccessStrategy.LOCAL_CACHE:
+            header_lines, mappings = self._generate_local_cache(block)
+        elif strategy == BlockConstantAccessStrategy.CLOSURE_WRAP:
+            header_lines, mappings = self._generate_closure_wrap(block)
+        elif strategy == BlockConstantAccessStrategy.METATABLE_ACCESS:
+            header_lines, mappings = self._generate_metatable_access(block)
+        elif strategy == BlockConstantAccessStrategy.MULTI_STEP:
+            header_lines, mappings = self._generate_multi_step(block)
+        else:
+            header_lines, mappings = self._generate_getter_call(block)
+
+        return "\n".join(header_lines), mappings
+
+    def _get_pool_prefix(self) -> str:
+        """获取常量池前缀"""
+        return self.pool.pool_prefix
+
+    def _collect_block_constants(self, block: CodeBlock) -> list[ConstantAccessVariant]:
+        """收集 block 中使用的常量"""
+        variants: list[ConstantAccessVariant] = []
+
+        for value, idx in self.pool.strings.items():
+            v = ConstantAccessVariant(
+                value=value,
+                value_type="string",
+                index=idx,
+                pool_type="S",
+            )
+            self._build_all_expressions(v)
+            variants.append(v)
+
+        for value, idx in self.pool.numbers.items():
+            v = ConstantAccessVariant(
+                value=value,
+                value_type="number",
+                index=idx,
+                pool_type="N",
+            )
+            self._build_all_expressions(v)
+            variants.append(v)
+
+        for value, idx in self.pool.booleans.items():
+            v = ConstantAccessVariant(
+                value=value,
+                value_type="boolean",
+                index=idx,
+                pool_type="B",
+            )
+            self._build_all_expressions(v)
+            variants.append(v)
+
+        return variants
+
+    def _build_all_expressions(self, variant: ConstantAccessVariant) -> None:
+        """为变体构建所有可能的访问表达式"""
+        prefix = self._get_pool_prefix()
+        idx = variant.index
+        pt = variant.pool_type
+
+        # 直接表访问
+        variant.direct_expr = f"{prefix}_{pt}[{idx}]"
+
+        # 标准 getter 调用
+        variant.getter_expr = f"{prefix}_{pt}get({idx})"
+
+        # 统一函数调用
+        variant.unified_expr = f"{prefix}_get('{pt}', {idx})"
+
+        # 索引函数调用（如果存在）
+        suffix = random_lua_identifier(self.config.rng, 'get') if self.config.rng else 'get'
+        variant.indexed_expr = f"{prefix}_{suffix}('{pt}', {idx})"
+
+        # 局部缓存（需要生成变量）
+        var_name = f"{self.config.local_prefix}_{variant.value_type[0]}{idx}"
+        variant.cache_expr = var_name
+
+        # 闭包包装
+        closure_var = f"_cl{idx}" if self.config.rng is None else random_lua_identifier(self.config.rng, f"_cl{idx}")
+        variant.closure_expr = f"{closure_var}()"
+
+        # 元表访问
+        variant.metatable_expr = f"rawget({prefix}_{pt}, {idx})"
+
+        # 多步计算
+        step_var = f"_s{idx}" if self.config.rng is None else random_lua_identifier(self.config.rng, f"_s{idx}")
+        variant.multi_step_expr = step_var
+
+    def _generate_direct_table(self, block: CodeBlock) -> tuple[list[str], dict[str, str]]:
+        """生成直接表访问策略"""
+        header: list[str] = []
+        mappings: dict[str, str] = {}
+        prefix = self._get_pool_prefix()
+
+        header.append("-- Direct table access strategy")
+
+        # 直接使用表访问表达式
+        for value, idx in self.pool.strings.items():
+            mappings[f'"{value}"'] = f"{prefix}_S[{idx}]"
+
+        for value, idx in self.pool.numbers.items():
+            mappings[str(value)] = f"{prefix}_N[{idx}]"
+
+        for value, idx in self.pool.booleans.items():
+            mappings[str(value).lower()] = f"{prefix}_B[{idx}]"
+
+        return header, mappings
+
+    def _generate_getter_call(self, block: CodeBlock) -> tuple[list[str], dict[str, str]]:
+        """生成 getter 调用策略"""
+        header: list[str] = []
+        mappings: dict[str, str] = {}
+        prefix = self._get_pool_prefix()
+
+        header.append("-- Getter call strategy")
+
+        # 使用标准 getter 函数调用
+        for value, idx in self.pool.strings.items():
+            mappings[f'"{value}"'] = f"{prefix}_Sget({idx})"
+
+        for value, idx in self.pool.numbers.items():
+            mappings[str(value)] = f"{prefix}_Nget({idx})"
+
+        for value, idx in self.pool.booleans.items():
+            mappings[str(value).lower()] = f"{prefix}_Bget({idx})"
+
+        return header, mappings
+
+    def _generate_unified_call(self, block: CodeBlock) -> tuple[list[str], dict[str, str]]:
+        """生成统一函数调用策略"""
+        header: list[str] = []
+        mappings: dict[str, str] = {}
+        prefix = self._get_pool_prefix()
+
+        header.append("-- Unified call strategy")
+
+        # 使用统一入口函数
+        for value, idx in self.pool.strings.items():
+            mappings[f'"{value}"'] = f"{prefix}_get('S', {idx})"
+
+        for value, idx in self.pool.numbers.items():
+            mappings[str(value)] = f"{prefix}_get('N', {idx})"
+
+        for value, idx in self.pool.booleans.items():
+            mappings[str(value).lower()] = f"{prefix}_get('B', {idx})"
+
+        return header, mappings
+
+    def _generate_indexed_call(self, block: CodeBlock) -> tuple[list[str], dict[str, str]]:
+        """生成索引函数调用策略"""
+        header: list[str] = []
+        mappings: dict[str, str] = {}
+        prefix = self._get_pool_prefix()
+
+        header.append("-- Indexed call strategy")
+
+        suffix = random_lua_identifier(self.config.rng, 'get') if self.config.rng else 'get'
+
+        # 使用带后缀的索引 getter
+        for value, idx in self.pool.strings.items():
+            mappings[f'"{value}"'] = f"{prefix}_{suffix}('S', {idx})"
+
+        for value, idx in self.pool.numbers.items():
+            mappings[str(value)] = f"{prefix}_{suffix}('N', {idx})"
+
+        for value, idx in self.pool.booleans.items():
+            mappings[str(value).lower()] = f"{prefix}_{suffix}('B', {idx})"
+
+        return header, mappings
+
+    def _generate_local_cache(self, block: CodeBlock) -> tuple[list[str], dict[str, str]]:
+        """生成局部缓存策略"""
+        header: list[str] = []
+        mappings: dict[str, str] = {}
+        prefix = self._get_pool_prefix()
+
+        header.append("-- Local cache strategy")
+
+        for value, idx in list(self.pool.strings.items())[:self.config.cache_size]:
+            var_name = f"{self.config.local_prefix}_s{idx}"
+            header.append(f"local {var_name} = {prefix}_S[{idx}]")
+            mappings[f'"{value}"'] = var_name
+
+        for value, idx in list(self.pool.numbers.items())[:min(self.config.cache_size, 2)]:
+            var_name = f"{self.config.local_prefix}_n{idx}"
+            header.append(f"local {var_name} = {prefix}_N[{idx}]")
+            mappings[str(value)] = var_name
+
+        return header, mappings
+
+    def _generate_closure_wrap(self, block: CodeBlock) -> tuple[list[str], dict[str, str]]:
+        """生成闭包包装策略"""
+        header: list[str] = []
+        mappings: dict[str, str] = {}
+        prefix = self._get_pool_prefix()
+
+        header.append("-- Closure wrap strategy")
+
+        for value, idx in list(self.pool.strings.items())[:3]:
+            cl_var = random_lua_identifier(self.config.rng, f"_cl{idx}") if self.config.rng else f"_cl{idx}"
+            header.append(f"local {cl_var} = function() return {prefix}_S[{idx}] end")
+            mappings[f'"{value}"'] = f"{cl_var}()"
+
+        return header, mappings
+
+    def _generate_metatable_access(self, block: CodeBlock) -> tuple[list[str], dict[str, str]]:
+        """生成元表访问策略"""
+        header: list[str] = []
+        mappings: dict[str, str] = {}
+        prefix = self._get_pool_prefix()
+
+        header.append("-- Metatable access strategy")
+
+        for value, idx in list(self.pool.strings.items())[:2]:
+            mappings[f'"{value}"'] = f"rawget({prefix}_S, {idx})"
+
+        for value, idx in list(self.pool.numbers.items())[:2]:
+            mappings[str(value)] = f"rawget({prefix}_N, {idx})"
+
+        return header, mappings
+
+    def _generate_multi_step(self, block: CodeBlock) -> tuple[list[str], dict[str, str]]:
+        """生成多步计算策略"""
+        header: list[str] = []
+        mappings: dict[str, str] = {}
+        prefix = self._get_pool_prefix()
+
+        header.append("-- Multi-step strategy")
+
+        for value, idx in list(self.pool.strings.items())[:2]:
+            step_var = random_lua_identifier(self.config.rng, f"_s{idx}") if self.config.rng else f"_s{idx}"
+            header.append(f"local {step_var} = {prefix}_S[{idx}]")
+            mappings[f'"{value}"'] = step_var
+
+        for value, idx in list(self.pool.numbers.items())[:2]:
+            step_var = random_lua_identifier(self.config.rng, f"_n{idx}") if self.config.rng else f"_n{idx}"
+            header.append(f"local {step_var} = {prefix}_N[{idx}]")
+            mappings[str(value)] = step_var
+
+        return header, mappings
+
+
+class BlockConstantAccessManager:
+    """
+    Block 级常量访问管理器
+
+    统一管理所有 Block 的常量访问策略，为每个 Block 分配和生成访问代码。
+    """
+
+    def __init__(
+        self,
+        pool: ConstantPool,
+        blocks: list[CodeBlock],
+        config: BlockConstantAccessConfig | None = None,
+    ):
+        self.pool = pool
+        self.blocks = blocks
+        self.config = config or BlockConstantAccessConfig()
+        self.accessor = BlockConstantAccessor(pool, self.config)
+
+        # 每个 block 分配的策略
+        self.block_strategies: dict[int, BlockConstantAccessStrategy] = {}
+
+        # 每个 block 生成的代码头
+        self.block_headers: dict[int, list[str]] = {}
+
+        # 每个 block 的表达式映射
+        self.block_mappings: dict[int, dict[str, str]] = {}
+
+        self._assign_strategies()
+
+    def _assign_strategies(self) -> None:
+        """为每个 block 分配访问策略"""
+        for block in self.blocks:
+            strategy = self.config.select_strategy()
+            self.block_strategies[block.block_id] = strategy
+
+            header, mappings = self.accessor.generate_block_access_code(block, strategy)
+            self.block_headers[block.block_id] = header.split("\n") if header else []
+            self.block_mappings[block.block_id] = mappings
+
+    def apply_to_blocks(self) -> None:
+        """将访问代码应用到所有 blocks"""
+        for block in self.blocks:
+            block_id = block.block_id
+            header_lines = self.block_headers.get(block_id, [])
+            mappings = self.block_mappings.get(block_id, {})
+
+            # 构建头部代码
+            if header_lines:
+                header_code = "\n".join(header_lines)
+                # 注入到 block 内容开头
+                if block.content.strip():
+                    block.content = header_code + "\n" + block.content
+                else:
+                    block.content = header_code
+
+            # 替换内容中的常量访问
+            for literal, expr in mappings.items():
+                block.content = block.content.replace(literal, expr)
+
+    def get_strategy_for_block(self, block_id: int) -> BlockConstantAccessStrategy | None:
+        """获取指定 block 的策略"""
+        return self.block_strategies.get(block_id)
+
+    def get_statistics(self) -> dict:
+        """获取策略分布统计"""
+        stats: dict[str, int] = {}
+        for strategy in self.block_strategies.values():
+            name = strategy.value
+            stats[name] = stats.get(name, 0) + 1
+        return stats
+
+
 @dataclass
 class CodeGenerationOptions:
     """代码生成选项"""
@@ -9220,6 +9773,658 @@ class DispatchStrategy(Enum):
     KEY_LOOKUP = "key_lookup"         # 键查找调度
     OFFSET_CALC = "offset_calc"        # 偏移计算调度
     INDIRECT = "indirect"              # 间接调度
+
+
+class DispatchVariant(Enum):
+    """
+    调度变体类型
+
+    定义不同的调度实现方式，每个变体都保持语义一致但结构不同。
+    """
+    # 基本循环调度
+    BASIC_LOOP = "basic_loop"
+    REPEAT_LOOP = "repeat_loop"
+    FOR_LOOP = "for_loop"
+
+    # 函数递归调度
+    TAIL_RECURSION = "tail_recursion"
+    WRAPPER_RECURSION = "wrapper_recursion"
+
+    # 表驱动调度
+    TABLE_LOOKUP = "table_lookup"
+    META_TABLE = "meta_table"
+    INDEX_FUNCTION = "index_function"
+
+    # 状态转移调度
+    STATE_TABLE = "state_table"
+    TRANSITION_MATRIX = "transition_matrix"
+
+    # 计算调度
+    HASH_COMPUTE = "hash_compute"
+    XOR_TRANSFORM = "xor_transform"
+    BIT_MANIPULATION = "bit_manipulation"
+
+    # 组合调度
+    HYBRID_LOOP = "hybrid_loop"
+    PIPELINE_STAGE = "pipeline_stage"
+
+
+class DispatcherVariantConfig:
+    """
+    调度变体配置
+
+    控制调度器变体的生成参数。
+    """
+
+    def __init__(
+        self,
+        rng: random.Random | None = None,
+        enable_diversification: bool = True,
+        variant_weights: dict[DispatchVariant, float] | None = None,
+        obfuscate_vars: bool = True,
+        add_redundant_ops: bool = True,
+    ):
+        self.rng = rng
+        self.enable_diversification = enable_diversification
+        self.variant_weights = variant_weights or self._default_weights()
+        self.obfuscate_vars = obfuscate_vars
+        self.add_redundant_ops = add_redundant_ops
+
+        # 运行时变量名
+        self.pc_var = "_pc" if rng is None else random_lua_identifier(rng, "_pc")
+        self.tbl_var = "_tbl" if rng is None else random_lua_identifier(rng, "_tbl")
+        self.state_var = "_st" if rng is None else random_lua_identifier(rng, "_st")
+        self.key_var = "_k" if rng is None else random_lua_identifier(rng, "_k")
+        self.cache_var = "_ch" if rng is None else random_lua_identifier(rng, "_ch")
+
+    def _default_weights(self) -> dict[DispatchVariant, float]:
+        """默认变体权重"""
+        return {
+            # 循环类
+            DispatchVariant.BASIC_LOOP: 0.15,
+            DispatchVariant.REPEAT_LOOP: 0.05,
+            DispatchVariant.FOR_LOOP: 0.05,
+
+            # 递归类
+            DispatchVariant.TAIL_RECURSION: 0.10,
+            DispatchVariant.WRAPPER_RECURSION: 0.05,
+
+            # 表驱动类
+            DispatchVariant.TABLE_LOOKUP: 0.15,
+            DispatchVariant.META_TABLE: 0.05,
+            DispatchVariant.INDEX_FUNCTION: 0.05,
+
+            # 状态转移类
+            DispatchVariant.STATE_TABLE: 0.10,
+            DispatchVariant.TRANSITION_MATRIX: 0.05,
+
+            # 计算类
+            DispatchVariant.HASH_COMPUTE: 0.05,
+            DispatchVariant.XOR_TRANSFORM: 0.05,
+            DispatchVariant.BIT_MANIPULATION: 0.05,
+
+            # 组合类
+            DispatchVariant.HYBRID_LOOP: 0.05,
+            DispatchVariant.PIPELINE_STAGE: 0.05,
+        }
+
+    def select_variant(self) -> DispatchVariant:
+        """根据权重随机选择变体"""
+        if not self.enable_diversification:
+            return DispatchVariant.BASIC_LOOP
+
+        if not self.rng:
+            return DispatchVariant.BASIC_LOOP
+
+        variants = list(self.variant_weights.keys())
+        weights = list(self.variant_weights.values())
+
+        if sum(weights) != 1.0:
+            total = sum(weights)
+            weights = [w / total for w in weights]
+
+        return self.rng.choices(variants, weights=weights, k=1)[0]
+
+
+class DispatchVariantGenerator:
+    """
+    调度变体生成器
+
+    根据不同变体类型生成对应的调度代码实现。
+    每个变体保持相同的执行语义但使用不同的代码结构。
+    """
+
+    def __init__(
+        self,
+        program: BlockProgram,
+        config: DispatcherVariantConfig | None = None,
+    ):
+        self.program = program
+        self.config = config or DispatcherVariantConfig()
+
+    def generate(self, variant: DispatchVariant | None = None) -> str:
+        """生成指定变体的调度代码"""
+        if variant is None:
+            variant = self.config.select_variant()
+
+        generators = {
+            # 循环类
+            DispatchVariant.BASIC_LOOP: self._generate_basic_loop,
+            DispatchVariant.REPEAT_LOOP: self._generate_repeat_loop,
+            DispatchVariant.FOR_LOOP: self._generate_for_loop,
+
+            # 递归类
+            DispatchVariant.TAIL_RECURSION: self._generate_tail_recursion,
+            DispatchVariant.WRAPPER_RECURSION: self._generate_wrapper_recursion,
+
+            # 表驱动类
+            DispatchVariant.TABLE_LOOKUP: self._generate_table_lookup,
+            DispatchVariant.META_TABLE: self._generate_meta_table,
+            DispatchVariant.INDEX_FUNCTION: self._generate_index_function,
+
+            # 状态转移类
+            DispatchVariant.STATE_TABLE: self._generate_state_table,
+            DispatchVariant.TRANSITION_MATRIX: self._generate_transition_matrix,
+
+            # 计算类
+            DispatchVariant.HASH_COMPUTE: self._generate_hash_compute,
+            DispatchVariant.XOR_TRANSFORM: self._generate_xor_transform,
+            DispatchVariant.BIT_MANIPULATION: self._generate_bit_manipulation,
+
+            # 组合类
+            DispatchVariant.HYBRID_LOOP: self._generate_hybrid_loop,
+            DispatchVariant.PIPELINE_STAGE: self._generate_pipeline_stage,
+        }
+
+        gen = generators.get(variant, self._generate_basic_loop)
+        return gen()
+
+    # === 循环类实现 ===
+
+    def _generate_basic_loop(self) -> str:
+        """基本 while 循环调度"""
+        pc = self.config.pc_var
+        tbl = self.config.tbl_var
+        st = self.config.state_var
+
+        lines = [f"local {pc} = {self.program.entry_block_id}"]
+
+        if self.config.add_redundant_ops:
+            lines.append(f"local {st} = 0")
+
+        lines.append(f"while {pc} do")
+        lines.append(f"    local block = {tbl}[{pc}]")
+        lines.append(f"    if not block then error('Invalid block: '..tostring({pc})) end")
+        lines.append(f"    if not block.fn then error('Missing fn: '..tostring({pc})) end")
+
+        if self.config.add_redundant_ops:
+            lines.append(f"    {st} = ({st} + 1) - 1")
+
+        lines.append(f"    {pc} = block.fn()")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def _generate_repeat_loop(self) -> str:
+        """Repeat-until 循环调度"""
+        pc = self.config.pc_var
+        tbl = self.config.tbl_var
+        st = self.config.state_var
+
+        lines = [f"local {pc} = {self.program.entry_block_id}"]
+
+        if self.config.add_redundant_ops:
+            lines.append(f"local {st} = 0")
+
+        lines.append("repeat")
+        lines.append(f"    if not {pc} then break end")
+        lines.append(f"    local block = {tbl}[{pc}]")
+        lines.append(f"    if block and block.fn then")
+
+        if self.config.add_redundant_ops:
+            lines.append(f"        {st} = ({st} + 1) % 1")
+
+        lines.append(f"        {pc} = block.fn()")
+        lines.append(f"    else {pc} = nil end")
+        lines.append(f"until not {pc}")
+
+        return "\n".join(lines)
+
+    def _generate_for_loop(self) -> str:
+        """For 循环调度（伪循环）"""
+        pc = self.config.pc_var
+        tbl = self.config.tbl_var
+
+        order = self.program.execution_order
+        count = len(order)
+
+        lines = [f"local {pc} = {self.program.entry_block_id}"]
+        lines.append(f"for _ = 1, {count} + 10 do")
+        lines.append(f"    if not {pc} then break end")
+        lines.append(f"    local block = {tbl}[{pc}]")
+        lines.append(f"    if not block or not block.fn then break end")
+        lines.append(f"    {pc} = block.fn()")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    # === 递归类实现 ===
+
+    def _generate_tail_recursion(self) -> str:
+        """尾递归调度"""
+        pc = self.config.pc_var
+        tbl = self.config.tbl_var
+        st = self.config.state_var
+        func_name = random_lua_identifier(self.config.rng, "_dispatch") if self.config.rng else "_dispatch"
+
+        lines = [f"local {func_name}"]
+
+        if self.config.add_redundant_ops:
+            lines.append(f"local {st} = 0")
+
+        lines.append(f"{func_name} = function({pc})")
+        lines.append(f"    if not {pc} then return end")
+        lines.append(f"    local block = {tbl}[{pc}]")
+        lines.append(f"    if not block then return end")
+        lines.append(f"    if not block.fn then return end")
+
+        if self.config.add_redundant_ops:
+            lines.append(f"    {st} = ({st} + 1) - 1")
+
+        lines.append(f"    {func_name}(block.fn())")
+        lines.append("end")
+
+        lines.append(f"{func_name}({self.program.entry_block_id})")
+
+        return "\n".join(lines)
+
+    def _generate_wrapper_recursion(self) -> str:
+        """包装器递归调度"""
+        pc = self.config.pc_var
+        tbl = self.config.tbl_var
+        st = self.config.state_var
+        cache = self.config.cache_var
+        func_name = random_lua_identifier(self.config.rng, "_exec") if self.config.rng else "_exec"
+
+        lines = []
+
+        if self.config.add_redundant_ops:
+            lines.append(f"local {st} = 0")
+
+        lines.append(f"local {cache} = nil")
+        lines.append(f"local function {func_name}({pc})")
+        lines.append(f"    if not {pc} then return end")
+        lines.append(f"    local block = {tbl}[{pc}]")
+        lines.append(f"    if not block then return end")
+        lines.append(f"    if not block.fn then return end")
+
+        if self.config.add_redundant_ops:
+            lines.append(f"    {st} = ({st} + 1) - 1")
+
+        lines.append(f"    {cache} = block.fn()")
+        lines.append(f"    if {cache} then {func_name}({cache}) end")
+        lines.append("end")
+
+        lines.append(f"{func_name}({self.program.entry_block_id})")
+
+        return "\n".join(lines)
+
+    # === 表驱动类实现 ===
+
+    def _generate_table_lookup(self) -> str:
+        """表查找调度"""
+        pc = self.config.pc_var
+        tbl = self.config.tbl_var
+        mp = f"_mp{random_lua_identifier(self.config.rng, '')}" if self.config.rng else "_mp"
+
+        lines = [f"local {mp} = {{}}"]
+        for bid, nxt in sorted(self._build_state_map().items()):
+            lines.append(f"{mp}[{bid}] = {nxt}")
+
+        lines.append(f"local {pc} = {self.program.entry_block_id}")
+        lines.append(f"while {pc} do")
+        lines.append(f"    local block = {tbl}[{pc}]")
+        lines.append(f"    if not block or not block.fn then break end")
+        lines.append(f"    local next_id = block.fn()")
+        lines.append(f"    {pc} = {mp}[next_id] or next_id")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def _generate_meta_table(self) -> str:
+        """元表调度"""
+        pc = self.config.pc_var
+        tbl = self.config.tbl_var
+        mt = f"_mt{random_lua_identifier(self.config.rng, '')}" if self.config.rng else "_mt"
+        st = self.config.state_var
+
+        lines = [f"local {mt} = setmetatable({{}}, {{__index = function(t, k) return rawget(t, k) end}})"]
+        lines.append(f"local {st} = 0")
+
+        lines.append(f"local {pc} = {self.program.entry_block_id}")
+        lines.append(f"while {pc} do")
+        lines.append(f"    local block = {tbl}[{pc}] or {mt}[{pc}]")
+        lines.append(f"    if not block or not block.fn then break end")
+        lines.append(f"    {st} = ({st} + 1) - 1")
+        lines.append(f"    {pc} = block.fn()")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def _generate_index_function(self) -> str:
+        """索引函数调度"""
+        pc = self.config.pc_var
+        tbl = self.config.tbl_var
+        idx = random_lua_identifier(self.config.rng, "_idx") if self.config.rng else "_idx"
+
+        lines = [f"local function {idx}({pc})"]
+        lines.append(f"    return {tbl}[{pc}].fn()")
+        lines.append("end")
+
+        lines.append(f"local {pc} = {self.program.entry_block_id}")
+        lines.append(f"while {pc} do")
+        lines.append(f"    local block = {tbl}[{pc}]")
+        lines.append(f"    if not block then break end")
+        lines.append(f"    {pc} = {idx}({pc})")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    # === 状态转移类实现 ===
+
+    def _generate_state_table(self) -> str:
+        """状态表调度"""
+        pc = self.config.pc_var
+        tbl = self.config.tbl_var
+        st = self.config.state_var
+        st_tbl = f"_st{random_lua_identifier(self.config.rng, '')}" if self.config.rng else "_st_tbl"
+
+        lines = [f"local {st} = 0"]
+        lines.append(f"local {st_tbl} = {{}}")
+
+        for bid, nxt in sorted(self._build_state_map().items()):
+            lines.append(f"{st_tbl}[{bid}] = {nxt}")
+
+        lines.append(f"local {pc} = {self.program.entry_block_id}")
+        lines.append(f"while {pc} do")
+        lines.append(f"    local block = {tbl}[{pc}]")
+        lines.append(f"    if not block or not block.fn then break end")
+        lines.append(f"    {st} = ({st} + 1) - 1")
+        lines.append(f"    local result = block.fn()")
+        lines.append(f"    {pc} = {st_tbl}[result] or result")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def _generate_transition_matrix(self) -> str:
+        """转移矩阵调度"""
+        pc = self.config.pc_var
+        tbl = self.config.tbl_var
+        mx = f"_mx{random_lua_identifier(self.config.rng, '')}" if self.config.rng else "_mx"
+
+        order = self.program.execution_order
+        lines = [f"local {mx} = {{}}"]
+
+        for i, bid in enumerate(order):
+            if i < len(order) - 1:
+                next_bid = order[i + 1]
+                lines.append(f"{mx}[{bid}] = {{{next_bid}}}")
+
+        lines.append(f"local {pc} = {self.program.entry_block_id}")
+        lines.append(f"while {pc} do")
+        lines.append(f"    local block = {tbl}[{pc}]")
+        lines.append(f"    if not block or not block.fn then break end")
+        lines.append(f"    local result = block.fn()")
+        lines.append(f"    {pc} = result")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    # === 计算类实现 ===
+
+    def _generate_hash_compute(self) -> str:
+        """哈希计算调度"""
+        pc = self.config.pc_var
+        tbl = self.config.tbl_var
+        h = random_lua_identifier(self.config.rng, "_h") if self.config.rng else "_h"
+        st = self.config.state_var
+
+        lines = [f"local {st} = 0"]
+        lines.append(f"local {h} = 0")
+
+        lines.append(f"local {pc} = {self.program.entry_block_id}")
+        lines.append(f"while {pc} do")
+        lines.append(f"    local block = {tbl}[{pc}]")
+        lines.append(f"    if not block or not block.fn then break end")
+        lines.append(f"    {st} = ({st} + 1) - 1")
+
+        if self.config.add_redundant_ops:
+            lines.append(f"    {h} = ({pc} * 31 + {st}) % 1000000")
+
+        lines.append(f"    {pc} = block.fn()")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def _generate_xor_transform(self) -> str:
+        """异或变换调度"""
+        pc = self.config.pc_var
+        tbl = self.config.tbl_var
+        k = self.config.key_var
+        st = self.config.state_var
+
+        lines = [f"local {k} = 12345"]
+        lines.append(f"local {st} = 0")
+
+        lines.append(f"local {pc} = {self.program.entry_block_id}")
+        lines.append(f"while {pc} do")
+        lines.append(f"    local block = {tbl}[{pc}]")
+        lines.append(f"    if not block or not block.fn then break end")
+        lines.append(f"    {st} = bit.bxor({st}, {k})")
+        lines.append(f"    {pc} = block.fn()")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def _generate_bit_manipulation(self) -> str:
+        """位操作调度"""
+        pc = self.config.pc_var
+        tbl = self.config.tbl_var
+        mask = random_lua_identifier(self.config.rng, "_m") if self.config.rng else "_m"
+
+        lines = [f"local {mask} = 0xFFFF"]
+
+        lines.append(f"local {pc} = {self.program.entry_block_id}")
+        lines.append(f"while {pc} do")
+        lines.append(f"    local block = {tbl}[{pc}]")
+        lines.append(f"    if not block or not block.fn then break end")
+        lines.append(f"    {pc} = bit.band(block.fn(), {mask})")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    # === 组合类实现 ===
+
+    def _generate_hybrid_loop(self) -> str:
+        """混合循环调度"""
+        pc = self.config.pc_var
+        tbl = self.config.tbl_var
+        st = self.config.state_var
+        cache = self.config.cache_var
+
+        lines = [f"local {st} = 0"]
+        lines.append(f"local {cache} = nil")
+
+        lines.append(f"local {pc} = {self.program.entry_block_id}")
+        lines.append("repeat")
+        lines.append(f"    if not {pc} then break end")
+        lines.append(f"    local block = {tbl}[{pc}]")
+        lines.append(f"    if not block or not block.fn then break end")
+        lines.append(f"    {st} = ({st} + 1) % 1")
+        lines.append(f"    {cache} = block.fn()")
+        lines.append(f"    {pc} = {cache}")
+        lines.append(f"until not {pc}")
+
+        return "\n".join(lines)
+
+    def _generate_pipeline_stage(self) -> str:
+        """流水线阶段调度"""
+        pc = self.config.pc_var
+        tbl = self.config.tbl_var
+        stg = f"_stg{random_lua_identifier(self.config.rng, '')}" if self.config.rng else "_stg"
+        st = self.config.state_var
+
+        lines = [f"local {st} = 0"]
+        lines.append(f"local {stg} = 1")
+
+        lines.append(f"local {pc} = {self.program.entry_block_id}")
+        lines.append("repeat")
+        lines.append(f"    if not {pc} then break end")
+        lines.append(f"    local block = {tbl}[{pc}]")
+        lines.append(f"    if not block or not block.fn then break end")
+        lines.append(f"    {st} = ({st} + {stg}) - {stg}")
+        lines.append(f"    {stg} = {stg} % 100")
+        lines.append(f"    {pc} = block.fn()")
+        lines.append(f"until not {pc}")
+
+        return "\n".join(lines)
+
+    def _build_state_map(self) -> dict[int, int]:
+        """构建状态映射"""
+        state_map: dict[int, int] = {}
+        for block in self.program.blocks:
+            if block.next_id is not None:
+                state_map[block.block_id] = block.next_id
+        return state_map
+
+
+class DispatchVariantFactory:
+    """
+    调度变体工厂
+
+    负责根据配置创建和选择调度器变体。
+    """
+
+    def __init__(
+        self,
+        program: BlockProgram,
+        rng: random.Random | None = None,
+    ):
+        self.program = program
+        self.rng = rng
+        self.config = DispatcherVariantConfig(rng=rng)
+        self.generator = DispatchVariantGenerator(program, self.config)
+
+    def create_config(
+        self,
+        enable_diversification: bool = True,
+        variant_weights: dict[DispatchVariant, float] | None = None,
+        obfuscate_vars: bool = True,
+    ) -> DispatcherVariantConfig:
+        """创建变体配置"""
+        return DispatcherVariantConfig(
+            rng=self.rng,
+            enable_diversification=enable_diversification,
+            variant_weights=variant_weights,
+            obfuscate_vars=obfuscate_vars,
+        )
+
+    def select_and_generate(self, variant: DispatchVariant | None = None) -> str:
+        """选择变体并生成代码"""
+        if variant is None:
+            variant = self.config.select_variant()
+
+        self.generator.config = self.config
+        return self.generator.generate(variant)
+
+    def generate_all_variants(self) -> dict[DispatchVariant, str]:
+        """生成所有变体的代码"""
+        results = {}
+        for variant in DispatchVariant:
+            self.generator.config = self.config
+            results[variant] = self.generator.generate(variant)
+        return results
+
+    def get_statistics(self, variant: DispatchVariant | None = None) -> dict:
+        """获取统计信息"""
+        if variant:
+            return {
+                "variant": variant.value,
+                "total_blocks": len(self.program.blocks),
+                "execution_order": len(self.program.execution_order),
+            }
+
+        stats = {"total_variants": len(DispatchVariant)}
+        for v in DispatchVariant:
+            stats[f"variant_{v.value}_available"] = True
+
+        return stats
+
+
+class DiversifiedDispatcher:
+    """
+    多样化调度器
+
+    整合调度变体系统，提供统一的调度接口。
+    可以随机选择不同实现方式。
+    """
+
+    def __init__(
+        self,
+        program: BlockProgram,
+        rng: random.Random | None = None,
+    ):
+        self.program = program
+        self.rng = rng
+        self.factory = DispatchVariantFactory(program, rng)
+        self.selected_variant: DispatchVariant | None = None
+        self._generated_code: str = ""
+
+    def generate(
+        self,
+        variant: DispatchVariant | None = None,
+        enable_diversification: bool = True,
+    ) -> str:
+        """生成调度代码"""
+        if variant is None and enable_diversification:
+            variant = self.factory.config.select_variant()
+
+        self.selected_variant = variant
+        self._generated_code = self.factory.select_and_generate(variant)
+        return self._generated_code
+
+    def generate_with_strategy(
+        self,
+        strategy: DispatchStrategy,
+    ) -> str:
+        """根据策略生成调度代码"""
+        variant_map = {
+            DispatchStrategy.DIRECT: DispatchVariant.BASIC_LOOP,
+            DispatchStrategy.STATE_MACHINE: DispatchVariant.STATE_TABLE,
+            DispatchStrategy.KEY_LOOKUP: DispatchVariant.TABLE_LOOKUP,
+            DispatchStrategy.OFFSET_CALC: DispatchVariant.TRANSITION_MATRIX,
+            DispatchStrategy.INDIRECT: DispatchVariant.TAIL_RECURSION,
+        }
+
+        variant = variant_map.get(strategy, DispatchVariant.BASIC_LOOP)
+        return self.generate(variant=variant, enable_diversification=False)
+
+    def get_generated_code(self) -> str:
+        """获取已生成的代码"""
+        return self._generated_code
+
+    def get_selected_variant(self) -> DispatchVariant | None:
+        """获取选中的变体"""
+        return self.selected_variant
+
+    def get_statistics(self) -> dict:
+        """获取统计信息"""
+        return {
+            "selected_variant": self.selected_variant.value if self.selected_variant else None,
+            "total_blocks": len(self.program.blocks),
+            "execution_order": len(self.program.execution_order),
+            "entry_block_id": self.program.entry_block_id,
+        }
 
 
 @dataclass
@@ -11101,6 +12306,294 @@ def demo_structure_variants(program: BlockProgram, rng: random.Random) -> dict[s
         code, stats = randomizer.generate_program()
         results[mode.value] = (code, stats)
 
+    return results
+
+
+# ===== 统一 Block 调度架构 =====
+
+
+class JumpTransform(Enum):
+    """跳转变换类型"""
+    NONE = "none"                        # 无变换
+    XOR = "xor"                          # 异或变换
+    OFFSET = "offset"                    # 偏移变换
+    NEGATE = "negate"                    # 取反变换
+    SWAP = "swap"                        # 交换变换
+    MODULO = "modulo"                    # 取模变换
+
+
+@dataclass
+class JumpTransformConfig:
+    """跳转变换配置"""
+    transform_type: JumpTransform = JumpTransform.NONE
+    transform_key: int = 0x5A
+    offset_base: int = 100
+    swap_table: dict[int, int] | None = None
+
+
+class BlockJumpResolver:
+    """
+    Block 跳转解析器
+
+    负责将 block 返回的中间值转换为下一个 block ID
+    """
+
+    def __init__(self, program: BlockProgram, config: JumpTransformConfig | None = None):
+        self.program = program
+        self.config = config if config else JumpTransformConfig()
+        self._build_resolution_map()
+
+    def _build_resolution_map(self) -> None:
+        """构建解析映射表"""
+        self.resolution_map: dict[int, int] = {}
+        for block in self.program.blocks:
+            if block.next_id is not None:
+                self.resolution_map[block.block_id] = block.next_id
+
+    def resolve(self, raw_id: int) -> int:
+        """
+        解析原始 ID
+
+        Args:
+            raw_id: block 返回的原始值
+
+        Returns:
+            解析后的 block ID
+        """
+        if self.config.transform_type == JumpTransform.NONE:
+            return raw_id
+        if self.config.transform_type == JumpTransform.XOR:
+            return raw_id ^ self.config.transform_key
+        if self.config.transform_type == JumpTransform.OFFSET:
+            return raw_id - self.config.offset_base
+        if self.config.transform_type == JumpTransform.NEGATE:
+            return -raw_id
+        if self.config.transform_type == JumpTransform.MODULO:
+            return raw_id % max(len(self.program.blocks), 1)
+        if self.config.transform_type == JumpTransform.SWAP and self.config.swap_table:
+            return self.config.swap_table.get(raw_id, raw_id)
+        return raw_id
+
+    def generate_resolution_function(self) -> str:
+        """生成解析函数"""
+        lines = []
+
+        if self.config.transform_type == JumpTransform.NONE:
+            lines.append("local function _resolve(id) return id end")
+        elif self.config.transform_type == JumpTransform.XOR:
+            lines.append(f"local _xor_key = {self.config.transform_key}")
+            lines.append("local function _resolve(id) return id ~ _xor_key end")
+        elif self.config.transform_type == JumpTransform.OFFSET:
+            lines.append(f"local _offset_base = {self.config.offset_base}")
+            lines.append("local function _resolve(id) return id - _offset_base end")
+        elif self.config.transform_type == JumpTransform.NEGATE:
+            lines.append("local function _resolve(id) return -id end")
+        elif self.config.transform_type == JumpTransform.MODULO:
+            max_val = max(len(self.program.blocks), 1)
+            lines.append(f"local _modulo = {max_val}")
+            lines.append("local function _resolve(id) return id % _modulo end")
+        elif self.config.transform_type == JumpTransform.SWAP and self.config.swap_table:
+            lines.append("local _swap = {")
+            for k, v in self.config.swap_table.items():
+                lines.append(f"    [{k}] = {v},")
+            lines.append("}")
+            lines.append("local function _resolve(id) return _swap[id] or id end")
+
+        return "\n".join(lines)
+
+
+class UnifiedDispatchFunction:
+    """
+    统一调度函数
+
+    封装所有 block 调度的核心逻辑，提供清晰的调度接口
+    """
+
+    def __init__(
+        self,
+        program: BlockProgram,
+        rng: random.Random | None = None,
+        transform_config: JumpTransformConfig | None = None
+    ):
+        self.program = program
+        self.rng = rng
+        self.transform_config = transform_config if transform_config else JumpTransformConfig()
+        self.resolver = BlockJumpResolver(program, self.transform_config)
+
+        pc_var = f"_pc{rng.randint(1000, 9999)}" if rng else "_pc"
+        tbl_var = f"_tbl{rng.randint(1000, 9999)}" if rng else "_tbl"
+        disp_var = f"_dispatch{rng.randint(1000, 9999)}" if rng else "_dispatch"
+
+        self._pc = pc_var
+        self._tbl = tbl_var
+        self._dispatch = disp_var
+
+    def generate_block_table(self) -> str:
+        """生成 block 表"""
+        lines = []
+        lines.append(f"local {self._tbl} = {{}}")
+        for idx, bid in enumerate(self.program.execution_order):
+            block = self.program.get_block(bid)
+            if block:
+                func_name = f"_fn_{bid}"
+                lines.append(f"{self._tbl}[{bid}] = {func_name}")
+        return "\n".join(lines)
+
+    def generate_block_functions(self) -> str:
+        """生成 block 函数（返回中间值）"""
+        lines = []
+        for bid in self.program.execution_order:
+            block = self.program.get_block(bid)
+            if block:
+                func_name = f"_fn_{bid}"
+                lines.append(f"local function {func_name}()")
+                if block.content.strip():
+                    for ln in block.content.strip().split("\n"):
+                        lines.append(f"    {ln}")
+                next_id = block.next_id if block.next_id else "nil"
+                lines.append(f"    return {next_id}")
+                lines.append("end")
+                lines.append("")
+        return "\n".join(lines)
+
+    def generate_resolver_function(self) -> str:
+        """生成解析函数"""
+        return self.resolver.generate_resolution_function()
+
+    def generate_dispatch_function(self) -> str:
+        """生成调度函数"""
+        lines = []
+        lines.append(f"local function {self._dispatch}(pc)")
+        lines.append(f"    local block = {self._tbl}[pc]")
+        lines.append(f"    if not block then return end")
+        lines.append(f"    local raw_id = block()")
+        lines.append(f"    return _resolve(raw_id)")
+        lines.append("end")
+        return "\n".join(lines)
+
+    def generate_executor(self) -> str:
+        """生成执行器"""
+        lines = []
+        lines.append(f"local {self._pc} = {self.program.entry_block_id}")
+        lines.append(f"while {self._pc} do")
+        lines.append(f"    {self._pc} = {self._dispatch}({self._pc})")
+        lines.append("end")
+        return "\n".join(lines)
+
+    def generate_complete_program(self) -> str:
+        """生成完整的程序"""
+        lines = []
+        lines.append("-- Block Table")
+        lines.append(self.generate_block_table())
+        lines.append("")
+        lines.append("-- Block Functions")
+        lines.append(self.generate_block_functions())
+        lines.append("-- Jump Resolver")
+        lines.append(self.generate_resolver_function())
+        lines.append("")
+        lines.append("-- Dispatch Function")
+        lines.append(self.generate_dispatch_function())
+        lines.append("")
+        lines.append("-- Executor")
+        lines.append(self.generate_executor())
+        return "\n".join(lines)
+
+
+class ModularDispatchArchitecture:
+    """
+    模块化调度架构
+
+    将调度逻辑拆分为独立的模块：
+    1. Block 函数 - 返回中间值
+    2. 跳转解析器 - 将中间值转换为 block ID
+    3. 调度函数 - 执行一次跳转
+    4. 执行器 - 循环执行调度
+    """
+
+    def __init__(
+        self,
+        program: BlockProgram,
+        rng: random.Random | None = None,
+        transform: JumpTransform = JumpTransform.NONE,
+        transform_key: int = 0x5A,
+        offset_base: int = 100
+    ):
+        self.program = program
+        self.rng = rng
+        config = JumpTransformConfig(
+            transform_type=transform,
+            transform_key=transform_key,
+            offset_base=offset_base
+        )
+        if transform == JumpTransform.SWAP:
+            config.swap_table = self._generate_swap_table()
+        self.dispatch = UnifiedDispatchFunction(program, rng, config)
+
+    def _generate_swap_table(self) -> dict[int, int]:
+        """生成交换表"""
+        ids = [b.block_id for b in self.program.blocks if b.next_id is not None]
+        swap = {}
+        for i, bid in enumerate(ids):
+            if i + 1 < len(ids):
+                swap[bid] = ids[i + 1]
+            elif ids:
+                swap[bid] = ids[0]
+        return swap
+
+    def generate(self) -> str:
+        """生成完整程序"""
+        return self.dispatch.generate_complete_program()
+
+    def get_stats(self) -> dict:
+        """获取统计信息"""
+        return {
+            "total_blocks": len(self.program.blocks),
+            "transform": self.dispatch.transform_config.transform_type.value,
+            "has_resolver": self.dispatch.transform_config.transform_type != JumpTransform.NONE,
+        }
+
+
+def create_dispatch_architecture(
+    program: BlockProgram,
+    rng: random.Random,
+    transform: str = "none"
+) -> ModularDispatchArchitecture:
+    """创建模块化调度架构"""
+    transform_map = {
+        "none": JumpTransform.NONE,
+        "xor": JumpTransform.XOR,
+        "offset": JumpTransform.OFFSET,
+        "negate": JumpTransform.NEGATE,
+        "swap": JumpTransform.SWAP,
+        "modulo": JumpTransform.MODULO,
+    }
+    transform_type = transform_map.get(transform, JumpTransform.NONE)
+    transform_key = rng.randint(1, 255) if rng else 0x5A
+    offset_base = rng.randint(50, 200) if rng else 100
+    return ModularDispatchArchitecture(
+        program=program, rng=rng,
+        transform=transform_type,
+        transform_key=transform_key,
+        offset_base=offset_base
+    )
+
+
+def generate_with_unified_dispatch(
+    program: BlockProgram,
+    rng: random.Random,
+    transform: str = "none"
+) -> str:
+    """便捷函数：使用统一调度架构生成程序"""
+    arch = create_dispatch_architecture(program, rng, transform)
+    return arch.generate()
+
+
+def demo_dispatch_architectures(program: BlockProgram, rng: random.Random) -> dict[str, str]:
+    """演示所有调度架构"""
+    results = {}
+    for transform in JumpTransform:
+        arch = create_dispatch_architecture(program, rng, transform.value)
+        results[transform.value] = arch.generate()
     return results
 
 
