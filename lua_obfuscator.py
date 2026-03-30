@@ -562,14 +562,19 @@ def transform(source: str, watermark: str) -> str:
     random.seed(int(time.time()))
     rng = create_time_seeded_random()
     profile = ProtectionProfile(rng, watermark)
+
     randomize_algorithms(profile, rng)
+
     tokens = tokenize(source)
     rewrite_tokens(tokens, profile, rng)
+
     api_plan = apply_api_indirection(tokens, profile, rng)
     shuffle_tables(profile, rng)
 
+    # ===== 原始代码拼接 =====
     body_parts: list[str] = []
     previous: Token | None = None
+
     for token in tokens:
         if token.type in (TokenType.COMMENT, TokenType.WHITESPACE):
             continue
@@ -578,6 +583,20 @@ def transform(source: str, watermark: str) -> str:
         body_parts.append(token.rendered())
         previous = token
 
+    # 👉 拼出原始 Lua 代码
+    body = "".join(body_parts)
+
+    # ===== 新增：program 包装 =====
+    program_wrapper = f"""
+local program = {{
+    [1] = function()
+{indent_lua(body, 8)}
+        return nil
+    end
+}}
+"""
+
+    # ===== 最终输出 =====
     return (
         "--[[\n"
         + "Lua Protector Watermark: "
@@ -587,10 +606,22 @@ def transform(source: str, watermark: str) -> str:
         + "]]\n"
         + build_runtime_prelude(profile)
         + api_plan.prelude
-        + "".join(body_parts)
-        + "\n"
+        + program_wrapper
+        + "\n-- execution entry\n"
+        + "local pc = 1\n"
+        + "while pc do\n"
+        + "    local fn = program[pc]\n"
+        + "    if not fn then error('Invalid program index: '..tostring(pc)) end\n"
+        + "    pc = fn()\n"
+        + "end\n"
     )
 
+def indent_lua(code: str, spaces: int) -> str:
+    pad = " " * spaces
+    return "\n".join(
+        pad + line if line.strip() else line
+        for line in code.splitlines()
+    )
 
 def tokenize(source: str) -> list[Token]:
     tokenizer = Tokenizer(source)
