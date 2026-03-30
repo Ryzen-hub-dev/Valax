@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 import string
+import time
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, Iterable
@@ -113,6 +114,12 @@ class EncodedString:
     variant: int
 
 
+@dataclass
+class ApiIndirectionPlan:
+    prelude: str
+    replacements: int
+
+
 class ScopeStack:
     def __init__(self) -> None:
         self._scopes: list[dict[str, str]] = []
@@ -150,8 +157,8 @@ class ProtectionProfile:
         self.cache_name = random_lua_identifier(rng, "_cc")
         self.pool_name = random_lua_identifier(rng, "_pp")
         self.hex_pair_name = random_lua_identifier(rng, "_hx")
-        self.decode_names = [random_lua_identifier(rng, "_dx") for _ in range(3)]
-        self.fetch_names = [random_lua_identifier(rng, "_fx") for _ in range(3)]
+        self.decode_names = [random_lua_identifier(rng, "_dx") for _ in range(4)]
+        self.fetch_names = [random_lua_identifier(rng, "_fx") for _ in range(4)]
         self.number_name = random_lua_identifier(rng, "_ix")
         self.value_wrap_name = random_lua_identifier(rng, "_vw")
         self.return_temp_name = random_lua_identifier(rng, "_rv")
@@ -188,8 +195,8 @@ class ProtectionProfile:
         self.fetch_variant = rng.randint(0, 2)
         self.value_wrap_variant = rng.randint(0, 2)
         self.helper_return_variant = rng.randint(0, 1)
-        self.state_multipliers = [17 + (rng.randint(0, 59) * 2) for _ in range(3)]
-        self.state_increments = [3 + rng.randint(0, 119) for _ in range(3)]
+        self.state_multipliers = [17 + (rng.randint(0, 59) * 2) for _ in range(4)]
+        self.state_increments = [3 + rng.randint(0, 119) for _ in range(4)]
         self.encoded_alphabet = shuffled_alphabet(rng)
         self.payload_field = random_lua_identifier(rng, "s")
         self.key_field = random_lua_identifier(rng, "k")
@@ -552,11 +559,14 @@ class Tokenizer:
 
 def transform(source: str, watermark: str) -> str:
     source = strip_leading_bom(source)
-    rng = create_deterministic_random(source, watermark)
+    random.seed(int(time.time()))
+    rng = create_time_seeded_random()
     profile = ProtectionProfile(rng, watermark)
+    randomize_algorithms(profile, rng)
     tokens = tokenize(source)
     rewrite_tokens(tokens, profile, rng)
-    profile.finalize_pool_layout(rng)
+    api_plan = apply_api_indirection(tokens, profile, rng)
+    shuffle_tables(profile, rng)
 
     body_parts: list[str] = []
     previous: Token | None = None
@@ -576,6 +586,7 @@ def transform(source: str, watermark: str) -> str:
         + "Protection profile: pooled literals + randomized runtime + lexer-aware minification\n"
         + "]]\n"
         + build_runtime_prelude(profile)
+        + api_plan.prelude
         + "".join(body_parts)
         + "\n"
     )
@@ -598,6 +609,82 @@ def rewrite_tokens(tokens: list[Token], profile: ProtectionProfile, rng: random.
         elif token.type is TokenType.KEYWORD:
             token.rewritten = rewrite_keyword_literal(token.text, profile)
     rename_local_symbols(tokens, profile, rng)
+
+
+def apply_api_indirection(tokens: list[Token], profile: ProtectionProfile, rng: random.Random) -> ApiIndirectionPlan:
+    """
+    Build an indirection layer for API access and rewrite known calls:
+      game:GetService("Players") -> call_api(API_GET_SERVICE, API_PLAYERS)
+    """
+    significant = [i for i, t in enumerate(tokens) if t.type not in (TokenType.WHITESPACE, TokenType.COMMENT)]
+    service_to_id: dict[str, int] = {}
+    matched_spans: list[tuple[int, int, str]] = []
+
+    for pos in range(len(significant) - 5):
+        i0 = significant[pos]
+        i1 = significant[pos + 1]
+        i2 = significant[pos + 2]
+        i3 = significant[pos + 3]
+        i4 = significant[pos + 4]
+        i5 = significant[pos + 5]
+        t0 = tokens[i0]
+        t1 = tokens[i1]
+        t2 = tokens[i2]
+        t3 = tokens[i3]
+        t4 = tokens[i4]
+        t5 = tokens[i5]
+        if not (t0.type is TokenType.IDENTIFIER and t0.text == "game"):
+            continue
+        if not (t1.type is TokenType.SYMBOL and t1.text == ":"):
+            continue
+        if not (t2.type is TokenType.IDENTIFIER and t2.text == "GetService"):
+            continue
+        if not (t3.type is TokenType.SYMBOL and t3.text == "(" and t5.type is TokenType.SYMBOL and t5.text == ")"):
+            continue
+        if not (t4.type is TokenType.STRING and t4.bytes_value is not None):
+            continue
+        try:
+            service_name = t4.bytes_value.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        if service_name not in service_to_id:
+            service_to_id[service_name] = len(service_to_id) + 1
+        matched_spans.append((i0, i5, service_name))
+
+    if not matched_spans:
+        return ApiIndirectionPlan(prelude="", replacements=0)
+
+    call_api_name = random_lua_identifier(rng, "_api")
+    api_table_name = random_lua_identifier(rng, "_at")
+    arg_table_name = random_lua_identifier(rng, "_as")
+    api_get_service_id = 1
+
+    service_expr_by_name: dict[str, str] = {}
+    for name in service_to_id:
+        service_expr_by_name[name] = profile.intern_string(name.encode("utf-8"), rng)
+
+    for start, end, service_name in matched_spans:
+        service_id = service_to_id[service_name]
+        api_id_expr = profile.runtime_int_expression(api_get_service_id)
+        service_id_expr = profile.runtime_int_expression(service_id)
+        tokens[start].rewritten = f"{call_api_name}({api_id_expr},{service_id_expr})"
+        for i in range(start + 1, end + 1):
+            tokens[i].rewritten = ""
+
+    out: list[str] = []
+    out.append(f"local {arg_table_name}={{\n")
+    for name, sid in service_to_id.items():
+        out.append(f" [{sid}]={service_expr_by_name[name]},\n")
+    out.append("}\n")
+    out.append(f"local {api_table_name}={{\n")
+    out.append(f" [{api_get_service_id}]=function(_a,_b)return game:GetService(_a[_b]) end,\n")
+    out.append("}\n")
+    out.append(f"local function {call_api_name}(_x,_y)\n")
+    out.append(f" local _h={api_table_name}[_x]\n")
+    out.append(" if _h==nil then error('api resolver id') end\n")
+    out.append(f" return _h({arg_table_name},_y)\n")
+    out.append("end\n")
+    return ApiIndirectionPlan(prelude="".join(out), replacements=len(matched_spans))
 
 
 def rename_local_symbols(tokens: list[Token], profile: ProtectionProfile, rng: random.Random) -> None:
@@ -770,6 +857,20 @@ def build_runtime_prelude(profile: ProtectionProfile) -> str:
     out.append(f"local {profile.char_name}=string.char\n")
     out.append(f"local {profile.sub_name}=string.sub\n")
     out.append(f"local {profile.byte_name}=string.byte\n")
+    out.append("local function _rol8(x,s)\n")
+    out.append(" s=s%8\n")
+    out.append(" if s==0 then return x%256 end\n")
+    out.append(" local a=(x*(2^s))%256\n")
+    out.append(" local b=math.floor((x%256)/(2^(8-s)))\n")
+    out.append(" return (a+b)%256\n")
+    out.append("end\n")
+    out.append("local function _ror8(x,s)\n")
+    out.append(" s=s%8\n")
+    out.append(" if s==0 then return x%256 end\n")
+    out.append(" local a=math.floor((x%256)/(2^s))\n")
+    out.append(" local b=((x%256)*(2^(8-s)))%256\n")
+    out.append(" return (a+b)%256\n")
+    out.append("end\n")
     out.append(f"local {profile.concat_name}=table.concat\n")
     out.append(f"local {profile.tonumber_name}=tonumber\n")
     out.append(f"local {profile.cache_name}={{}}\n")
@@ -840,11 +941,21 @@ def build_runtime_prelude(profile: ProtectionProfile) -> str:
             out.append(f"  local {profile.mask_name}=({profile.arg_b}+{profile.state_name})%256\n")
         elif variant == 1:
             out.append(f"  local {profile.mask_name}=({profile.arg_b}+({profile.state_name}*3))%256\n")
-        else:
+        elif variant == 2:
             out.append(f"  local {profile.mask_name}=(({profile.arg_b}~{profile.state_name})+{profile.arg_b})%256\n")
+        else:
+            out.append(f"  local {profile.mask_name}=(({profile.arg_b}*5)+{profile.state_name})%256\n")
         out.append(
-            f"  local {profile.byte_temp_name}=({profile.hex_pair_name}({profile.arg_a},{profile.index_name})-{profile.mask_name})%256\n"
+            f"  local {profile.byte_temp_name}={profile.hex_pair_name}({profile.arg_a},{profile.index_name})\n"
         )
+        if variant == 0:
+            out.append(f"  {profile.byte_temp_name}=({profile.byte_temp_name}~{profile.mask_name})%256\n")
+        elif variant == 1:
+            out.append(f"  {profile.byte_temp_name}=({profile.byte_temp_name}-{profile.mask_name})%256\n")
+        elif variant == 2:
+            out.append(f"  {profile.byte_temp_name}=_ror8({profile.byte_temp_name},{profile.mask_name}%8)\n")
+        else:
+            out.append(f"  {profile.byte_temp_name}=(({profile.byte_temp_name}-{profile.mask_name})*205)%256\n")
         out.append(f"  {profile.push_name}({profile.out_name},{profile.char_name}({profile.byte_temp_name}))\n")
         out.append(
             f"  {profile.state_name}=({profile.state_name}*{profile.state_multipliers[variant]}+{profile.state_increments[variant]})%256\n"
@@ -1006,7 +1117,23 @@ def encode_lua_bytes(raw_bytes: bytes, rng: random.Random, profile: ProtectionPr
     hex_parts: list[str] = []
     for raw_byte in raw_bytes:
         mask = (key + rolling) % 256
-        encoded = (raw_byte + mask) % 256
+        # Polymorphic reversible strategies for compiler experiments.
+        if variant == 0:
+            # strategy_a: XOR-style
+            encoded = raw_byte ^ mask
+        elif variant == 1:
+            # strategy_b: add + mod
+            encoded = (raw_byte + mask) % 256
+        elif variant == 2:
+            # strategy_c: bit rotate left by (mask mod 8)
+            shift = mask % 8
+            if shift == 0:
+                encoded = raw_byte
+            else:
+                encoded = ((raw_byte << shift) & 0xFF) | (raw_byte >> (8 - shift))
+        else:
+            # strategy_d: affine map (invertible mod 256)
+            encoded = ((raw_byte * 5) + mask) % 256
         hex_parts.append(profile.encoded_alphabet[(encoded >> 4) & 0xF])
         hex_parts.append(profile.encoded_alphabet[encoded & 0xF])
         rolling = (rolling * profile.state_multipliers[variant] + profile.state_increments[variant]) % 256
@@ -1118,13 +1245,22 @@ def parse_integer_literal(literal: str) -> int:
     return int(literal, 10)
 
 
-def create_deterministic_random(source: str, watermark: str) -> random.Random:
-    seed = 0x9E3779B97F4A7C15
-    combined = watermark + "\0" + source
-    for char in combined:
-        seed ^= ord(char)
-        seed = (seed * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+def create_time_seeded_random() -> random.Random:
+    # Time-based seed mode requested by user.
+    seed = int(time.time() * 1000) ^ random.getrandbits(32)
     return random.Random(seed)
+
+
+def shuffle_tables(profile: ProtectionProfile, rng: random.Random) -> None:
+    profile.finalize_pool_layout(rng)
+
+
+def randomize_algorithms(profile: ProtectionProfile, rng: random.Random) -> None:
+    profile.runtime_variant = rng.randint(0, 1)
+    profile.expression_variant = rng.randint(0, 2)
+    profile.fetch_variant = rng.randint(0, 2)
+    profile.value_wrap_variant = rng.randint(0, 2)
+    profile.helper_return_variant = rng.randint(0, 1)
 
 
 def random_lua_identifier(rng: random.Random, prefix: str) -> str:
@@ -1460,6 +1596,56 @@ class ControlFlowGraph:
             ],
             "edges": [{"src": e.src, "dst": e.dst, "kind": e.kind} for e in self.edges],
         }
+
+
+@dataclass(frozen=True)
+class IRJump:
+    target: int
+
+
+@dataclass(frozen=True)
+class IRBranch:
+    condition_text: str
+    true_target: int
+    false_target: int
+
+
+@dataclass
+class IRBlock:
+    id: int
+    statements: list[str]
+    terminator: IRJump | IRBranch | str | None = None
+
+
+@dataclass
+class ControlFlowIR:
+    entry_id: int
+    exit_id: int
+    blocks: dict[int, IRBlock]
+
+    def to_dict(self) -> dict[str, Any]:
+        out_blocks: list[dict[str, Any]] = []
+        for block in sorted(self.blocks.values(), key=lambda b: b.id):
+            term: dict[str, Any] | str | None
+            if isinstance(block.terminator, IRJump):
+                term = {"kind": "jump", "target": block.terminator.target}
+            elif isinstance(block.terminator, IRBranch):
+                term = {
+                    "kind": "branch",
+                    "condition": block.terminator.condition_text,
+                    "true_target": block.terminator.true_target,
+                    "false_target": block.terminator.false_target,
+                }
+            else:
+                term = block.terminator
+            out_blocks.append(
+                {
+                    "id": block.id,
+                    "statements": list(block.statements),
+                    "terminator": term,
+                }
+            )
+        return {"entry": self.entry_id, "exit": self.exit_id, "blocks": out_blocks}
 
 
 @dataclass(frozen=True)
@@ -2658,6 +2844,304 @@ def build_cfg_from_source(source: str) -> ControlFlowGraph:
     """
     return build_cfg_from_ast(parse_luau_subset_to_ast(source))
 
+
+def build_ir_from_cfg(cfg: ControlFlowGraph) -> ControlFlowIR:
+    """
+    Convert CFG into a simple structured IR with explicit block terminators:
+    - IRJump(target)
+    - IRBranch(condition_text, true_target, false_target)
+    - "return"/"halt"/None for terminal blocks
+    """
+    outgoing: dict[int, list[CfgEdge]] = {}
+    for edge in cfg.edges:
+        outgoing.setdefault(edge.src, []).append(edge)
+
+    ir_blocks: dict[int, IRBlock] = {}
+    for block_id, block in cfg.blocks.items():
+        statements = list(block.statements)
+        edges = outgoing.get(block_id, [])
+
+        true_edge = next((e for e in edges if e.kind == "true"), None)
+        false_edge = next((e for e in edges if e.kind == "false"), None)
+        next_like = next((e for e in edges if e.kind in ("next", "back", "break")), None)
+
+        terminator: IRJump | IRBranch | str | None
+        if true_edge is not None and false_edge is not None:
+            cond_text = ""
+            for stmt in statements:
+                s = stmt.strip()
+                if s.startswith("if "):
+                    cond_text = s[3:].replace(" then", "").strip()
+                    break
+                if s.startswith("while "):
+                    cond_text = s[6:].replace(" do", "").strip()
+                    break
+                if s.startswith("until "):
+                    cond_text = s[6:].strip()
+                    break
+            if not cond_text:
+                cond_text = "<cond>"
+            terminator = IRBranch(
+                condition_text=cond_text,
+                true_target=true_edge.dst,
+                false_target=false_edge.dst,
+            )
+        elif block.terminated:
+            if any(stmt.strip().startswith("return") for stmt in statements):
+                terminator = "return"
+            else:
+                terminator = "halt"
+        elif next_like is not None:
+            terminator = IRJump(target=next_like.dst)
+        elif block_id == cfg.exit_id:
+            terminator = "exit"
+        else:
+            terminator = None
+
+        ir_blocks[block_id] = IRBlock(
+            id=block_id,
+            statements=statements,
+            terminator=terminator,
+        )
+
+    return ControlFlowIR(entry_id=cfg.entry_id, exit_id=cfg.exit_id, blocks=ir_blocks)
+
+
+def build_ir_from_source(source: str) -> ControlFlowIR:
+    """
+    Convenience: source -> AST -> CFG -> IR.
+    """
+    return build_ir_from_cfg(build_cfg_from_source(source))
+
+
+def run_ir_interpreter(
+    ir: ControlFlowIR,
+    *,
+    env: dict[str, Any] | None = None,
+    eval_statement: callable | None = None,
+    eval_condition: callable | None = None,
+    max_steps: int = 10_000,
+) -> dict[str, Any]:
+    """
+    Minimal IR interpreter for validating CFG/IR conversion semantics.
+
+    Execution model:
+    - Dispatch loop over IR blocks (pc = block id).
+    - Execute block statements in order.
+    - Resolve block terminator to choose next block.
+    - Supports branch / jump / return / exit.
+
+    Hooks:
+    - eval_statement(stmt:str, env:dict) -> Any
+      Optional callback to execute/interpret statement text.
+      Return value is ignored except for custom debugging.
+    - eval_condition(cond_text:str, env:dict) -> bool
+      Optional callback for branch conditions.
+      If absent, fallback uses env.get(cond_text, False).
+
+    Return:
+      {
+        "entry": ...,
+        "exit": ...,
+        "trace": [{"block": id, "statements": [...], "terminator": ...}, ...],
+        "halt_reason": "return|exit|fallthrough|max_steps",
+        "return_value": ...,
+        "env": env
+      }
+    """
+    state = {} if env is None else dict(env)
+    trace: list[dict[str, Any]] = []
+    pc = ir.entry_id
+    steps = 0
+
+    while True:
+        steps += 1
+        if steps > max_steps:
+            return {
+                "entry": ir.entry_id,
+                "exit": ir.exit_id,
+                "trace": trace,
+                "halt_reason": "max_steps",
+                "return_value": None,
+                "env": state,
+            }
+
+        block = ir.blocks.get(pc)
+        if block is None:
+            return {
+                "entry": ir.entry_id,
+                "exit": ir.exit_id,
+                "trace": trace,
+                "halt_reason": "fallthrough",
+                "return_value": None,
+                "env": state,
+            }
+
+        # Execute statements.
+        for stmt in block.statements:
+            if eval_statement is not None:
+                eval_statement(stmt, state)
+
+        t = block.terminator
+        rec: dict[str, Any] = {"block": block.id, "statements": list(block.statements)}
+
+        if isinstance(t, IRBranch):
+            cond_value = bool(eval_condition(t.condition_text, state)) if eval_condition is not None else bool(
+                state.get(t.condition_text, False)
+            )
+            rec["terminator"] = {
+                "kind": "branch",
+                "condition": t.condition_text,
+                "condition_value": cond_value,
+                "true_target": t.true_target,
+                "false_target": t.false_target,
+            }
+            trace.append(rec)
+            pc = t.true_target if cond_value else t.false_target
+            continue
+
+        if isinstance(t, IRJump):
+            rec["terminator"] = {"kind": "jump", "target": t.target}
+            trace.append(rec)
+            pc = t.target
+            if pc == ir.exit_id:
+                trace.append({"block": ir.exit_id, "statements": list(ir.blocks.get(ir.exit_id, IRBlock(ir.exit_id, [])).statements), "terminator": "exit"})
+                return {
+                    "entry": ir.entry_id,
+                    "exit": ir.exit_id,
+                    "trace": trace,
+                    "halt_reason": "exit",
+                    "return_value": None,
+                    "env": state,
+                }
+            continue
+
+        if t == "return":
+            return_value = state.get("__return__", None)
+            # Best-effort parse for "return <expr>" into env lookup by expr text.
+            for stmt in reversed(block.statements):
+                s = stmt.strip()
+                if s.startswith("return"):
+                    expr = s[len("return") :].strip()
+                    if expr:
+                        return_value = state.get(expr, return_value)
+                    break
+            rec["terminator"] = "return"
+            trace.append(rec)
+            return {
+                "entry": ir.entry_id,
+                "exit": ir.exit_id,
+                "trace": trace,
+                "halt_reason": "return",
+                "return_value": return_value,
+                "env": state,
+            }
+
+        if t == "exit":
+            rec["terminator"] = "exit"
+            trace.append(rec)
+            return {
+                "entry": ir.entry_id,
+                "exit": ir.exit_id,
+                "trace": trace,
+                "halt_reason": "exit",
+                "return_value": None,
+                "env": state,
+            }
+
+        # None / halt / unknown: stop as fallthrough.
+        rec["terminator"] = t
+        trace.append(rec)
+        return {
+            "entry": ir.entry_id,
+            "exit": ir.exit_id,
+            "trace": trace,
+            "halt_reason": "fallthrough",
+            "return_value": None,
+            "env": state,
+        }
+
+
+def ir_blocks_statements_to_lua_snippets(ir: ControlFlowIR) -> str:
+    """
+    Render IRBlock statements to Lua code snippets only.
+
+    Notes:
+    - No jump/branch/dispatch loop is generated.
+    - Terminators are intentionally ignored.
+    - Output is grouped by block as comments + raw statement lines.
+    """
+    out: list[str] = []
+    for block_id in sorted(ir.blocks.keys()):
+        block = ir.blocks[block_id]
+        out.append(f"-- block_{block_id}")
+        if not block.statements:
+            out.append("-- (empty)")
+        else:
+            for stmt in block.statements:
+                text = stmt.strip()
+                if text:
+                    out.append(text)
+        out.append("")
+    return "\n".join(out).rstrip() + "\n"
+
+
+def ir_terminator_descriptions(ir: "ControlFlowIR") -> dict[int, dict[str, Any]]:
+    """
+    Convert each IRBlock terminator into simple descriptive metadata.
+
+    Output examples:
+    - {"type": "jump", "next": 2}
+    - {"type": "branch", "true_branch": 3, "false_branch": 4, "condition": "..."}
+    - {"type": "return"}
+    - {"type": "exit"}
+    - {"type": "halt"}
+    """
+
+    out: dict[int, dict[str, Any]] = {}
+
+    for block_id, block in ir.blocks.items():
+        t = block.terminator
+
+        # 默认结构
+        desc: dict[str, Any] = {}
+
+        if isinstance(t, IRJump):
+            desc = {
+                "type": "jump",
+                "next": t.target,
+            }
+
+        elif isinstance(t, IRBranch):
+            desc = {
+                "type": "branch",
+                "true_branch": t.true_target,
+                "false_branch": t.false_target,
+                "condition": getattr(t, "condition_text", None),
+            }
+
+        elif t == "return":
+            desc = {"type": "return"}
+
+        elif t == "exit":
+            desc = {"type": "exit"}
+
+        elif t == "halt":
+            desc = {"type": "halt"}
+
+        elif t is None:
+            desc = {"type": "none"}
+
+        else:
+            # fallback：未知类型（方便调试）
+            desc = {
+                "type": "unknown",
+                "repr": repr(t),
+            }
+
+        out[block_id] = desc
+
+    return out
 
 def simulate_cfg(
     cfg: ControlFlowGraph,
