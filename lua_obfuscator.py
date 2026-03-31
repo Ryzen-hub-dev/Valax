@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 import string
 import time
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, Iterable
@@ -20246,6 +20247,765 @@ if __name__ == "__main__":
     demo_lua_interpreter()
 
 
+
+# ===== 代码生成结构多样性增强模块 =====
+
+
+class DiversityStrategy(ABC):
+    """
+    结构多样性策略基类
+
+    定义不同代码生成策略的接口，
+    用于在保持语义一致的前提下生成结构多样的代码。
+    """
+
+    @abstractmethod
+    def select(self, rng: random.Random) -> Any:
+        """从多个等价格式中选择一个"""
+        pass
+
+    @abstractmethod
+    def name(self) -> str:
+        """返回策略名称"""
+        pass
+
+
+class DiversityConfig:
+    """
+    结构多样性配置
+
+    控制各层面的多样性生成选项
+    """
+
+    def __init__(
+        self,
+        enabled: bool = False,
+        diversity_level: float = 0.5,
+        handler_strategy: str = "random",
+        utility_strategy: str = "random",
+        naming_strategy: str = "random",
+        serialization_strategy: str = "random",
+        rng: random.Random | None = None,
+    ):
+        self.enabled = enabled
+        self.diversity_level = diversity_level  # 0.0 ~ 1.0
+        self.handler_strategy = handler_strategy
+        self.utility_strategy = utility_strategy
+        self.naming_strategy = naming_strategy
+        self.serialization_strategy = serialization_strategy
+        self.rng = rng or random.Random()
+
+    def should_apply(self) -> bool:
+        """是否应用多样性策略"""
+        return self.enabled and self.rng.random() < self.diversity_level
+
+    def copy_with_seed(self, seed: int) -> 'DiversityConfig':
+        """创建带新种子的配置副本"""
+        new_config = DiversityConfig(
+            enabled=self.enabled,
+            diversity_level=self.diversity_level,
+            handler_strategy=self.handler_strategy,
+            utility_strategy=self.utility_strategy,
+            naming_strategy=self.naming_strategy,
+            serialization_strategy=self.serialization_strategy,
+            rng=random.Random(seed),
+        )
+        return new_config
+
+
+class HandlerExpressionStrategy(DiversityStrategy):
+    """
+    Handler 表达式多样化策略
+
+    为同一操作提供多种等价的 Lua 表达形式
+    """
+
+    # 等价的表达式变体
+    STRATEGIES = {
+        "if_then": [
+            "if cond then return target end; return pc + 1",
+            "return cond and target or (pc + 1)",
+            "if not cond then return pc + 1 end; return target",
+            "local r = pc + 1; if cond then r = target end; return r",
+        ],
+        "nil_check": [
+            "if val == nil then return nil end",
+            "if not val then return nil end",
+            "return val or nil",
+        ],
+        "type_check": [
+            "if type(v) == 'string' then",
+            "if type(v) == 'string' then",
+            "if tostring(v) == v then",
+        ],
+        "table_insert": [
+            "table.insert(stack, val)",
+            "stack[#stack + 1] = val",
+        ],
+        "table_remove": [
+            "return table.remove(stack)",
+            "return table.remove(stack, #stack)",
+        ],
+        "local_assignment": [
+            "local x = val",
+            "local x; x = val",
+        ],
+        "return_next": [
+            "return pc + 1",
+            "do return pc + 1 end",
+            "pc = pc + 1; return pc",
+        ],
+        "halt_return": [
+            "return nil",
+            "do return nil end",
+            "pc = nil; return nil",
+        ],
+        "and_or_chain": [
+            "a and b or c",
+            "a and b or c",
+            "if a then return b else return c end",
+        ],
+    }
+
+    def name(self) -> str:
+        return "handler_expression"
+
+    def select(self, rng: random.Random, expression_type: str) -> str:
+        """选择指定类型的表达变体"""
+        variants = self.STRATEGIES.get(expression_type, ["pass"])
+        return rng.choice(variants)
+
+
+class UtilityFunctionStrategy(DiversityStrategy):
+    """
+    工具函数多样化策略
+
+    生成等价的辅助函数的不同实现方式
+    """
+
+    def name(self) -> str:
+        return "utility_function"
+
+    def select(self, rng: random.Random) -> str:
+        """选择实现风格"""
+        return self.select_style(rng)
+
+    def select_style(self, rng: random.Random) -> str:
+        """随机选择实现风格"""
+        styles = ["default", "compact", "verbose"]
+        return rng.choice(styles)
+
+    def generate_get_function(self, rng: random.Random, style: str = "default") -> list[str]:
+        """生成 _get 函数的不同实现"""
+        if style == "compact":
+            return [
+                "local function _get(state, name)",
+                "    local v = state.locals[name]",
+                "    return v ~= nil and v or state.globals[name]",
+                "end",
+            ]
+        elif style == "verbose":
+            return [
+                "local function _get(state, varname)",
+                "    if state.locals[varname] ~= nil then",
+                "        return state.locals[varname]",
+                "    end",
+                "    if state.globals[varname] ~= nil then",
+                "        return state.globals[varname]",
+                "    end",
+                "    return nil",
+                "end",
+            ]
+        else:  # default
+            return [
+                "local function _get(state, varname)",
+                "    if state.locals[varname] ~= nil then",
+                "        return state.locals[varname]",
+                "    end",
+                "    if state.globals[varname] ~= nil then",
+                "        return state.globals[varname]",
+                "    end",
+                "    return nil",
+                "end",
+            ]
+
+    def generate_push_function(self, rng: random.Random, style: str = "default") -> list[str]:
+        """生成 _push 函数的不同实现"""
+        if style == "direct":
+            return [
+                "local function _push(state, value)",
+                "    state.stack[#state.stack + 1] = value",
+                "end",
+            ]
+        elif style == "insert":
+            return [
+                "local function _push(state, value)",
+                "    table.insert(state.stack, value)",
+                "end",
+            ]
+        else:  # default
+            return [
+                "local function _push(state, value)",
+                "    table.insert(state.stack, value)",
+                "end",
+            ]
+
+    def generate_pop_function(self, rng: random.Random, style: str = "default") -> list[str]:
+        """生成 _pop 函数的不同实现"""
+        if style == "remove":
+            return [
+                "local function _pop(state)",
+                "    return table.remove(state.stack)",
+                "end",
+            ]
+        elif style == "index":
+            return [
+                "local function _pop(state)",
+                "    local v = state.stack[#state.stack]",
+                "    state.stack[#state.stack] = nil",
+                "    return v",
+                "end",
+            ]
+        else:  # default
+            return [
+                "local function _pop(state)",
+                "    return table.remove(state.stack)",
+                "end",
+            ]
+
+    def generate_get_function(self, rng: random.Random, style: str = "default") -> list[str]:
+        """生成 _get 函数的不同实现"""
+        if style == "compact":
+            return [
+                "local function _get(state, name)",
+                "    local v = state.locals[name]",
+                "    return v ~= nil and v or state.globals[name]",
+                "end",
+            ]
+        elif style == "verbose":
+            return [
+                "local function _get(state, varname)",
+                "    if state.locals[varname] ~= nil then",
+                "        return state.locals[varname]",
+                "    end",
+                "    if state.globals[varname] ~= nil then",
+                "        return state.globals[varname]",
+                "    end",
+                "    return nil",
+                "end",
+            ]
+        else:  # default
+            return [
+                "local function _get(state, varname)",
+                "    if state.locals[varname] ~= nil then",
+                "        return state.locals[varname]",
+                "    end",
+                "    if state.globals[varname] ~= nil then",
+                "        return state.globals[varname]",
+                "    end",
+                "    return nil",
+                "end",
+            ]
+
+    def select_style(self, rng: random.Random) -> str:
+        """随机选择实现风格"""
+        styles = ["default", "compact", "verbose"]
+        return rng.choice(styles)
+
+
+class VariableNamingStrategy(DiversityStrategy):
+    """
+    变量命名多样化策略
+
+    为内部变量生成不同的命名方案
+    """
+
+    # 预设的变量名池
+    NAME_POOLS = {
+        "default": {
+            "state": ["state", "ctx", "env", "vm"],
+            "varname": ["varname", "name", "key", "var"],
+            "value": ["value", "val", "v", "data"],
+            "expr": ["expr", "e", "exp", "code"],
+            "cond": ["cond", "c", "test", "pred"],
+            "target": ["target", "t", "dest", "addr"],
+            "func": ["func", "f", "fn", "cb"],
+            "result": ["result", "res", "r", "out"],
+            "pc": ["pc", "ip", "ptr", "idx"],
+            "stack": ["stack", "stk", "s", "st"],
+        },
+        "obfuscated": {
+            "state": ["_S", "_st", "_0", "_a"],
+            "varname": ["_n", "_v", "_1", "_k"],
+            "value": ["_x", "_d", "_2", "_z"],
+            "expr": ["_e", "_q", "_3", "_m"],
+            "cond": ["_c", "_t", "_4", "_f"],
+            "target": ["_j", "_p", "_5", "_g"],
+            "func": ["_f", "_u", "_6", "_h"],
+            "result": ["_r", "_o", "_7", "_w"],
+            "pc": ["_i", "_z", "_8", "_y"],
+            "stack": ["_s", "_a", "_9", "_b"],
+        },
+        "mixed": {
+            "state": ["st", "_state", "vm_ctx", "env"],
+            "varname": ["vn", "_name", "var_key", "n"],
+            "value": ["vl", "_val", "data_v", "d"],
+            "expr": ["ex", "_expr", "expr_code", "e"],
+            "cond": ["ct", "_cond", "test_p", "p"],
+            "target": ["tg", "_target", "dest_j", "j"],
+            "func": ["fn", "_func", "callback", "cb"],
+            "result": ["rs", "_result", "out_val", "o"],
+            "pc": ["ip", "_pc", "inst_ptr", "ix"],
+            "stack": ["sk", "_stack", "stk_data", "sd"],
+        },
+    }
+
+    def name(self) -> str:
+        return "variable_naming"
+
+    def select(self, rng: random.Random) -> Any:
+        """选择一个命名池"""
+        pools = list(self.NAME_POOLS.keys())
+        return rng.choice(pools)
+
+    def __init__(self):
+        self.current_pool = "default"
+        self._name_cache = {}  # 缓存已生成的变量名
+
+    def set_pool(self, pool_name: str):
+        """设置使用的命名池"""
+        if pool_name in self.NAME_POOLS:
+            self.current_pool = pool_name
+            self._name_cache.clear()
+
+    def get_name(self, var_type: str, rng: random.Random) -> str:
+        """获取指定类型的变量名"""
+        pool = self.NAME_POOLS.get(self.current_pool, self.NAME_POOLS["default"])
+        options = pool.get(var_type, [var_type])
+        return rng.choice(options)
+
+    def generate_all_names(self, rng: random.Random, pool_name: str = "default") -> dict[str, str]:
+        """生成一套完整的变量名映射"""
+        pool = self.NAME_POOLS.get(pool_name, self.NAME_POOLS["default"])
+        result = {}
+        for var_type, options in pool.items():
+            result[var_type] = rng.choice(options)
+        return result
+
+
+class SerializationStrategy(DiversityStrategy):
+    """
+    序列化多样化策略
+
+    同一指令数据使用不同的序列化格式
+    """
+
+    def name(self) -> str:
+        return "serialization"
+
+    def select(self, rng: random.Random) -> callable:
+        """选择序列化器"""
+        return self.select_serializer(rng)
+
+    def serialize_instr_compact(self, instr_data: list, var_name: str, idx: int) -> str:
+        """紧凑序列化格式"""
+        # {opcode, arg1, arg2, ...}
+        return f"{var_name}[{idx}] = {{{', '.join(str(x) for x in instr_data)}}}}}"
+
+    def serialize_instr_expanded(self, instr_data: list, var_name: str, idx: int) -> str:
+        """展开的序列化格式"""
+        lines = [f"{var_name}[{idx}] = {{"]
+        for i, val in enumerate(instr_data):
+            lines.append(f"    [{i}] = {val},")
+        lines.append("}}")
+        return "\n".join(lines)
+
+    def serialize_instr_named(self, instr_data: list, var_name: str, idx: int) -> str:
+        """带字段名的序列化格式"""
+        names = ["op", "arg1", "arg2", "arg3", "result"]
+        parts = []
+        for i, val in enumerate(instr_data):
+            name = names[i] if i < len(names) else f"f{i}"
+            parts.append(f"{name}={val}")
+        return f"{var_name}[{idx}] = {{{', '.join(parts)}}}}}"
+
+    def select_serializer(self, rng: random.Random) -> callable:
+        """选择序列化器"""
+        serializers = [
+            self.serialize_instr_compact,
+            self.serialize_instr_expanded,
+            self.serialize_instr_named,
+        ]
+        return rng.choice(serializers)
+
+
+class DispatcherStrategy(DiversityStrategy):
+    """
+    分发器多样化策略
+
+    生成不同风格的 dispatch 函数
+    """
+
+    def name(self) -> str:
+        return "dispatcher"
+
+    def select(self, rng: random.Random) -> list[str]:
+        """选择一个分发器实现"""
+        return self.select_dispatcher(rng)
+
+    def generate_direct_dispatch(self) -> list[str]:
+        """直接分发（标准方式）"""
+        return [
+            "local function dispatch(instr, state, pc)",
+            "    local op = instr[1]",
+            "    local handler = handlers[op] or handlers.default",
+            "    return handler(instr, state, pc)",
+            "end",
+        ]
+
+    def generate_inline_dispatch(self) -> list[str]:
+        """内联分发"""
+        return [
+            "local function dispatch(instr, state, pc)",
+            "    return (handlers[instr[1]] or handlers.default)(instr, state, pc)",
+            "end",
+        ]
+
+    def generate_safelist_dispatch(self) -> list[str]:
+        """安全列表分发"""
+        return [
+            "local function dispatch(instr, state, pc)",
+            "    local h = handlers[instr[1]]",
+            "    if h then return h(instr, state, pc) end",
+            "    return handlers.default(instr, state, pc)",
+            "end",
+        ]
+
+    def select_dispatcher(self, rng: random.Random) -> list[str]:
+        """选择分发器实现"""
+        dispatchers = [
+            self.generate_direct_dispatch,
+            self.generate_inline_dispatch,
+            self.generate_safelist_dispatch,
+        ]
+        return rng.choice(dispatchers)()
+
+
+class LoopStructureStrategy(DiversityStrategy):
+    """
+    循环结构多样化策略
+
+    生成不同风格的执行循环
+    """
+
+    def name(self) -> str:
+        return "loop_structure"
+
+    def select(self, rng: random.Random) -> callable:
+        """选择一个循环生成器"""
+        loops = [
+            self.generate_while_loop,
+            self.generate_repeat_loop,
+            self.generate_for_loop,
+        ]
+        return rng.choice(loops)
+
+    def generate_while_loop(self, code_var: str, state_var: str) -> list[str]:
+        """while 循环风格"""
+        return [
+            f"local function execute({code_var}, {state_var})",
+            f"    local pc = 1",
+            f"    while pc and not {state_var}.halted do",
+            f"        local instr = {code_var}[pc]",
+            f"        if not instr then break end",
+            f"        pc = dispatch(instr, {state_var}, pc)",
+            f"        if not pc then break end",
+            f"        if pc < 1 or pc > #{code_var} + 1 then break end",
+            f"    end",
+            f"    return {state_var}.return_value",
+            f"end",
+        ]
+
+    def generate_repeat_loop(self, code_var: str, state_var: str) -> list[str]:
+        """repeat-until 循环风格"""
+        return [
+            f"local function execute({code_var}, {state_var})",
+            f"    local pc = 1",
+            f"    repeat",
+            f"        local instr = {code_var}[pc]",
+            f"        if not instr then break end",
+            f"        pc = dispatch(instr, {state_var}, pc)",
+            f"        if not pc or pc < 1 or pc > #{code_var} + 1 then break end",
+            f"    until {state_var}.halted",
+            f"    return {state_var}.return_value",
+            f"end",
+        ]
+
+    def generate_for_loop(self, code_var: str, state_var: str) -> list[str]:
+        """for 循环风格"""
+        return [
+            f"local function execute({code_var}, {state_var})",
+            f"    local n = #{code_var}",
+            f"    local pc = 1",
+            f"    for _ = 1, n + 1 do",
+            f"        if {state_var}.halted then break end",
+            f"        local instr = {code_var}[pc]",
+            f"        if not instr then break end",
+            f"        local npc = dispatch(instr, {state_var}, pc)",
+            f"        if not npc or npc < 1 or npc > n + 1 then break end",
+            f"        pc = npc",
+            f"    end",
+            f"    return {state_var}.return_value",
+            f"end",
+        ]
+
+    def select_loop(self, rng: random.Random, code_var: str, state_var: str) -> list[str]:
+        """选择循环结构"""
+        loops = [
+            lambda: self.generate_while_loop(code_var, state_var),
+            lambda: self.generate_repeat_loop(code_var, state_var),
+            lambda: self.generate_for_loop(code_var, state_var),
+        ]
+        return rng.choice(loops)()
+
+
+class DiversityOrchestrator:
+    """
+    多样性生成协调器
+
+    整合所有多样性策略，统一调度生成过程
+    """
+
+    def __init__(
+        self,
+        config: DiversityConfig | None = None,
+        rng: random.Random | None = None,
+    ):
+        self.config = config or DiversityConfig()
+        self.rng = rng or self.config.rng
+
+        # 初始化各策略
+        self.handler_strategy = HandlerExpressionStrategy()
+        self.utility_strategy = UtilityFunctionStrategy()
+        self.naming_strategy = VariableNamingStrategy()
+        self.serialization_strategy = SerializationStrategy()
+        self.dispatcher_strategy = DispatcherStrategy()
+        self.loop_strategy = LoopStructureStrategy()
+
+        # 根据配置设置命名池
+        self._apply_naming_pool()
+
+    def _apply_naming_pool(self):
+        """应用命名策略"""
+        pool_map = {
+            "default": "default",
+            "obfuscated": "obfuscated",
+            "random": ["default", "obfuscated", "mixed"],
+        }
+        pool_name = self.config.naming_strategy
+        if pool_name == "random":
+            pool_name = self.rng.choice(["default", "obfuscated", "mixed"])
+        self.naming_strategy.set_pool(pool_name)
+
+    def should_diversify(self) -> bool:
+        """是否启用多样化生成"""
+        return self.config.enabled
+
+    def get_handler_variant(self, expression_type: str) -> str:
+        """获取 handler 表达变体"""
+        if not self.should_diversify():
+            return HandlerExpressionStrategy.STRATEGIES.get(expression_type, ["pass"])[0]
+        return self.handler_strategy.select(self.rng, expression_type)
+
+    def generate_utility_functions(self) -> str:
+        """生成工具函数（带多样性）"""
+        style = self.utility_strategy.select_style(self.rng) if self.should_diversify() else "default"
+        lines = [
+            "-- =========================================",
+            "-- Utility Functions for Handlers",
+            "-- =========================================",
+            "",
+        ]
+
+        # _get
+        lines.extend(self.utility_strategy.generate_get_function(self.rng, style))
+        lines.append("")
+
+        # _set
+        lines.append("local function _set(state, varname, value)")
+        lines.append("    state.locals[varname] = value")
+        lines.append("end")
+        lines.append("")
+
+        # _push
+        lines.extend(self.utility_strategy.generate_push_function(self.rng, style))
+        lines.append("")
+
+        # _pop
+        lines.extend(self.utility_strategy.generate_pop_function(self.rng, style))
+        lines.append("")
+
+        # _eval_literal
+        lines.extend(self._generate_eval_literal(style))
+        lines.append("")
+
+        # _eval_expr
+        lines.extend(self._generate_eval_expr(style))
+        lines.append("")
+
+        # _eval_condition
+        lines.extend(self._generate_eval_condition(style))
+        lines.append("")
+
+        # _is_truthy
+        lines.extend(self._generate_is_truthy(style))
+
+        return "\n".join(lines)
+
+    def _generate_eval_literal(self, style: str) -> list[str]:
+        """生成 _eval_literal 函数"""
+        if style == "compact":
+            return [
+                "local function _eval_literal(v)",
+                "    if v == nil or v == true or v == false then return v end",
+                "    if type(v) == 'number' then return v end",
+                "    return tonumber(v) or v",
+                "end",
+            ]
+        else:
+            return [
+                "local function _eval_literal(val)",
+                "    if val == nil then return nil end",
+                "    if val == true then return true end",
+                "    if val == false then return false end",
+                "    if type(val) == 'number' then return val end",
+                "    if type(val) == 'string' then",
+                "        local n = tonumber(val)",
+                "        if n then return n end",
+                "    end",
+                "    return val",
+                "end",
+            ]
+
+    def _generate_eval_expr(self, style: str) -> list[str]:
+        """生成 _eval_expr 函数"""
+        if style == "compact":
+            return [
+                "local function _eval_expr(st, e)",
+                "    if type(e) ~= 'string' then return e end",
+                "    local v = _get(st, e)",
+                "    if v ~= nil then return v end",
+                "    return tonumber(e) or e",
+                "end",
+            ]
+        else:
+            return [
+                "local function _eval_expr(state, expr)",
+                "    if expr == nil then return nil end",
+                "    if type(expr) == 'number' then return expr end",
+                "    if type(expr) == 'string' then",
+                "        local var_value = _get(state, expr)",
+                "        if var_value ~= nil then return var_value end",
+                "        local n = tonumber(expr)",
+                "        if n then return n end",
+                "    end",
+                "    return expr",
+                "end",
+            ]
+
+    def _generate_eval_condition(self, style: str) -> list[str]:
+        """生成 _eval_condition 函数"""
+        if style == "compact":
+            return [
+                "local function _eval_cond(st, c)",
+                "    if c == nil or c == false then return false end",
+                "    if c == true then return true end",
+                "    if type(c) == 'string' then return _is_truthy(_get(st, c)) end",
+                "    return true",
+                "end",
+            ]
+        else:
+            return [
+                "local function _eval_condition(state, cond)",
+                "    if cond == nil then return false end",
+                "    if cond == true then return true end",
+                "    if cond == false then return false end",
+                "    if type(cond) == 'string' then",
+                "        local val = _get(state, cond)",
+                "        if val ~= nil then return _is_truthy(val) end",
+                "    end",
+                "    return _is_truthy(cond)",
+                "end",
+            ]
+
+    def _generate_is_truthy(self, style: str) -> list[str]:
+        """生成 _is_truthy 函数"""
+        if style == "compact":
+            return [
+                "local function _is_truthy(v)",
+                "    return v ~= nil and v ~= false",
+                "end",
+            ]
+        else:
+            return [
+                "local function _is_truthy(val)",
+                "    if val == nil then return false end",
+                "    if val == false then return false end",
+                "    return true",
+                "end",
+            ]
+
+    def generate_dispatcher(self) -> str:
+        """生成 dispatcher 函数"""
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Handler Dispatcher")
+        lines.append("-- =========================================")
+        lines.append("")
+
+        if self.should_diversify():
+            dispatcher_code = self.dispatcher_strategy.select_dispatcher(self.rng)
+            lines.extend(dispatcher_code)
+        else:
+            lines.extend(self.dispatcher_strategy.generate_direct_dispatch())
+
+        return "\n".join(lines)
+
+    def generate_executor_loop(
+        self,
+        code_var: str = "code",
+        state_var: str = "state",
+        function_name: str = "execute"
+    ) -> str:
+        """生成执行循环"""
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Executor Loop")
+        lines.append("-- =========================================")
+        lines.append("")
+
+        if self.should_diversify():
+            loop_code = self.loop_strategy.select_loop(self.rng, code_var, state_var)
+            lines.extend(loop_code)
+        else:
+            lines.extend(self.loop_strategy.generate_while_loop(code_var, state_var))
+
+        return "\n".join(lines)
+
+    def serialize_instruction(
+        self,
+        instr_data: list,
+        var_name: str,
+        idx: int
+    ) -> str:
+        """序列化单条指令"""
+        if self.should_diversify():
+            serializer = self.serialization_strategy.select_serializer(self.rng)
+            return serializer(instr_data, var_name, idx)
+        else:
+            return self.serialization_strategy.serialize_instr_compact(instr_data, var_name, idx)
+
+
 # ===== Python Handler 到 Lua Handler 的转换 =====
 
 
@@ -20937,6 +21697,9 @@ class LuaProgramEmitter:
     将 instruction 数据、handler 定义、执行器逻辑整合为一个
     完整、可独立运行的 Lua 程序。
 
+    支持结构多样性生成，可在保持语义一致的前提下
+    生成不同结构的代码。
+
     输出结构:
     1. instruction 数据表 (local code = {...})
     2. 执行上下文 (local state = {})
@@ -20950,11 +21713,22 @@ class LuaProgramEmitter:
         handler_generator: LuaHandlerGenerator | None = None,
         include_comments: bool = True,
         include_debug: bool = False,
+        diversity_config: DiversityConfig | None = None,
     ):
         self.serializer = serializer or InstructionSerializer(compact=True)
         self.handler_generator = handler_generator or LuaHandlerGenerator(include_comments=include_comments)
         self.include_comments = include_comments
         self.include_debug = include_debug
+
+        # 多样性配置
+        self.diversity_config = diversity_config
+        self.diversity_enabled = diversity_config is not None and diversity_config.enabled
+
+        # 初始化多样性协调器
+        if self.diversity_enabled:
+            self.orchestrator = DiversityOrchestrator(diversity_config)
+        else:
+            self.orchestrator = None
 
     # ===== Part 1: Instruction Table 生成 =====
 
@@ -21062,8 +21836,11 @@ class LuaProgramEmitter:
         lines.append("-- Handler Table")
         lines.append("-- =========================================")
 
-        # Utility functions
-        lines.append(self.handler_generator.generate_utility_functions())
+        # Utility functions (使用协调器生成多样版本)
+        if self.orchestrator and self.orchestrator.should_diversify():
+            lines.append(self.orchestrator.generate_utility_functions())
+        else:
+            lines.append(self.handler_generator.generate_utility_functions())
         lines.append("")
 
         # Handler table
@@ -21096,6 +21873,10 @@ class LuaProgramEmitter:
         Returns:
             Lua 代码字符串
         """
+        # 使用协调器生成多样版本
+        if self.orchestrator and self.orchestrator.should_diversify():
+            return self.orchestrator.generate_dispatcher()
+
         lines = []
         lines.append("-- =========================================")
         lines.append("-- Dispatcher")
@@ -21141,6 +21922,10 @@ class LuaProgramEmitter:
         Returns:
             Lua 代码字符串
         """
+        # 使用协调器生成多样版本
+        if self.orchestrator and self.orchestrator.should_diversify():
+            return self.orchestrator.generate_executor_loop(code_var, state_var, function_name)
+
         lines = []
         lines.append("-- =========================================")
         lines.append("-- Executor Loop")
@@ -21310,6 +22095,316 @@ class LuaProgramEmitter:
 
         return "\n\n".join(parts)
 
+    # ===== Part 6: Runtime Integrity Validation =====
+
+    def emit_integrity_module(
+        self,
+        code_var: str = "code",
+        state_var: str = "state",
+        check_interval: int = 100
+    ) -> str:
+        """
+        生成运行时完整性校验模块
+
+        用于检测代码结构和关键数据是否被意外修改
+
+        Args:
+            code_var: 代码变量名
+            state_var: 状态变量名
+            check_interval: 重复校验间隔（执行多少次指令后检查一次）
+
+        Returns:
+            Lua 代码字符串
+        """
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Runtime Integrity Validation Module")
+        lines.append("-- =========================================")
+
+        # 校验种子值（在生成时嵌入）
+        integrity_seed = self._generate_integrity_seed()
+        lines.append("")
+        lines.append("-- Integrity check seed (do not modify)")
+        lines.append(f"local _INT_SEED = {integrity_seed}")
+        lines.append(f"local _INT_CHECK_INTERVAL = {check_interval}")
+        lines.append("local _INT_EXEC_COUNTER = 0")
+        lines.append("")
+
+        # 简单哈希函数（基于 XOR 和移位）
+        lines.append("-- Simple hash function for integrity checks")
+        lines.append("local function _int_hash(data)")
+        lines.append("    if type(data) == 'table' then")
+        lines.append("        local h = _INT_SEED")
+        lines.append("        for _, v in pairs(data) do")
+        lines.append("            local vh = _int_hash(v)")
+        lines.append("            h = ((h << 5) | (h >> 27)) ~ vh")
+        lines.append("        end")
+        lines.append("        return h")
+        lines.append("    elseif type(data) == 'string' then")
+        lines.append("        local h = _INT_SEED")
+        lines.append("        for i = 1, #data do")
+        lines.append("            h = ((h << 5) | (h >> 27)) ~ string.byte(data, i)")
+        lines.append("        end")
+        lines.append("        return h")
+        lines.append("    elseif type(data) == 'number' then")
+        lines.append("        return (data * 0x9e3779b9) ~ _INT_SEED")
+        lines.append("    else")
+        lines.append("        return _INT_SEED")
+        lines.append("    end")
+        lines.append("end")
+        lines.append("")
+
+        # 计算表结构的签名
+        lines.append("-- Calculate structural signature for a table")
+        lines.append("local function _int_table_signature(tbl)")
+        lines.append("    if type(tbl) ~= 'table' then return 0 end")
+        lines.append("    local sig = 0")
+        lines.append("    -- Hash by key-value pair count and types")
+        lines.append("    local keys = {}")
+        lines.append("    for k, _ in pairs(tbl) do table.insert(keys, k) end")
+        lines.append("    table.sort(keys)")
+        lines.append("    for _, k in ipairs(keys) do")
+        lines.append("        local v = tbl[k]")
+        lines.append("        local kh = _int_hash(k)")
+        lines.append("        local vh = _int_hash(v)")
+        lines.append("        sig = sig ~ ((kh * 31) + vh)")
+        lines.append("    end")
+        lines.append("    return sig")
+        lines.append("end")
+        lines.append("")
+
+        # 存储预期的校验值
+        lines.append("-- Expected integrity values (set at generation time)")
+        lines.append("local _INT_EXPECTED = {")
+        lines.append("    code_len = 0,")
+        lines.append("    code_sig = 0,")
+        lines.append("    handlers_sig = 0,")
+        lines.append("}")
+        lines.append("")
+
+        # 主校验函数
+        lines.append("-- Main integrity validation function")
+        lines.append("local function _int_validate()")
+        lines.append("    -- Check code table integrity")
+        lines.append("    local code_len = #" + code_var)
+        lines.append("    if code_len ~= _INT_EXPECTED.code_len then")
+        lines.append("        return false, 'code length mismatch: expected ' .. _INT_EXPECTED.code_len .. ', got ' .. code_len")
+        lines.append("    end")
+        lines.append("")
+        lines.append("    local code_sig = _int_table_signature(" + code_var + ")")
+        lines.append("    if code_sig ~= _INT_EXPECTED.code_sig then")
+        lines.append("        return false, 'code signature mismatch'")
+        lines.append("    end")
+        lines.append("")
+        lines.append("    -- Check handlers table integrity")
+        lines.append("    local handlers_sig = _int_table_signature(handlers)")
+        lines.append("    if handlers_sig ~= _INT_EXPECTED.handlers_sig then")
+        lines.append("        return false, 'handlers signature mismatch'")
+        lines.append("    end")
+        lines.append("")
+        lines.append("    return true")
+        lines.append("end")
+        lines.append("")
+
+        # 初始化校验值
+        lines.append("-- Initialize integrity expected values")
+        lines.append("local function _int_init()")
+        lines.append("    _INT_EXPECTED.code_len = #" + code_var)
+        lines.append("    _INT_EXPECTED.code_sig = _int_table_signature(" + code_var + ")")
+        lines.append("    _INT_EXPECTED.handlers_sig = _int_table_signature(handlers)")
+        lines.append("end")
+        lines.append("")
+
+        # 检查函数（可在循环中调用）
+        lines.append("-- Periodic integrity check")
+        lines.append("local function _int_check()")
+        lines.append("    _INT_EXEC_COUNTER = _INT_EXEC_COUNTER + 1")
+        lines.append("    if _INT_EXEC_COUNTER % _INT_CHECK_INTERVAL == 0 then")
+        lines.append("        local ok, err = _int_validate()")
+        lines.append("        if not ok then")
+        lines.append("            error('[Integrity Check Failed] ' .. tostring(err))")
+        lines.append("        end")
+        lines.append("    end")
+        lines.append("end")
+        lines.append("")
+
+        # 重置计数器
+        lines.append("-- Reset execution counter")
+        lines.append("local function _int_reset()")
+        lines.append("    _INT_EXEC_COUNTER = 0")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def _generate_integrity_seed(self) -> int:
+        """生成校验种子值"""
+        import time
+        seed = int(time.time() * 1000) % 0xFFFFFFFF
+        return seed
+
+    def emit_integrity_validation_call(self) -> str:
+        """
+        生成初始化校验的调用代码
+
+        Returns:
+            Lua 代码字符串
+        """
+        return "_int_init()"
+
+    def emit_integrity_check_call(self) -> str:
+        """
+        生成循环中校验调用的代码片段
+
+        Returns:
+            Lua 代码字符串
+        """
+        return "_int_check()"
+
+    def emit_integrity_guard(
+        self,
+        code_var: str = "code",
+        state_var: str = "state",
+        check_interval: int = 100
+    ) -> str:
+        """
+        生成完整的完整性保护模块（包含初始化和检查调用）
+
+        Args:
+            code_var: 代码变量名
+            state_var: 状态变量名
+            check_interval: 检查间隔
+
+        Returns:
+            Lua 代码字符串
+        """
+        parts = []
+        parts.append(self.emit_integrity_module(code_var, state_var, check_interval))
+        parts.append("")
+        parts.append("-- Initialize integrity checks at startup")
+        parts.append(self.emit_integrity_validation_call())
+        return "\n\n".join(parts)
+
+    # ===== Part 7: Integrated Executor with Integrity Checks =====
+
+    def emit_integrated_executor(
+        self,
+        code_var: str = "code",
+        state_var: str = "state",
+        function_name: str = "execute",
+        enable_periodic_check: bool = True,
+        check_interval: int = 100
+    ) -> str:
+        """
+        生成带完整性校验的执行循环
+
+        Args:
+            code_var: 代码变量名
+            state_var: 状态变量名
+            function_name: 函数名
+            enable_periodic_check: 是否启用周期性检查
+            check_interval: 检查间隔
+
+        Returns:
+            Lua 代码字符串
+        """
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Executor Loop (with Integrity Checks)")
+        lines.append("-- =========================================")
+        lines.append("")
+        lines.append(f"local function {function_name}({code_var}, {state_var})")
+
+        if enable_periodic_check:
+            lines.append("    -- Initialize integrity values")
+            lines.append("    _int_init()")
+            lines.append("    _int_reset()")
+            lines.append("")
+
+        lines.append(f"    local pc = 1")
+        lines.append(f"    while pc and not {state_var}.halted do")
+        lines.append(f"        local instr = {code_var}[pc]")
+        lines.append("        if not instr then break end")
+
+        if enable_periodic_check:
+            lines.append(f"        -- Integrity check during execution")
+            lines.append(f"        _int_check()")
+
+        lines.append(f"        pc = dispatch(instr, {state_var}, pc)")
+        lines.append("        -- Safety check")
+        lines.append("        if not pc then break end")
+        lines.append(f"        if pc < 1 or pc > #{code_var} + 1 then")
+        lines.append("            break")
+        lines.append("        end")
+        lines.append("    end")
+        lines.append(f"    return {state_var}.return_value")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def emit_complete_program_with_integrity(
+        self,
+        instructions: list[Instruction] | None = None,
+        code_var: str = "code",
+        state_var: str = "state",
+        result_var: str = "_result",
+        execute_func: str = "execute",
+        enable_periodic_check: bool = True,
+        check_interval: int = 100
+    ) -> str:
+        """
+        生成带完整性校验的完整 Lua 程序
+
+        Args:
+            instructions: 指令列表
+            code_var: 代码变量名
+            state_var: 状态变量名
+            result_var: 结果变量名
+            execute_func: 执行函数名
+            enable_periodic_check: 是否启用周期性检查
+            check_interval: 检查间隔
+
+        Returns:
+            完整的 Lua 程序字符串
+        """
+        parts = []
+
+        # Header
+        header = []
+        header.append("-- =========================================")
+        header.append("-- Lua Instruction Interpreter Program")
+        header.append("-- (with Runtime Integrity Validation)")
+        header.append("-- Generated by lua_obfuscator")
+        header.append("-- =========================================")
+        header.append("")
+        header.append(f"local _DEBUG = {'true' if self.include_debug else 'false'}")
+        header.append(f"local _INTEGRITY_ENABLED = true")
+        parts.append("\n".join(header))
+
+        # Part 1: Instruction Table
+        if instructions:
+            parts.append(self.emit_instruction_table(instructions, code_var))
+
+        # Part 2: Execution State
+        parts.append(self.emit_execution_state(state_var))
+
+        # Part 3: Handler Module
+        parts.append(self.emit_handler_module())
+
+        # Part 4: Integrity Module (NEW)
+        parts.append(self.emit_integrity_module(code_var, state_var, check_interval))
+
+        # Part 5: Executor Loop with Integrity Checks
+        parts.append(self.emit_integrated_executor(
+            code_var, state_var, execute_func,
+            enable_periodic_check, check_interval
+        ))
+
+        # Part 6: Runner
+        if instructions:
+            parts.append(self.emit_runner(code_var, state_var, result_var, execute_func))
+
+        return "\n\n".join(parts)
+
 
 def emit_lua_program(
     instructions: list[Instruction] | None = None,
@@ -21377,18 +22472,176 @@ def emit_lua_program_from_state(
     )
 
 
-# ===== 修改 transform_v2 使用新的发射器 =====
+def emit_lua_program_with_integrity(
+    instructions: list[Instruction] | None = None,
+    code_var: str = "code",
+    state_var: str = "state",
+    result_var: str = "_result",
+    include_debug: bool = False,
+    enable_periodic_check: bool = True,
+    check_interval: int = 100,
+    serializer: InstructionSerializer | None = None,
+    handler_generator: LuaHandlerGenerator | None = None,
+) -> str:
+    """
+    便捷函数：发射带运行时完整性校验的完整 Lua 程序
 
-def transform_v3(source: str, watermark: str) -> str:
+    Args:
+        instructions: 指令列表
+        code_var: 代码变量名
+        state_var: 状态变量名
+        result_var: 结果变量名
+        include_debug: 是否包含调试信息
+        enable_periodic_check: 是否启用周期性完整性检查
+        check_interval: 周期性检查间隔（执行多少次指令后检查一次）
+        serializer: 自定义序列化器
+        handler_generator: 自定义 handler 生成器
+
+    Returns:
+        完整的 Lua 程序字符串（包含完整性校验模块）
+    """
+    emitter = LuaProgramEmitter(
+        serializer=serializer,
+        handler_generator=handler_generator,
+        include_debug=include_debug,
+    )
+    return emitter.emit_complete_program_with_integrity(
+        instructions=instructions,
+        code_var=code_var,
+        state_var=state_var,
+        result_var=result_var,
+        enable_periodic_check=enable_periodic_check,
+        check_interval=check_interval,
+    )
+
+
+def emit_integrity_module_only(
+    code_var: str = "code",
+    state_var: str = "state",
+    check_interval: int = 100,
+) -> str:
+    """
+    便捷函数：仅生成完整性校验模块代码
+
+    可用于将完整性校验集成到现有的 Lua 程序中
+
+    Args:
+        code_var: 代码变量名
+        state_var: 状态变量名
+        check_interval: 检查间隔
+
+    Returns:
+        完整性校验模块的 Lua 代码
+    """
+    emitter = LuaProgramEmitter()
+    return emitter.emit_integrity_module(code_var, state_var, check_interval)
+
+
+def emit_diverse_lua_program(
+    instructions: list[Instruction] | None = None,
+    code_var: str = "code",
+    state_var: str = "state",
+    result_var: str = "_result",
+    include_debug: bool = False,
+    diversity_level: float = 0.5,
+    seed: int | None = None,
+    serializer: InstructionSerializer | None = None,
+    handler_generator: LuaHandlerGenerator | None = None,
+) -> str:
+    """
+    便捷函数：发射具有结构多样性的完整 Lua 程序
+
+    每次调用（不同 seed）会生成结构不同但语义一致的代码
+
+    Args:
+        instructions: 指令列表
+        code_var: 代码变量名
+        state_var: 状态变量名
+        result_var: 结果变量名
+        include_debug: 是否包含调试信息
+        diversity_level: 多样性程度 (0.0 ~ 1.0)，越高变化越多
+        seed: 随机种子，为 None 则使用时间种子
+        serializer: 自定义序列化器
+        handler_generator: 自定义 handler 生成器
+
+    Returns:
+        完整的 Lua 程序字符串（具有结构多样性）
+    """
+    import time as time_module
+
+    # 创建多样性配置
+    rng = random.Random(seed if seed is not None else int(time_module.time() * 1000) % 1000000)
+    diversity_config = DiversityConfig(
+        enabled=True,
+        diversity_level=diversity_level,
+        rng=rng,
+    )
+
+    emitter = LuaProgramEmitter(
+        serializer=serializer,
+        handler_generator=handler_generator,
+        include_debug=include_debug,
+        diversity_config=diversity_config,
+    )
+    return emitter.emit_complete_program(
+        instructions=instructions,
+        code_var=code_var,
+        state_var=state_var,
+        result_var=result_var,
+    )
+
+
+def create_diversity_config(
+    enabled: bool = True,
+    diversity_level: float = 0.5,
+    handler_strategy: str = "random",
+    utility_strategy: str = "random",
+    naming_strategy: str = "random",
+    serialization_strategy: str = "random",
+    seed: int | None = None,
+) -> DiversityConfig:
+    """
+    创建多样性配置
+
+    Args:
+        enabled: 是否启用多样性
+        diversity_level: 多样性程度 (0.0 ~ 1.0)
+        handler_strategy: handler 策略 ("random", "compact", "verbose")
+        utility_strategy: 工具函数策略 ("random", "compact", "verbose")
+        naming_strategy: 命名策略 ("random", "default", "obfuscated", "mixed")
+        serialization_strategy: 序列化策略 ("random", "compact", "expanded", "named")
+        seed: 随机种子
+
+    Returns:
+        DiversityConfig 实例
+    """
+    import time as time_module
+
+    rng = random.Random(seed if seed is not None else int(time_module.time() * 1000) % 1000000)
+    return DiversityConfig(
+        enabled=enabled,
+        diversity_level=diversity_level,
+        handler_strategy=handler_strategy,
+        utility_strategy=utility_strategy,
+        naming_strategy=naming_strategy,
+        serialization_strategy=serialization_strategy,
+        rng=rng,
+    )
+
+
+# ===== 修改 transform_v3 使用常量池发射器 =====
+
+def transform_v3(source: str, watermark: str, use_constant_pool: bool = True) -> str:
     """
     使用完整 Lua 程序发射器的新版本 transform 函数
 
     将 instruction 数据、handler 定义、执行器逻辑整合为
-    一个完整、可独立运行的 Lua 程序。
+    一个完整、可独立运行的 Lua 程序，并支持字符串常量池。
 
     Args:
         source: 源代码
         watermark: 水印
+        use_constant_pool: 是否使用字符串常量池
 
     Returns:
         混淆后的 Lua 代码
@@ -21404,11 +22657,21 @@ def transform_v3(source: str, watermark: str) -> str:
     # 执行 Pipeline
     state = execute_pipeline(source, profile, rng)
 
-    # 使用新的发射器生成完整程序
-    emitter = LuaProgramEmitter(include_debug=False)
-
-    # 生成完整程序
-    full_program = emitter.emit_program_from_pipeline_state(state)
+    # 选择发射器
+    if use_constant_pool:
+        emitter = EnhancedLuaProgramEmitter(
+            use_constant_pool=True,
+            encoding_strategy="xor_shift",
+            include_debug=False,
+        )
+        full_program = emitter.emit_complete_program_with_pool(
+            instructions=None,
+            tokens=state.tokens,
+            source=source,
+        )
+    else:
+        emitter = LuaProgramEmitter(include_debug=False)
+        full_program = emitter.emit_program_from_pipeline_state(state)
 
     # 添加 API 前导码
     api_plan = apply_api_indirection(state.tokens, profile, rng)
@@ -21420,6 +22683,7 @@ def transform_v3(source: str, watermark: str) -> str:
         + sanitize_comment(watermark)
         + "\nGenerated by LuaProgramEmitter\n"
         + "Architecture: instruction_table + handler + executor\n"
+        + ("Features: constant_pool + runtime_decode\n" if use_constant_pool else "")
         + "]]\n"
         + build_runtime_prelude(profile)
         + api_plan.prelude
@@ -21429,11 +22693,11 @@ def transform_v3(source: str, watermark: str) -> str:
     )
 
 
-# ===== 更新 transform 函数入口 =====
-
-def transform(source: str, watermark: str) -> str:
+def transform_v4(source: str, watermark: str) -> str:
     """
-    主入口函数，使用完整 Lua 程序发射器
+    最新版本的 transform 函数
+
+    使用常量池和增强的发射器。
 
     Args:
         source: 源代码
@@ -21442,7 +22706,22 @@ def transform(source: str, watermark: str) -> str:
     Returns:
         混淆后的 Lua 代码
     """
-    return transform_v3(source, watermark)
+    return transform_v3(source, watermark, use_constant_pool=True)
+
+
+# 更新主入口为 v4
+def transform(source: str, watermark: str) -> str:
+    """
+    主入口函数，使用增强的 Lua 程序发射器
+
+    Args:
+        source: 源代码
+        watermark: 水印
+
+    Returns:
+        混淆后的 Lua 代码
+    """
+    return transform_v4(source, watermark)
 
 
 def demo_lua_program_emitter():
@@ -21489,4 +22768,2458 @@ def demo_lua_program_emitter():
 
 if __name__ == "__main__":
     demo_lua_program_emitter()
+
+
+# ===== 字符串常量池与运行时解码系统 =====
+
+
+import base64
+import hashlib
+from typing import Callable
+
+
+class EncodingStrategy:
+    """
+    编码策略基类
+
+    定义可逆编码/解码接口。
+    """
+    name: str = "base"
+
+    def encode(self, data: str) -> tuple[str, dict]:
+        """编码字符串，返回 (编码结果, 解码参数)"""
+        raise NotImplementedError
+
+    def decode(self, encoded: str, params: dict) -> str:
+        """解码字符串"""
+        raise NotImplementedError
+
+
+class XORShiftEncoding(EncodingStrategy):
+    """
+    XOR 字符偏移编码
+
+    将每个字符与一个偏移量进行 XOR 运算。
+    """
+
+    name = "xor_shift"
+
+    def __init__(self, key: int | None = None):
+        self.key = key or random.randint(1, 255)
+
+    def encode(self, data: str) -> tuple[str, dict]:
+        result = []
+        for c in data:
+            result.append(chr(ord(c) ^ self.key))
+        return "".join(result), {"key": self.key}
+
+    def decode(self, encoded: str, params: dict) -> str:
+        key = params.get("key", 1)
+        result = []
+        for c in encoded:
+            result.append(chr(ord(c) ^ key))
+        return "".join(result)
+
+
+class SplitJoinEncoding(EncodingStrategy):
+    """
+    字符串拼接拆分编码
+
+    将字符串拆分为两部分，用分隔符连接。
+    """
+
+    name = "split_join"
+
+    def __init__(self, separator: str | None = None):
+        self.separator = separator or "#"
+
+    def encode(self, data: str) -> tuple[str, dict]:
+        mid = len(data) // 2
+        part1 = data[:mid]
+        part2 = data[mid:]
+        return f"{part1}{self.separator}{part2}", {"sep": self.separator}
+
+    def decode(self, encoded: str, params: dict) -> str:
+        sep = params.get("sep", "#")
+        parts = encoded.split(sep)
+        return "".join(parts)
+
+
+class CharOffsetEncoding(EncodingStrategy):
+    """
+    字符偏移编码
+
+    将每个字符的 ASCII 码偏移一定值。
+    """
+
+    name = "char_offset"
+
+    def __init__(self, offset: int | None = None):
+        self.offset = offset or random.randint(1, 127)
+
+    def encode(self, data: str) -> tuple[str, dict]:
+        result = []
+        for c in data:
+            code = ord(c) + self.offset
+            result.append(chr(code % 128))
+        return "".join(result), {"offset": self.offset}
+
+    def decode(self, encoded: str, params: dict) -> str:
+        offset = params.get("offset", 0)
+        result = []
+        for c in encoded:
+            code = ord(c) - offset
+            if code < 0:
+                code += 128
+            result.append(chr(code))
+        return "".join(result)
+
+
+class Base64Encoding(EncodingStrategy):
+    """
+    Base64 编码
+
+    使用 Base64 编码字符串。
+    """
+
+    name = "base64"
+
+    def encode(self, data: str) -> tuple[str, dict]:
+        encoded = base64.b64encode(data.encode()).decode()
+        return encoded, {}
+
+    def decode(self, encoded: str, params: dict) -> str:
+        return base64.b64decode(encoded.encode()).decode()
+
+
+class ReverseEncoding(EncodingStrategy):
+    """
+    字符串反转编码
+    """
+
+    name = "reverse"
+
+    def encode(self, data: str) -> tuple[str, dict]:
+        return data[::-1], {}
+
+    def decode(self, encoded: str, params: dict) -> str:
+        return encoded[::-1]
+
+
+class EncodingPipeline(EncodingStrategy):
+    """
+    编码管道
+
+    将多个编码策略组合起来。
+    """
+
+    name = "pipeline"
+
+    def __init__(self, strategies: list[EncodingStrategy] | None = None):
+        self.strategies = strategies or []
+
+    def add(self, strategy: EncodingStrategy) -> 'EncodingPipeline':
+        self.strategies.append(strategy)
+        return self
+
+    def encode(self, data: str) -> tuple[str, dict]:
+        current = data
+        all_params = {}
+        for i, strategy in enumerate(self.strategies):
+            current, params = strategy.encode(current)
+            all_params[strategy.name] = params
+        return current, all_params
+
+    def decode(self, encoded: str, params: dict) -> str:
+        current = encoded
+        for strategy in reversed(self.strategies):
+            p = params.get(strategy.name, {})
+            current = strategy.decode(current, p)
+        return current
+
+
+class EncodingStrategyFactory:
+    """编码策略工厂"""
+
+    _strategies: dict[str, type[EncodingStrategy]] = {
+        "xor_shift": XORShiftEncoding,
+        "split_join": SplitJoinEncoding,
+        "char_offset": CharOffsetEncoding,
+        "base64": Base64Encoding,
+        "reverse": ReverseEncoding,
+    }
+
+    @classmethod
+    def register(cls, name: str, strategy_cls: type[EncodingStrategy]) -> None:
+        cls._strategies[name] = strategy_cls
+
+    @classmethod
+    def create(cls, name: str, **kwargs) -> EncodingStrategy:
+        if name == "pipeline":
+            return EncodingPipeline()
+        if name not in cls._strategies:
+            raise ValueError(f"Unknown encoding strategy: {name}")
+        return cls._strategies[name](**kwargs)
+
+    @classmethod
+    def names(cls) -> list[str]:
+        return list(cls._strategies.keys())
+
+
+# ===== 字符串常量池收集器 =====
+
+
+@dataclass
+class StringEntry:
+    """字符串条目"""
+    original: str
+    encoded: str
+    encoding_name: str
+    encoding_params: dict
+    index: int
+
+    def lua_literal(self) -> str:
+        """生成 Lua 字面量"""
+        escaped = self.encoded.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+        return f'"{escaped}"'
+
+
+@dataclass
+class StringPool:
+    """字符串常量池"""
+    entries: list[StringEntry]
+    encoding_strategy: EncodingStrategy
+    strategy_name: str
+
+    def get(self, original: str) -> StringEntry | None:
+        """通过原始字符串查找"""
+        for entry in self.entries:
+            if entry.original == original:
+                return entry
+        return None
+
+    def get_by_index(self, index: int) -> StringEntry | None:
+        """通过索引查找"""
+        for entry in self.entries:
+            if entry.index == index:
+                return entry
+        return None
+
+    def generate_lua_table(self) -> str:
+        """生成 Lua table"""
+        lines = []
+        lines.append("local __STRING_POOL__ = {")
+        for entry in self.entries:
+            lines.append(f"    [{entry.index}] = {{")
+            lines.append(f'        s = {entry.lua_literal()},')
+            lines.append(f'        e = "{entry.encoding_name}",')
+            lines.append(f"        p = {self._params_to_lua(entry.encoding_params)},")
+            lines.append("    },")
+        lines.append("}")
+        return "\n".join(lines)
+
+    def _params_to_lua(self, params: dict) -> str:
+        """将参数字典转换为 Lua 格式"""
+        parts = []
+        for k, v in params.items():
+            if isinstance(v, str):
+                parts.append(f'{k} = "{v}"')
+            else:
+                parts.append(f"{k} = {v}")
+        return "{" + ", ".join(parts) + "}"
+
+
+class StringPoolCollector:
+    """
+    字符串常量池收集器
+
+    收集源码中的字符串常量，进行编码，并生成常量池。
+    """
+
+    def __init__(self, encoding_strategy: EncodingStrategy | None = None):
+        self.encoding_strategy = encoding_strategy or XORShiftEncoding()
+        self.pool: list[StringEntry] = []
+        self._seen: dict[str, int] = {}
+
+    def collect(self, tokens: list[Token]) -> StringPool:
+        """
+        从 token 列表收集字符串常量
+
+        Args:
+            tokens: Token 列表
+
+        Returns:
+            StringPool 实例
+        """
+        for token in tokens:
+            if token.type == TokenType.STRING and token.text:
+                self._add_string(token.text)
+
+        return StringPool(
+            entries=self.pool,
+            encoding_strategy=self.encoding_strategy,
+            strategy_name=self.encoding_strategy.name,
+        )
+
+    def collect_from_source(self, source: str) -> StringPool:
+        """
+        从源代码收集字符串常量
+
+        Args:
+            source: 源代码
+
+        Returns:
+            StringPool 实例
+        """
+        import re
+        string_pattern = r'"([^"\\]*(?:\\.[^"\\]*)*)"'
+        strings = re.findall(string_pattern, source)
+
+        for s in strings:
+            self._add_string(s)
+
+        return StringPool(
+            entries=self.pool,
+            encoding_strategy=self.encoding_strategy,
+            strategy_name=self.encoding_strategy.name,
+        )
+
+    def collect_from_instructions(self, instructions: list[Instruction]) -> StringPool:
+        """
+        从指令列表收集字符串常量
+
+        Args:
+            instructions: 指令列表
+
+        Returns:
+            StringPool 实例
+        """
+        for instr in instructions:
+            for arg in instr.args:
+                if isinstance(arg, str):
+                    self._add_string(arg)
+            if instr.result and isinstance(instr.result, str):
+                self._add_string(instr.result)
+
+        return StringPool(
+            entries=self.pool,
+            encoding_strategy=self.encoding_strategy,
+            strategy_name=self.encoding_strategy.name,
+        )
+
+    def _add_string(self, s: str) -> None:
+        """添加字符串到池中"""
+        if s in self._seen:
+            return
+
+        encoded, params = self.encoding_strategy.encode(s)
+        entry = StringEntry(
+            original=s,
+            encoded=encoded,
+            encoding_name=self.encoding_strategy.name,
+            encoding_params=params,
+            index=len(self.pool) + 1,
+        )
+        self.pool.append(entry)
+        self._seen[s] = entry.index
+
+    def get_index(self, original: str) -> int | None:
+        """获取字符串的索引"""
+        return self._seen.get(original)
+
+
+# ===== 运行时解码器生成器 =====
+
+
+class RuntimeDecoderGenerator:
+    """
+    运行时解码器生成器
+
+    生成 Lua 端的解码函数。
+    """
+
+    def __init__(self, encoding_strategy: EncodingStrategy | None = None):
+        self.encoding_strategy = encoding_strategy
+
+    def generate_decode_function(self, strategy_name: str = "xor_shift") -> str:
+        """
+        生成解码函数
+
+        Args:
+            strategy_name: 编码策略名称
+
+        Returns:
+            Lua 代码字符串
+        """
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Runtime Decoder Functions")
+        lines.append("-- =========================================")
+        lines.append("")
+
+        if strategy_name == "xor_shift":
+            lines.append(self._generate_xor_shift_decoder())
+        elif strategy_name == "char_offset":
+            lines.append(self._generate_char_offset_decoder())
+        elif strategy_name == "split_join":
+            lines.append(self._generate_split_join_decoder())
+        elif strategy_name == "base64":
+            lines.append(self._generate_base64_decoder())
+        elif strategy_name == "reverse":
+            lines.append(self._generate_reverse_decoder())
+        elif strategy_name == "pipeline":
+            lines.append(self._generate_pipeline_decoder())
+
+        lines.append("")
+        lines.append(self._generate_generic_decode())
+
+        return "\n".join(lines)
+
+    def _generate_xor_shift_decoder(self) -> str:
+        return """local function __decode_xor_shift__(encoded, params)
+    local key = params.key or 1
+    local result = {}
+    for i = 1, #encoded do
+        local c = string.byte(encoded, i)
+        c = c ~ key
+        result[i] = string.char(c)
+    end
+    return table.concat(result)
+end"""
+
+    def _generate_char_offset_decoder(self) -> str:
+        return """local function __decode_char_offset__(encoded, params)
+    local offset = params.offset or 0
+    local result = {}
+    for i = 1, #encoded do
+        local c = string.byte(encoded, i) - offset
+        if c < 0 then c = c + 128 end
+        result[i] = string.char(c)
+    end
+    return table.concat(result)
+end"""
+
+    def _generate_split_join_decoder(self) -> str:
+        return """local function __decode_split_join__(encoded, params)
+    local sep = params.sep or "#"
+    local parts = {}
+    for part in string.gmatch(encoded, "[^" .. sep .. "]+") do
+        table.insert(parts, part)
+    end
+    return table.concat(parts)
+end"""
+
+    def _generate_base64_decoder(self) -> str:
+        return """local function __decode_base64__(encoded, params)
+    local b64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    local function decode_char(c)
+        if c == "=" then return 0 end
+        for i = 1, #b64_chars do
+            if string.sub(b64_chars, i, i) == c then return i - 1 end
+        end
+        return 0
+    end
+    
+    local result = {}
+    local i = 1
+    while i <= #encoded do
+        local a = decode_char(string.sub(encoded, i, i))
+        local b = decode_char(string.sub(encoded, i + 1, i + 1))
+        local c = decode_char(string.sub(encoded, i + 2, i + 2))
+        local d = decode_char(string.sub(encoded, i + 3, i + 3))
+        
+        local triplet = a * 2^18 + b * 2^12 + c * 2^6 + d
+        table.insert(result, string.char(math.floor(triplet / 2^16)))
+        if string.sub(encoded, i + 2, i + 2) ~= "=" then
+            table.insert(result, string.char(math.floor(triplet / 2^8) % 256))
+        end
+        if string.sub(encoded, i + 3, i + 3) ~= "=" then
+            table.insert(result, string.char(triplet % 256))
+        end
+        i = i + 4
+    end
+    return table.concat(result)
+end"""
+
+    def _generate_reverse_decoder(self) -> str:
+        return """local function __decode_reverse__(encoded, params)
+    local result = {}
+    for i = #encoded, 1, -1 do
+        table.insert(result, string.sub(encoded, i, i))
+    end
+    return table.concat(result)
+end"""
+
+    def _generate_pipeline_decoder(self) -> str:
+        return """local function __decode_pipeline__(encoded, params, strategy_order)
+    local current = encoded
+    for i = #strategy_order, 1, -1 do
+        local name = strategy_order[i]
+        local p = params[name] or {}
+        if name == "xor_shift" then
+            current = __decode_xor_shift__(current, p)
+        elseif name == "char_offset" then
+            current = __decode_char_offset__(current, p)
+        elseif name == "split_join" then
+            current = __decode_split_join__(current, p)
+        elseif name == "base64" then
+            current = __decode_base64__(current, p)
+        elseif name == "reverse" then
+            current = __decode_reverse__(current, p)
+        end
+    end
+    return current
+end"""
+
+    def _generate_generic_decode(self) -> str:
+        return """local function __decode__(index)
+    local entry = __STRING_POOL__[index]
+    if not entry then return "" end
+    
+    local encoded = entry.s
+    local strategy = entry.e
+    local params = entry.p
+    
+    if strategy == "xor_shift" then
+        return __decode_xor_shift__(encoded, params)
+    elseif strategy == "char_offset" then
+        return __decode_char_offset__(encoded, params)
+    elseif strategy == "split_join" then
+        return __decode_split_join__(encoded, params)
+    elseif strategy == "base64" then
+        return __decode_base64__(encoded, params)
+    elseif strategy == "reverse" then
+        return __decode_reverse__(encoded, params)
+    elseif strategy == "pipeline" then
+        return __decode_pipeline__(encoded, params, {"xor_shift", "char_offset", "split_join", "base64", "reverse"})
+    end
+    
+    return encoded
+end"""
+
+
+class LuaConstantPoolGenerator:
+    """
+    Lua 常量池生成器
+
+    生成包含常量池和解码函数的 Lua 代码。
+    """
+
+    def __init__(
+        self,
+        string_pool: StringPool | None = None,
+        decoder_generator: RuntimeDecoderGenerator | None = None,
+    ):
+        self.string_pool = string_pool
+        self.decoder_generator = decoder_generator or RuntimeDecoderGenerator()
+
+    def generate(self) -> str:
+        """生成完整的常量池代码"""
+        parts = []
+
+        if self.string_pool:
+            parts.append(self.string_pool.generate_lua_table())
+            parts.append("")
+
+        parts.append(self.decoder_generator.generate_decode_function(
+            self.string_pool.strategy_name if self.string_pool else "xor_shift"
+        ))
+
+        return "\n".join(parts)
+
+    def generate_with_reference_function(self) -> str:
+        """生成带引用函数的常量池代码"""
+        parts = []
+        parts.append(self.generate())
+        parts.append("")
+        parts.append("local function S(index)")
+        parts.append("    return __decode__(index)")
+        parts.append("end")
+        return "\n".join(parts)
+
+
+# ===== 整合到常量池 =====
+
+
+class ConstantPoolGenerator:
+    """
+    完整常量池生成器
+
+    整合字符串池和运行时解码器。
+    """
+
+    def __init__(
+        self,
+        encoding_strategy: EncodingStrategy | None = None,
+        strategy_name: str | None = None,
+    ):
+        if strategy_name:
+            self.encoding_strategy = EncodingStrategyFactory.create(strategy_name)
+        else:
+            self.encoding_strategy = encoding_strategy or XORShiftEncoding()
+
+        self.collector = StringPoolCollector(self.encoding_strategy)
+        self.string_pool: StringPool | None = None
+        self.pool_generator = LuaConstantPoolGenerator()
+
+    def collect_from_tokens(self, tokens: list[Token]) -> 'ConstantPoolGenerator':
+        """从 tokens 收集"""
+        self.string_pool = self.collector.collect(tokens)
+        self.pool_generator.string_pool = self.string_pool
+        return self
+
+    def collect_from_source(self, source: str) -> 'ConstantPoolGenerator':
+        """从源代码收集"""
+        self.string_pool = self.collector.collect_from_source(source)
+        self.pool_generator.string_pool = self.string_pool
+        return self
+
+    def collect_from_instructions(self, instructions: list[Instruction]) -> 'ConstantPoolGenerator':
+        """从指令收集"""
+        self.string_pool = self.collector.collect_from_instructions(instructions)
+        self.pool_generator.string_pool = self.string_pool
+        return self
+
+    def generate(self, with_reference_function: bool = True) -> str:
+        """生成 Lua 代码"""
+        if with_reference_function:
+            return self.pool_generator.generate_with_reference_function()
+        return self.pool_generator.generate()
+
+    def get_reference(self, original: str) -> str | None:
+        """
+        获取字符串的引用表达式
+
+        Returns:
+            Lua 表达式，如 "S(1)"
+        """
+        if not self.string_pool:
+            return None
+        idx = self.string_pool.get_index(original)
+        if idx is None:
+            return None
+        return f"S({idx})"
+
+
+# ===== 扩展 LuaProgramEmitter 支持常量池 =====
+
+
+class EnhancedLuaProgramEmitter(LuaProgramEmitter):
+    """
+    增强的 Lua 程序发射器
+
+    在原有基础上增加字符串常量池支持。
+    """
+
+    def __init__(
+        self,
+        use_constant_pool: bool = True,
+        encoding_strategy: str = "xor_shift",
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.use_constant_pool = use_constant_pool
+        self.encoding_strategy_name = encoding_strategy
+        self.constant_pool_generator: ConstantPoolGenerator | None = None
+
+    def emit_constant_pool(self) -> str:
+        """生成常量池代码"""
+        if not self.constant_pool_generator:
+            return ""
+        return self.constant_pool_generator.generate()
+
+    def emit_complete_program_with_pool(
+        self,
+        instructions: list[Instruction] | None = None,
+        tokens: list[Token] | None = None,
+        source: str = "",
+        **kwargs
+    ) -> str:
+        """
+        生成包含常量池的完整程序
+
+        Args:
+            instructions: 指令列表
+            tokens: Token 列表
+            source: 源代码
+
+        Returns:
+            完整 Lua 程序字符串
+        """
+        parts = []
+
+        # Header
+        header = []
+        header.append("-- =========================================")
+        header.append("-- Lua Instruction Interpreter with Constant Pool")
+        header.append("-- Generated by lua_obfuscator")
+        header.append("-- =========================================")
+        header.append("")
+        header.append(f"local _DEBUG = {'true' if self.include_debug else 'false'}")
+        parts.append("\n".join(header))
+
+        # Part 1: Constant Pool
+        if self.use_constant_pool:
+            self.constant_pool_generator = ConstantPoolGenerator(
+                strategy_name=self.encoding_strategy_name
+            )
+            if tokens:
+                self.constant_pool_generator.collect_from_tokens(tokens)
+            elif source:
+                self.constant_pool_generator.collect_from_source(source)
+            elif instructions:
+                self.constant_pool_generator.collect_from_instructions(instructions)
+
+            parts.append("-- =========================================")
+            parts.append("-- String Constant Pool")
+            parts.append("-- =========================================")
+            parts.append(self.constant_pool_generator.generate())
+
+        # Part 2: Instruction Table (使用常量池引用)
+        if instructions:
+            parts.append(self.emit_instruction_table(instructions))
+
+        # Part 3: Execution State
+        parts.append(self.emit_execution_state())
+
+        # Part 4: Handler Module
+        parts.append(self.emit_handler_module())
+
+        # Part 5: Executor Loop
+        parts.append(self.emit_executor_loop())
+
+        # Part 6: Runner
+        if instructions:
+            parts.append(self.emit_runner())
+
+        return "\n\n".join(parts)
+
+
+# ===== 便捷函数 =====
+
+
+def create_constant_pool_generator(
+    encoding_strategy: str = "xor_shift",
+) -> ConstantPoolGenerator:
+    """
+    创建常量池生成器
+
+    Args:
+        encoding_strategy: 编码策略名称
+
+    Returns:
+        ConstantPoolGenerator 实例
+    """
+    return ConstantPoolGenerator(strategy_name=encoding_strategy)
+
+
+def encode_strings_for_lua(
+    strings: list[str],
+    encoding_strategy: str = "xor_shift",
+) -> tuple[StringPool, str]:
+    """
+    编码字符串列表
+
+    Args:
+        strings: 字符串列表
+        encoding_strategy: 编码策略
+
+    Returns:
+        (StringPool, Lua代码)
+    """
+    generator = ConstantPoolGenerator(strategy_name=encoding_strategy)
+    for s in strings:
+        idx = len(generator.collector.pool) + 1
+        encoded, params = generator.encoding_strategy.encode(s)
+        entry = StringEntry(
+            original=s,
+            encoded=encoded,
+            encoding_name=encoding_strategy,
+            encoding_params=params,
+            index=idx,
+        )
+        generator.collector.pool.append(entry)
+        generator.collector._seen[s] = idx
+    generator.string_pool = StringPool(
+        entries=generator.collector.pool,
+        encoding_strategy=generator.encoding_strategy,
+        strategy_name=encoding_strategy,
+    )
+    return generator.string_pool, generator.generate()
+
+
+def demo_constant_pool():
+    """演示常量池功能"""
+    print("=" * 60)
+    print("String Constant Pool Demo")
+    print("=" * 60)
+
+    # 测试编码策略
+    strategies = [
+        ("XOR Shift", XORShiftEncoding(42)),
+        ("Char Offset", CharOffsetEncoding(5)),
+        ("Split Join", SplitJoinEncoding("||")),
+        ("Base64", Base64Encoding()),
+        ("Reverse", ReverseEncoding()),
+    ]
+
+    test_strings = ["Hello", "World", "Lua", "Protection"]
+
+    print("\n[1] Encoding Strategies Test:")
+    print("-" * 40)
+    for name, strategy in strategies:
+        print(f"\n{name}:")
+        for s in test_strings[:2]:
+            encoded, params = strategy.encode(s)
+            decoded = strategy.decode(encoded, params)
+            print(f"  '{s}' -> '{encoded}' -> '{decoded}'")
+            assert decoded == s, f"Decode failed: {decoded} != {s}"
+
+    # 测试常量池收集器
+    print("\n\n[2] Constant Pool Collector:")
+    print("-" * 40)
+
+    generator = ConstantPoolGenerator(strategy_name="xor_shift")
+    pool, lua_code = encode_strings_for_lua(test_strings, "xor_shift")
+
+    print("\nGenerated Lua Constant Pool:")
+    print(lua_code)
+
+    print("\nPool Entries:")
+    for entry in pool.entries:
+        print(f"  [{entry.index}] '{entry.original}' -> '{entry.encoded}'")
+
+    # 测试完整的发射器
+    print("\n\n[3] Enhanced Program Emitter:")
+    print("-" * 40)
+
+    emitter = EnhancedLuaProgramEmitter(
+        use_constant_pool=True,
+        encoding_strategy="xor_shift",
+        include_debug=True,
+    )
+
+    instructions = [
+        Instruction(OpCode.INIT, ["msg"], None, "Hello"),
+        Instruction(OpCode.CALL, ["print"], None, "print"),
+        Instruction(OpCode.RETURN_VAL, ["msg"]),
+    ]
+
+    program = emitter.emit_complete_program_with_pool(
+        instructions=instructions,
+        source='print("Hello")',
+    )
+
+    print("\nGenerated Program:")
+    print(program)
+
+    print("\n" + "=" * 60)
+    print("Demo Complete")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    demo_constant_pool()
+
+
+# ===== Handler 多态实现系统 =====
+
+
+from abc import ABC, abstractmethod
+from typing import Protocol
+
+
+class HandlerImplementation(ABC):
+    """
+    Handler 实现基类
+
+    定义同一 opcode 的不同实现方式。
+    """
+
+    name: str = "base"
+    opcode: int = 0
+    description: str = ""
+
+    @abstractmethod
+    def generate(self, template: dict[str, str] | None = None) -> str:
+        """生成 Lua 代码"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_dependencies(self) -> list[str]:
+        """获取依赖的辅助函数"""
+        return []
+
+
+class DirectHandlerImpl(HandlerImplementation):
+    """
+    直接计算形式
+
+    直接执行计算，无需中间变量。
+    """
+
+    name = "direct"
+
+    def generate(self, template: dict[str, str] | None = None) -> str:
+        if not template:
+            return "    default = function(instr, state, pc) return pc + 1 end"
+        return f"    {template['template'].strip()}"
+
+    def get_dependencies(self) -> list[str]:
+        return []
+
+
+class StepwiseHandlerImpl(HandlerImplementation):
+    """
+    分步计算形式
+
+    使用中间变量分步执行计算。
+    """
+
+    name = "stepwise"
+
+    def generate(self, template: dict[str, str] | None = None) -> str:
+        if not template:
+            return "    default = function(instr, state, pc) return pc + 1 end"
+
+        opcode = template.get("opcode", 0)
+        desc = template.get("desc", "")
+
+        lines = [
+            f"    [{opcode}] = function(instr, state, pc)",
+            "        -- Stepwise implementation",
+            "        local _tmp_1",
+            "        local _tmp_2",
+            "        _tmp_1 = instr[2]",
+            "        _tmp_2 = _eval_literal(instr[3])",
+            f"        state.locals[_tmp_1] = _tmp_2",
+            "        return pc + 1",
+            "    end"
+        ]
+        return "\n".join(lines)
+
+    def get_dependencies(self) -> list[str]:
+        return ["_eval_literal"]
+
+
+class TableAssistedHandlerImpl(HandlerImplementation):
+    """
+    Table 辅助计算形式
+
+    使用局部 table 进行数据组织。
+    """
+
+    name = "table_assisted"
+
+    def generate(self, template: dict[str, str] | None = None) -> str:
+        if not template:
+            return "    default = function(instr, state, pc) return pc + 1 end"
+
+        opcode = template.get("opcode", 0)
+
+        lines = [
+            f"    [{opcode}] = function(instr, state, pc)",
+            "        -- Table-assisted implementation",
+            "        local _ctx = {",
+            "            opcode = instr[1],",
+            "            arg1 = instr[2],",
+            "            arg2 = instr[3],",
+            "            result = nil",
+            "        }",
+            "        if _ctx.arg2 then",
+            "            _ctx.result = _eval_literal(_ctx.arg2)",
+            "        end",
+            "        state.locals[_ctx.arg1] = _ctx.result",
+            "        return pc + 1",
+            "    end"
+        ]
+        return "\n".join(lines)
+
+    def get_dependencies(self) -> list[str]:
+        return ["_eval_literal"]
+
+
+class FunctionComposedHandlerImpl(HandlerImplementation):
+    """
+    函数组合形式
+
+    拆分为多个局部函数再组合执行。
+    """
+
+    name = "function_composed"
+
+    def generate(self, template: dict[str, str] | None = None) -> str:
+        if not template:
+            return "    default = function(instr, state, pc) return pc + 1 end"
+
+        opcode = template.get("opcode", 0)
+
+        lines = [
+            f"    [{opcode}] = function(instr, state, pc)",
+            "        -- Function-composed implementation",
+            "        local function _extract_arg(n)",
+            "            return instr[n]",
+            "        end",
+            "        local function _resolve(v)",
+            "            return _eval_literal(v)",
+            "        end",
+            "        local function _store(k, v)",
+            "            state.locals[k] = v",
+            "        end",
+            "        local _key = _extract_arg(2)",
+            "        local _val = _resolve(_extract_arg(3))",
+            "        _store(_key, _val)",
+            "        return pc + 1",
+            "    end"
+        ]
+        return "\n".join(lines)
+
+    def get_dependencies(self) -> list[str]:
+        return ["_eval_literal"]
+
+
+class ClosureBasedHandlerImpl(HandlerImplementation):
+    """
+    闭包形式
+
+    使用闭包捕获状态。
+    """
+
+    name = "closure_based"
+
+    def generate(self, template: dict[str, str] | None = None) -> str:
+        if not template:
+            return "    default = function(instr, state, pc) return pc + 1 end"
+
+        opcode = template.get("opcode", 0)
+
+        lines = [
+            f"    [{opcode}] = (function()",
+            "        -- Closure-based implementation",
+            "        local _cache = {}",
+            "        return function(instr, state, pc)",
+            "            local op = instr[1]",
+            "            if not _cache[op] then",
+            "                _cache[op] = function()",
+            "                    local k, v = instr[2], _eval_literal(instr[3])",
+            "                    state.locals[k] = v",
+            "                end",
+            "            end",
+            "            _cache[op]()",
+            "            return pc + 1",
+            "        end",
+            "    end)()"
+        ]
+        return "\n".join(lines)
+
+    def get_dependencies(self) -> list[str]:
+        return ["_eval_literal"]
+
+
+class MacroExpandedHandlerImpl(HandlerImplementation):
+    """
+    宏展开形式
+
+    将操作内联展开，避免函数调用。
+    """
+
+    name = "macro_expanded"
+
+    def generate(self, template: dict[str, str] | None = None) -> str:
+        if not template:
+            return "    default = function(instr, state, pc) return pc + 1 end"
+
+        opcode = template.get("opcode", 0)
+
+        lines = [
+            f"    [{opcode}] = function(instr, state, pc)",
+            "        -- Macro-expanded implementation",
+            "        do",
+            "            local _arg1 = instr[2]",
+            "            local _raw_val = instr[3]",
+            "            local _final_val",
+            "            if type(_raw_val) == 'string' then",
+            "                local _n = tonumber(_raw_val)",
+            "                _final_val = _n or _raw_val",
+            "            else",
+            "                _final_val = _raw_val",
+            "            end",
+            "            state.locals[_arg1] = _final_val",
+            "        end",
+            "        return pc + 1",
+            "    end"
+        ]
+        return "\n".join(lines)
+
+    def get_dependencies(self) -> list[str]:
+        return []
+
+
+# ===== Handler 实现注册表 =====
+
+
+class HandlerImplRegistry:
+    """
+    Handler 实现注册表
+
+    管理每种 opcode 的多种实现方式。
+    """
+
+    _impls: dict[int, list[type[HandlerImplementation]]] = {}
+
+    @classmethod
+    def register(cls, opcode: int, impl_class: type[HandlerImplementation]) -> None:
+        if opcode not in cls._impls:
+            cls._impls[opcode] = []
+        cls._impls[opcode].append(impl_class)
+
+    @classmethod
+    def get_implementations(cls, opcode: int) -> list[type[HandlerImplementation]]:
+        return cls._impls.get(opcode, [DirectHandlerImpl])
+
+    @classmethod
+    def register_all(cls) -> None:
+        impls = [
+            DirectHandlerImpl,
+            StepwiseHandlerImpl,
+            TableAssistedHandlerImpl,
+            FunctionComposedHandlerImpl,
+            ClosureBasedHandlerImpl,
+            MacroExpandedHandlerImpl,
+        ]
+        for opcode in range(50):
+            for impl in impls:
+                cls.register(opcode, impl)
+
+
+# 注册默认实现
+HandlerImplRegistry.register_all()
+
+
+# ===== Handler 策略选择器 =====
+
+
+class HandlerStrategy:
+    """
+    Handler 生成策略
+
+    决定如何为每个 opcode 选择实现方式。
+    """
+
+    def __init__(self, rng: random.Random | None = None):
+        self.rng = rng or random.Random()
+
+    def select_implementation(
+        self,
+        opcode: int,
+        context: dict | None = None
+    ) -> type[HandlerImplementation]:
+        """
+        选择实现方式
+
+        Args:
+            opcode: 操作码
+            context: 上下文信息
+
+        Returns:
+            选中的实现类
+        """
+        raise NotImplementedError
+
+
+class RandomStrategy(HandlerStrategy):
+    """随机选择策略"""
+
+    def select_implementation(
+        self,
+        opcode: int,
+        context: dict | None = None
+    ) -> type[HandlerImplementation]:
+        impls = HandlerImplRegistry.get_implementations(opcode)
+        return self.rng.choice(impls)
+
+
+class WeightedRandomStrategy(HandlerStrategy):
+    """加权随机选择策略"""
+
+    def __init__(
+        self,
+        weights: dict[str, float] | None = None,
+        rng: random.Random | None = None
+    ):
+        super().__init__(rng)
+        self.weights = weights or {
+            "direct": 0.3,
+            "stepwise": 0.2,
+            "table_assisted": 0.15,
+            "function_composed": 0.15,
+            "closure_based": 0.1,
+            "macro_expanded": 0.1,
+        }
+
+    def select_implementation(
+        self,
+        opcode: int,
+        context: dict | None = None
+    ) -> type[HandlerImplementation]:
+        impls = HandlerImplRegistry.get_implementations(opcode)
+        names = [impl.name for impl in impls]
+        weights = [self.weights.get(n, 0.1) for n in names]
+
+        total = sum(weights)
+        probs = [w / total for w in weights]
+
+        r = self.rng.random()
+        cumsum = 0
+        for i, p in enumerate(probs):
+            cumsum += p
+            if r <= cumsum:
+                return impls[i]
+        return impls[0]
+
+
+class OpcodeBasedStrategy(HandlerStrategy):
+    """基于 opcode 的选择策略"""
+
+    def select_implementation(
+        self,
+        opcode: int,
+        context: dict | None = None
+    ) -> type[HandlerImplementation]:
+        impls = HandlerImplRegistry.get_implementations(opcode)
+
+        if opcode in (1, 2, 3):
+            return StepwiseHandlerImpl
+        elif opcode in (4, 5):
+            return FunctionComposedHandlerImpl
+        elif opcode in (6, 7):
+            return DirectHandlerImpl
+        elif opcode in (10, 11):
+            return TableAssistedHandlerImpl
+        elif opcode in (24, 26, 27):
+            return MacroExpandedHandlerImpl
+        else:
+            idx = opcode % len(impls)
+            return impls[idx]
+
+
+class AlternatingStrategy(HandlerStrategy):
+    """交替选择策略"""
+
+    def __init__(self, rng: random.Random | None = None):
+        super().__init__(rng)
+        self._counter = {}
+
+    def select_implementation(
+        self,
+        opcode: int,
+        context: dict | None = None
+    ) -> type[HandlerImplementation]:
+        impls = HandlerImplRegistry.get_implementations(opcode)
+
+        if opcode not in self._counter:
+            self._counter[opcode] = 0
+
+        idx = self._counter[opcode] % len(impls)
+        self._counter[opcode] += 1
+        return impls[idx]
+
+
+class ContextAwareStrategy(HandlerStrategy):
+    """上下文感知策略"""
+
+    def select_implementation(
+        self,
+        opcode: int,
+        context: dict | None = None
+    ) -> type[HandlerImplementation]:
+        impls = HandlerImplRegistry.get_implementations(opcode)
+        ctx = context or {}
+
+        if ctx.get("has_dependencies"):
+            return DirectHandlerImpl
+        if ctx.get("complexity", 0) > 5:
+            return FunctionComposedHandlerImpl
+        if ctx.get("is_loop"):
+            return StepwiseHandlerImpl
+        if ctx.get("is_table_op"):
+            return TableAssistedHandlerImpl
+
+        idx = opcode % len(impls)
+        return impls[idx]
+
+
+class StrategyFactory:
+    """策略工厂"""
+
+    _strategies: dict[str, type[HandlerStrategy]] = {
+        "random": RandomStrategy,
+        "weighted": WeightedRandomStrategy,
+        "opcode_based": OpcodeBasedStrategy,
+        "alternating": AlternatingStrategy,
+        "context_aware": ContextAwareStrategy,
+    }
+
+    @classmethod
+    def create(cls, name: str, **kwargs) -> HandlerStrategy:
+        if name not in cls._strategies:
+            raise ValueError(f"Unknown strategy: {name}")
+        return cls._strategies[name](**kwargs)
+
+    @classmethod
+    def names(cls) -> list[str]:
+        return list(cls._strategies.keys())
+
+
+# ===== 多态 Handler 生成器 =====
+
+
+class PolymorphicHandlerGenerator:
+    """
+    多态 Handler 生成器
+
+    支持为每个 opcode 选择不同实现方式。
+    """
+
+    def __init__(
+        self,
+        strategy: HandlerStrategy | None = None,
+        include_comments: bool = True,
+        rng: random.Random | None = None
+    ):
+        self.strategy = strategy or RandomStrategy(rng)
+        self.include_comments = include_comments
+        self.rng = rng or random.Random()
+
+        self.base_generator = LuaHandlerGenerator(include_comments=False)
+
+    def generate_all(
+        self,
+        templates: dict[int, dict[str, str]]
+    ) -> str:
+        """
+        生成所有 handler
+
+        Args:
+            templates: opcode -> {desc, template}
+
+        Returns:
+            Lua 代码
+        """
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Polymorphic Handler Implementations")
+        lines.append("-- =========================================")
+        lines.append("")
+
+        for opcode in sorted(templates.keys()):
+            template = templates[opcode]
+            impl_class = self.strategy.select_implementation(opcode, template)
+            impl = impl_class()
+
+            context = {
+                "opcode": opcode,
+                "has_dependencies": bool(impl.get_dependencies()),
+                "complexity": len(template.get("template", "")),
+            }
+
+            if self.include_comments:
+                lines.append(f"    -- opcode: {opcode} ({template['desc']}) [using: {impl.name}]")
+
+            handler_code = impl.generate(template)
+            lines.append(handler_code)
+
+        lines.append("")
+        lines.append(self._generate_default_handler())
+
+        return "\n".join(lines)
+
+    def _generate_default_handler(self) -> str:
+        return """    -- Default handler
+    default = function(instr, state, pc)
+        if _DEBUG then
+            print('Unknown opcode: ' .. tostring(instr[1]))
+        end
+        return pc + 1
+    end,
+"""
+
+    def generate_with_helper_functions(
+        self,
+        templates: dict[int, dict[str, str]]
+    ) -> str:
+        """生成带辅助函数的 handler"""
+        all_deps = set()
+        for opcode in templates.keys():
+            impl_class = self.strategy.select_implementation(opcode)
+            impl = impl_class()
+            all_deps.update(impl.get_dependencies())
+
+        parts = []
+
+        if all_deps:
+            parts.append(self._generate_utility_functions())
+
+        parts.append(self.generate_all(templates))
+
+        return "\n\n".join(parts)
+
+    def _generate_utility_functions(self) -> str:
+        return """-- Utility functions for handlers
+local function _eval_literal(val)
+    if val == nil then return nil end
+    if val == true then return true end
+    if val == false then return false end
+    if type(val) == 'number' then return val end
+    if type(val) == 'string' then
+        local n = tonumber(val)
+        if n then return n end
+    end
+    return val
+end
+"""
+
+
+class HandlerDiversityAnalyzer:
+    """
+    Handler 多样性分析器
+
+    分析生成代码的多样性。
+    """
+
+    def __init__(self, rng: random.Random | None = None):
+        self.rng = rng or random.Random()
+
+    def analyze_diversity(
+        self,
+        code: str,
+        templates: dict[int, dict[str, str]]
+    ) -> dict:
+        """
+        分析生成代码的多样性
+
+        Returns:
+            多样性统计
+        """
+        impl_counts = {}
+
+        for opcode in templates.keys():
+            impl_class = self.strategy.select_implementation(opcode)
+            impl_name = impl_class.name
+            impl_counts[impl_name] = impl_counts.get(impl_name, 0) + 1
+
+        total = len(templates)
+        diversity_score = len(impl_counts) / 6
+
+        return {
+            "total_handlers": total,
+            "implementation_counts": impl_counts,
+            "unique_implementations": len(impl_counts),
+            "diversity_score": diversity_score,
+            "distribution": {
+                name: count / total
+                for name, count in impl_counts.items()
+            }
+        }
+
+
+# ===== 整合到 LuaProgramEmitter =====
+
+
+class PolymorphicLuaProgramEmitter(LuaProgramEmitter):
+    """
+    多态 Lua 程序发射器
+
+    使用多态 handler 实现。
+    """
+
+    def __init__(
+        self,
+        handler_strategy: str = "weighted",
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.handler_strategy_name = handler_strategy
+        self.polymorphic_generator: PolymorphicHandlerGenerator | None = None
+
+    def emit_polymorphic_handlers(
+        self,
+        templates: dict[int, dict[str, str]]
+    ) -> str:
+        """生成多态 handler"""
+        rng = random.Random()
+        strategy = StrategyFactory.create(
+            self.handler_strategy_name,
+            rng=rng
+        )
+
+        self.polymorphic_generator = PolymorphicHandlerGenerator(
+            strategy=strategy,
+            include_comments=self.include_comments,
+            rng=rng
+        )
+
+        return self.polymorphic_generator.generate_all(templates)
+
+    def emit_complete_polymorphic_program(
+        self,
+        instructions: list[Instruction] | None = None,
+        **kwargs
+    ) -> str:
+        """生成完整的多态程序"""
+        parts = []
+
+        parts.append("-- =========================================")
+        parts.append("-- Polymorphic Lua Instruction Interpreter")
+        parts.append("-- Generated by lua_obfuscator")
+        parts.append("-- =========================================")
+        parts.append("")
+        parts.append(f"local _DEBUG = {'true' if self.include_debug else 'false'}")
+        parts.append("")
+
+        if instructions:
+            parts.append(self.emit_instruction_table(instructions))
+
+        parts.append(self.emit_execution_state())
+
+        parts.append("-- =========================================")
+        parts.append("-- Polymorphic Handlers")
+        parts.append("-- =========================================")
+        parts.append("")
+        parts.append(self.emit_polymorphic_handlers(
+            LuaHandlerGenerator().HANDLER_TEMPLATES
+        ))
+
+        parts.append("")
+        parts.append(self.emit_dispatcher())
+
+        parts.append("")
+        parts.append(self.emit_executor_loop())
+
+        if instructions:
+            parts.append(self.emit_runner())
+
+        return "\n\n".join(parts)
+
+
+# ===== 便捷函数 =====
+
+
+def create_polymorphic_emitter(
+    strategy: str = "weighted",
+    include_debug: bool = False
+) -> PolymorphicLuaProgramEmitter:
+    """创建多态发射器"""
+    return PolymorphicLuaProgramEmitter(
+        handler_strategy=strategy,
+        include_debug=include_debug
+    )
+
+
+def demo_polymorphic_handlers():
+    """演示多态 handler 生成"""
+    print("=" * 60)
+    print("Polymorphic Handler Demo")
+    print("=" * 60)
+
+    templates = LuaHandlerGenerator().HANDLER_TEMPLATES
+
+    strategies = [
+        ("Random", "random"),
+        ("Weighted Random", "weighted"),
+        ("Opcode Based", "opcode_based"),
+        ("Alternating", "alternating"),
+    ]
+
+    for name, strategy_name in strategies:
+        print(f"\n{'=' * 40}")
+        print(f"Strategy: {name}")
+        print("-" * 40)
+
+        emitter = PolymorphicLuaProgramEmitter(
+            handler_strategy=strategy_name,
+            include_debug=True
+        )
+
+        code = emitter.emit_polymorphic_handlers(templates)
+
+        print(code[:1500])
+        if len(code) > 1500:
+            print("\n... (truncated)")
+
+    print("\n" + "=" * 60)
+    print("Demo Complete")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    demo_polymorphic_handlers()
+
+
+# ===== 指令紧凑编码系统 =====
+
+
+class OpCodeEncoding:
+    """
+    Opcode 编码表
+
+    将字符串 opcode 映射为数值 ID。
+    """
+
+    # Opcode -> ID 映射
+    OPCODE_TO_ID: dict[str, int] = {
+        "nop": 0,
+        "declare": 1,
+        "init": 2,
+        "assign": 3,
+        "call": 4,
+        "call_assign": 5,
+        "return": 6,
+        "return_val": 7,
+        "jump": 8,
+        "jump_if": 9,
+        "do": 10,
+        "end": 11,
+        "if": 12,
+        "then": 13,
+        "else": 14,
+        "elseif": 15,
+        "while": 16,
+        "for": 17,
+        "repeat": 18,
+        "until": 19,
+        "break": 20,
+        "continue": 21,
+        "func_def": 22,
+        "func_end": 23,
+        "expr": 24,
+        "error": 25,
+        "table_new": 26,
+        "table_set": 27,
+        "table_get": 28,
+        "label": 29,
+        "identity": 30,
+        "dummy": 31,
+        "comment": 32,
+        "assert": 33,
+    }
+
+    # ID -> Opcode 映射
+    ID_TO_OPCODE: dict[int, str] = {v: k for k, v in OPCODE_TO_ID.items()}
+
+    @classmethod
+    def encode(cls, opcode: str | OpCode) -> int:
+        """将 opcode 字符串转为数值 ID"""
+        if isinstance(opcode, OpCode):
+            opcode = opcode.value
+        return cls.OPCODE_TO_ID.get(opcode, 0)
+
+    @classmethod
+    def decode(cls, opcode_id: int) -> str:
+        """将数值 ID 转为 opcode 字符串"""
+        return cls.ID_TO_OPCODE.get(opcode_id, "nop")
+
+
+class CompactInstruction:
+    """
+    紧凑指令格式
+
+    支持多种紧凑编码方案。
+    """
+
+    FORMAT_FLAT = "flat"      # {opcode_id, arg1, arg2}
+    FORMAT_STREAM = "stream"  # [op, a, b, op, a, b, ...]
+    FORMAT_PACKED = "packed"  # 二进制打包
+
+    def __init__(
+        self,
+        opcode: int,
+        args: list = None,
+        format_type: str = FORMAT_FLAT
+    ):
+        self.opcode = opcode
+        self.args = args or []
+        self.format_type = format_type
+
+    def to_flat(self) -> list:
+        """转为扁平格式 {opcode, arg1, arg2}"""
+        result = [self.opcode]
+        result.extend(self.args[:3])
+        return result
+
+    def to_stream_entry(self) -> list:
+        """转为流式格式"""
+        return self.to_flat()
+
+    def __repr__(self) -> str:
+        return f"CompactInstr({self.opcode}, {self.args})"
+
+
+class CompactEncoder:
+    """
+    紧凑编码器
+
+    将 Instruction 列表编码为紧凑格式。
+    """
+
+    def __init__(
+        self,
+        constant_pool: dict | None = None,
+        use_pool_refs: bool = False
+    ):
+        self.constant_pool = constant_pool or {}
+        self.use_pool_refs = use_pool_refs
+        self._pool_index: dict[str, int] = {}
+
+    def encode_instruction(self, instr: Instruction) -> CompactInstruction:
+        """编码单条指令"""
+        opcode_id = OpCodeEncoding.encode(instr.op)
+
+        args = []
+        for arg in instr.args:
+            if isinstance(arg, str):
+                if self.use_pool_refs and arg in self.constant_pool:
+                    ref = self._get_pool_ref(arg)
+                    args.append(ref)
+                else:
+                    args.append(arg)
+            else:
+                args.append(arg)
+
+        return CompactInstruction(opcode_id, args)
+
+    def _get_pool_ref(self, value: str) -> int:
+        """获取常量池引用"""
+        if value not in self._pool_index:
+            self._pool_index[value] = len(self._pool_index) + 1
+        return self._pool_index[value]
+
+    def encode_flat(self, instructions: list[Instruction]) -> list[list]:
+        """编码为扁平格式 {opcode, arg1, arg2}"""
+        return [self.encode_instruction(i).to_flat() for i in instructions]
+
+    def encode_stream(self, instructions: list[Instruction]) -> list:
+        """编码为流式格式 [op, a, b, op, a, b, ...]"""
+        result = []
+        for instr in instructions:
+            entry = self.encode_instruction(instr).to_stream_entry()
+            result.extend(entry)
+        return result
+
+    def encode_indexed(self, instructions: list[Instruction]) -> dict:
+        """编码为索引格式，带元数据"""
+        encoded = []
+        for i, instr in enumerate(instructions):
+            ci = self.encode_instruction(instr)
+            encoded.append({
+                "i": i + 1,
+                "op": ci.opcode,
+                "args": ci.args,
+                "raw": ci.to_flat()
+            })
+        return {"instructions": encoded, "metadata": self._get_metadata()}
+
+    def _get_metadata(self) -> dict:
+        """获取元数据"""
+        return {
+            "opcode_count": len(OpCodeEncoding.OPCODE_TO_ID),
+            "pool_size": len(self._pool_index),
+            "format": "compact_v1"
+        }
+
+
+class CompactSerializer:
+    """
+    紧凑序列化器
+
+    将编码后的指令序列序列化为 Lua 代码。
+    """
+
+    def __init__(
+        self,
+        encoder: CompactEncoder | None = None,
+        var_name: str = "code",
+        indent: str = "    "
+    ):
+        self.encoder = encoder or CompactEncoder()
+        self.var_name = var_name
+        self.indent = indent
+
+    def serialize_flat(
+        self,
+        instructions: list[Instruction],
+        with_indices: bool = True
+    ) -> str:
+        """序列化扁平格式"""
+        encoded = self.encoder.encode_flat(instructions)
+
+        lines = [f"local {self.var_name} = {{}}"]
+
+        for i, entry in enumerate(encoded):
+            if with_indices:
+                line = f"{self.indent}[{i + 1}] = {{{entry[0]}, {self._format_arg(entry[1])}, {self._format_arg(entry[2])}}}"
+            else:
+                line = f"{{{entry[0]}, {self._format_arg(entry[1])}, {self._format_arg(entry[2])}}}"
+            lines.append(line)
+
+        return "\n".join(lines)
+
+    def serialize_stream(
+        self,
+        instructions: list[Instruction],
+        items_per_line: int = 6
+    ) -> str:
+        """序列化流式格式"""
+        encoded = self.encoder.encode_stream(instructions)
+
+        lines = [f"local {self.var_name} = {{"]
+
+        for i in range(0, len(encoded), items_per_line):
+            chunk = encoded[i:i + items_per_line]
+            formatted = [self._format_arg(a) for a in chunk]
+            lines.append(f"{self.indent}{', '.join(formatted)},")
+
+        lines.append("}")
+        return "\n".join(lines)
+
+    def serialize_compact(self, instructions: list[Instruction]) -> str:
+        """序列化紧凑格式（优化行数）"""
+        encoded = self.encoder.encode_flat(instructions)
+
+        lines = [f"local {self.var_name} = {{"]
+
+        entries = []
+        for entry in encoded:
+            entries.append(f"{{{entry[0]},{self._format_arg_compact(entry[1])},{self._format_arg_compact(entry[2])}}}")
+
+        lines.append(self.indent + ", ".join(entries))
+        lines.append("}")
+        return "\n".join(lines)
+
+    def serialize_minimal(self, instructions: list[Instruction]) -> str:
+        """最小化序列化"""
+        encoded = self.encoder.encode_stream(instructions)
+        formatted = [str(a) for a in encoded]
+        return f"local {self.var_name} = {{{','.join(formatted)}}}"
+
+
+    def _format_arg(self, arg) -> str:
+        """格式化参数"""
+        if arg is None:
+            return "nil"
+        if isinstance(arg, bool):
+            return "true" if arg else "false"
+        if isinstance(arg, (int, float)):
+            return str(arg)
+        if isinstance(arg, str):
+            escaped = arg.replace("\\", "\\\\").replace('"', '\\"')
+            return f'"{escaped}"'
+        return str(arg)
+
+    def _format_arg_compact(self, arg) -> str:
+        """紧凑格式化参数"""
+        if arg is None:
+            return "0"
+        if isinstance(arg, bool):
+            return "1" if arg else "0"
+        if isinstance(arg, (int, float)):
+            return str(arg)
+        if isinstance(arg, str):
+            return f'"{arg}"'
+        return "0"
+
+
+# ===== Lua 紧凑解码器 =====
+
+
+class LuaCompactDecoderGenerator:
+    """
+    Lua 紧凑解码器生成器
+
+    生成 Lua 端的解码函数。
+    """
+
+    def __init__(self, format_type: str = "flat"):
+        self.format_type = format_type
+
+    def generate(self) -> str:
+        """生成解码器代码"""
+        parts = []
+
+        parts.append("-- =========================================")
+        parts.append("-- Compact Instruction Decoder")
+        parts.append("-- =========================================")
+        parts.append("")
+
+        parts.append(self._generate_opcode_table())
+        parts.append("")
+        parts.append(self._generate_decoder_functions())
+
+        return "\n".join(parts)
+
+    def _generate_opcode_table(self) -> str:
+        """生成 opcode 表"""
+        lines = []
+        lines.append("local __OPCODES__ = {")
+        for name, id_val in sorted(OpCodeEncoding.OPCODE_TO_ID.items(), key=lambda x: x[1]):
+            lines.append(f"    [{id_val}] = \"{name}\",")
+        lines.append("}")
+        return "\n".join(lines)
+
+    def _generate_decoder_functions(self) -> str:
+        """生成解码函数"""
+        return """-- Decode instruction at index
+local function __decode_instr__(code, index)
+    local raw = code[index]
+    if not raw then return nil end
+    return {
+        opcode = raw[1],
+        opname = __OPCODES__[raw[1]] or "nop",
+        arg1 = raw[2],
+        arg2 = raw[3],
+        arg3 = raw[4],
+    }
+end
+
+-- Decode stream instruction at position
+local function __decode_stream__(code, pos)
+    local opcode = code[pos]
+    if not opcode then return nil end
+    return {
+        opcode = opcode,
+        opname = __OPCODES__[opcode] or "nop",
+        arg1 = code[pos + 1],
+        arg2 = code[pos + 2],
+        pos = pos + 3
+    }
+end
+
+-- Get opcode name from id
+local function __opname__(opcode_id)
+    return __OPCODES__[opcode_id] or "nop"
+end
+
+-- Get opcode id from name
+local __OPCODE_IDS__ = {
+    nop = 0, declare = 1, init = 2, assign = 3, call = 4,
+    call_assign = 5, return = 6, return_val = 7, jump = 8,
+    jump_if = 9, do = 10, end = 11, if = 12, then = 13,
+    else = 14, elseif = 15, while = 16, for = 17, repeat = 18,
+    until = 19, break = 20, continue = 21, func_def = 22,
+    func_end = 23, expr = 24, error = 25, table_new = 26,
+    table_set = 27, table_get = 28, label = 29, identity = 30,
+    dummy = 31, comment = 32, assert = 33,
+}
+
+local function __opcode_id__(name)
+    return __OPCODE_IDS__[name] or 0
+end"""
+
+
+class CompactExecutorGenerator:
+    """
+    紧凑执行器生成器
+
+    生成支持紧凑格式的执行器。
+    """
+
+    def __init__(
+        self,
+        format_type: str = "flat",
+        decoder_generator: LuaCompactDecoderGenerator | None = None
+    ):
+        self.format_type = format_type
+        self.decoder = decoder_generator or LuaCompactDecoderGenerator(format_type)
+
+    def generate(self) -> str:
+        """生成执行器代码"""
+        parts = []
+
+        parts.append("-- =========================================")
+        parts.append("-- Compact Executor")
+        parts.append("-- =========================================")
+        parts.append("")
+
+        parts.append(self.decoder.generate())
+        parts.append("")
+        parts.append(self._generate_executor())
+
+        return "\n".join(parts)
+
+    def _generate_executor(self) -> str:
+        """生成执行循环"""
+        if self.format_type == "flat":
+            return self._generate_flat_executor()
+        elif self.format_type == "stream":
+            return self._generate_stream_executor()
+        else:
+            return self._generate_flat_executor()
+
+    def _generate_flat_executor(self) -> str:
+        return """-- Flat format executor
+local function __execute_flat__(code, state)
+    local pc = 1
+    while pc and not state.halted do
+        local instr = __decode_instr__(code, pc)
+        if not instr then break end
+
+        local op = instr.opcode
+        local handler = handlers[op] or handlers.default
+
+        -- Execute handler with decoded instruction
+        local next_pc = handler({
+            [1] = instr.opcode,
+            [2] = instr.arg1,
+            [3] = instr.arg2,
+            [4] = instr.arg3,
+        }, state, pc)
+
+        pc = next_pc or (pc + 1)
+
+        -- Safety check
+        if pc < 0 or pc > #code + 1 then break end
+    end
+    return state.return_value
+end
+
+local __execute__ = __execute_flat__"""
+
+    def _generate_stream_executor(self) -> str:
+        return """-- Stream format executor
+local function __execute_stream__(code, state)
+    local pc = 1
+    while pc and not state.halted do
+        if pc > #code then break end
+
+        local instr = __decode_stream__(code, pc)
+        if not instr then break end
+
+        local handler = handlers[instr.opcode] or handlers.default
+
+        local next_pc = handler({
+            [1] = instr.opcode,
+            [2] = instr.arg1,
+            [3] = instr.arg2,
+        }, state, pc)
+
+        pc = next_pc or (pc + 3)
+
+        -- Safety check
+        if pc < 0 or pc > #code + 1 then break end
+    end
+    return state.return_value
+end
+
+local __execute__ = __execute_stream__"""
+
+
+class CompactLuaProgramGenerator:
+    """
+    紧凑 Lua 程序生成器
+
+    整合编码器和解码器生成完整程序。
+    """
+
+    def __init__(
+        self,
+        format_type: str = "flat",
+        use_pool_refs: bool = False,
+        include_debug: bool = False
+    ):
+        self.format_type = format_type
+        self.use_pool_refs = use_pool_refs
+        self.include_debug = include_debug
+
+        self.encoder = CompactEncoder(use_pool_refs=use_pool_refs)
+        self.serializer = CompactSerializer(self.encoder)
+        self.executor_gen = CompactExecutorGenerator(format_type)
+
+    def generate(
+        self,
+        instructions: list[Instruction],
+        code_var: str = "code",
+        state_var: str = "state"
+    ) -> str:
+        """生成完整程序"""
+        parts = []
+
+        parts.append("-- =========================================")
+        parts.append("-- Compact Lua Instruction Interpreter")
+        parts.append("-- Generated by lua_obfuscator")
+        parts.append("-- =========================================")
+        parts.append("")
+        parts.append(f"local _DEBUG = {'true' if self.include_debug else 'false'}")
+        parts.append("")
+
+        parts.append(self._generate_header())
+        parts.append("")
+
+        parts.append(self._generate_instruction_section(instructions, code_var))
+        parts.append("")
+
+        parts.append(self._generate_state_section(state_var))
+        parts.append("")
+
+        parts.append(self.executor_gen.generate())
+
+        return "\n".join(parts)
+
+    def _generate_header(self) -> str:
+        return f"""-- Compact Format: {self.format_type}
+-- Encoding: opcode_id (integer) + args
+-- Opcode count: {len(OpCodeEncoding.OPCODE_TO_ID)}"""
+
+    def _generate_instruction_section(
+        self,
+        instructions: list[Instruction],
+        code_var: str
+    ) -> str:
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Compact Instructions")
+        lines.append("-- =========================================")
+
+        if self.format_type == "flat":
+            lines.append(self.serializer.serialize_compact(instructions))
+        elif self.format_type == "stream":
+            lines.append(self.serializer.serialize_stream(instructions))
+        else:
+            lines.append(self.serializer.serialize_compact(instructions))
+
+        return "\n".join(lines)
+
+    def _generate_state_section(self, state_var: str) -> str:
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Execution State")
+        lines.append("-- =========================================")
+        lines.append(f"local {state_var} = {{")
+        lines.append("    locals = {},")
+        lines.append("    globals = {},")
+        lines.append("    stack = {},")
+        lines.append("    pc = 1,")
+        lines.append("    halted = false,")
+        lines.append("    return_value = nil,")
+        lines.append("}")
+        return "\n".join(lines)
+
+    def generate_minimal(self, instructions: list[Instruction]) -> str:
+        """最小化生成"""
+        encoded = self.encoder.encode_flat(instructions)
+
+        parts = []
+        parts.append("-- Compact VM")
+        parts.append(self.serializer.serialize_minimal(instructions))
+        parts.append("local s={l={},g={},p=1,h=false,r=nil}")
+        parts.append(self._generate_minimal_executor())
+        parts.append("return __run__()")
+
+        return "\n".join(parts)
+
+    def _generate_minimal_executor(self) -> str:
+        return """local function __run__()
+    local pc=1
+    while pc and not s.halted do
+        local c=code[pc]
+        if not c then break end
+        pc=pc+1
+    end
+    return s.r
+end"""
+
+
+# ===== 紧凑格式发射器 =====
+
+
+class CompactLuaProgramEmitter(LuaProgramEmitter):
+    """
+    紧凑 Lua 程序发射器
+
+    使用紧凑编码格式。
+    """
+
+    def __init__(
+        self,
+        format_type: str = "flat",
+        use_pool_refs: bool = False,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.format_type = format_type
+        self.use_pool_refs = use_pool_refs
+        self.compact_generator: CompactLuaProgramGenerator | None = None
+
+    def emit_compact_instruction_table(
+        self,
+        instructions: list[Instruction],
+        code_var: str = "code"
+    ) -> str:
+        """生成紧凑指令表"""
+        encoder = CompactEncoder(use_pool_refs=self.use_pool_refs)
+        serializer = CompactSerializer(encoder, var_name=code_var)
+
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Compact Instruction Table")
+        lines.append(f"-- Format: {self.format_type}")
+        lines.append("-- =========================================")
+
+        if self.format_type == "flat":
+            lines.append(serializer.serialize_compact(instructions))
+        elif self.format_type == "stream":
+            lines.append(serializer.serialize_stream(instructions))
+        else:
+            lines.append(serializer.serialize_compact(instructions))
+
+        return "\n".join(lines)
+
+    def emit_decoder(self) -> str:
+        """生成解码器"""
+        decoder_gen = LuaCompactDecoderGenerator(self.format_type)
+        return decoder_gen.generate()
+
+    def emit_complete_compact_program(
+        self,
+        instructions: list[Instruction] | None = None,
+        **kwargs
+    ) -> str:
+        """生成完整紧凑程序"""
+        parts = []
+
+        parts.append("-- =========================================")
+        parts.append("-- Compact Lua Instruction Interpreter")
+        parts.append("-- Generated by lua_obfuscator")
+        parts.append("-- =========================================")
+        parts.append("")
+        parts.append(f"local _DEBUG = {'true' if self.include_debug else 'false'}")
+        parts.append("")
+
+        if instructions:
+            parts.append(self.emit_compact_instruction_table(instructions))
+
+        parts.append(self.emit_execution_state())
+
+        parts.append("")
+        parts.append(self.emit_decoder())
+
+        parts.append("")
+        parts.append(self.emit_handler_module())
+
+        parts.append("")
+        parts.append(self.emit_executor_loop())
+
+        if instructions:
+            parts.append(self.emit_runner())
+
+        return "\n".join(parts)
+
+
+# ===== 便捷函数 =====
+
+
+def create_compact_encoder(use_pool_refs: bool = False) -> CompactEncoder:
+    """创建紧凑编码器"""
+    return CompactEncoder(use_pool_refs=use_pool_refs)
+
+
+def serialize_compact(
+    instructions: list[Instruction],
+    format_type: str = "flat",
+    var_name: str = "code"
+) -> str:
+    """便捷序列化函数"""
+    encoder = CompactEncoder()
+    serializer = CompactSerializer(encoder, var_name=var_name)
+
+    if format_type == "stream":
+        return serializer.serialize_stream(instructions)
+    return serializer.serialize_compact(instructions)
+
+
+def generate_compact_program(
+    instructions: list[Instruction],
+    format_type: str = "flat",
+    include_handlers: bool = True
+) -> str:
+    """生成完整紧凑程序"""
+    generator = CompactLuaProgramGenerator(
+        format_type=format_type,
+        include_debug=False
+    )
+    return generator.generate(instructions)
+
+
+def demo_integrity_validation():
+    """演示运行时完整性校验功能"""
+    print("=" * 70)
+    print("Runtime Integrity Validation Demo")
+    print("=" * 70)
+
+    # 示例指令序列
+    instructions = [
+        Instruction(OpCode.INIT, ["x"], None, "10"),
+        Instruction(OpCode.INIT, ["y"], None, "20"),
+        Instruction(OpCode.ASSIGN, ["sum"], None, "x + y"),
+        Instruction(OpCode.RETURN_VAL, ["sum"]),
+    ]
+
+    print("\n[1] Original Instructions:")
+    print("-" * 50)
+    for i, instr in enumerate(instructions):
+        print(f"  [{i}] {instr}")
+
+    # 生成带完整性校验的完整程序
+    print("\n[2] Generated Lua Program with Integrity Validation:")
+    print("-" * 50)
+    lua_code = emit_lua_program_with_integrity(
+        instructions=instructions,
+        include_debug=True,
+        enable_periodic_check=True,
+        check_interval=2,  # 每2条指令检查一次
+    )
+    print(lua_code)
+
+    # 仅生成校验模块（用于集成到现有程序）
+    print("\n[3] Integrity Module Only (for integration):")
+    print("-" * 50)
+    integrity_module = emit_integrity_module_only(
+        code_var="code",
+        state_var="state",
+        check_interval=50,
+    )
+    print(integrity_module)
+
+    print("\n" + "=" * 70)
+    print("Integrity Validation Features:")
+    print("  - _int_hash(): Simple hash function for integrity checks")
+    print("  - _int_table_signature(): Calculate structural signature")
+    print("  - _int_validate(): Main validation (length + signature)")
+    print("  - _int_init(): Initialize expected values")
+    print("  - _int_check(): Periodic integrity check during execution")
+    print("=" * 70)
+
+
+def demo_diversity_generation():
+    """演示结构多样性生成功能"""
+    print("=" * 70)
+    print("Code Structure Diversity Generation Demo")
+    print("=" * 70)
+
+    # 示例指令序列
+    instructions = [
+        Instruction(OpCode.INIT, ["x"], None, "10"),
+        Instruction(OpCode.INIT, ["y"], None, "20"),
+        Instruction(OpCode.ASSIGN, ["sum"], None, "x + y"),
+        Instruction(OpCode.RETURN_VAL, ["sum"]),
+    ]
+
+    print("\n[1] Original Instructions:")
+    print("-" * 50)
+    for i, instr in enumerate(instructions):
+        print(f"  [{i}] {instr}")
+
+    # 生成标准版本
+    print("\n[2] Standard Version (no diversification):")
+    print("-" * 50)
+    standard_code = emit_lua_program(instructions, include_debug=False)
+    print(standard_code[:1500] + "...\n")
+
+    # 生成多样性版本 1
+    print("\n[3] Diverse Version 1 (seed=1001):")
+    print("-" * 50)
+    diverse_code_1 = emit_diverse_lua_program(
+        instructions,
+        include_debug=False,
+        diversity_level=0.8,
+        seed=1001,
+    )
+    print(diverse_code_1[:1500] + "...\n")
+
+    # 生成多样性版本 2 (不同 seed)
+    print("\n[4] Diverse Version 2 (seed=2002):")
+    print("-" * 50)
+    diverse_code_2 = emit_diverse_lua_program(
+        instructions,
+        include_debug=False,
+        diversity_level=0.8,
+        seed=2002,
+    )
+    print(diverse_code_2[:1500] + "...\n")
+
+    # 显示差异
+    print("\n[5] Structural Differences:")
+    print("-" * 50)
+    print(f"Standard version length: {len(standard_code)} chars")
+    print(f"Diverse version 1 length: {len(diverse_code_1)} chars")
+    print(f"Diverse version 2 length: {len(diverse_code_2)} chars")
+    print(f"Version 1 != Version 2: {diverse_code_1 != diverse_code_2}")
+    print(f"Standard != Version 1: {standard_code != diverse_code_1}")
+
+    print("\n" + "=" * 70)
+    print("Diversity Features:")
+    print("  - HandlerExpressionStrategy: Multiple expression variants")
+    print("  - UtilityFunctionStrategy: Alternative utility implementations")
+    print("  - VariableNamingStrategy: Different variable naming pools")
+    print("  - SerializationStrategy: Various serialization formats")
+    print("  - DispatcherStrategy: Different dispatch patterns")
+    print("  - LoopStructureStrategy: Alternative loop structures")
+    print("=" * 70)
+
+
+def demo_compact_encoding():
+    """演示紧凑编码"""
+    print("=" * 60)
+    print("Compact Encoding Demo")
+    print("=" * 60)
+
+    instructions = [
+        Instruction(OpCode.INIT, ["x"], None, "10"),
+        Instruction(OpCode.INIT, ["y"], None, "20"),
+        Instruction(OpCode.ASSIGN, ["sum"], None, "x + y"),
+        Instruction(OpCode.RETURN_VAL, ["sum"]),
+    ]
+
+    print("\n[1] Original Instructions:")
+    print("-" * 40)
+    for i, instr in enumerate(instructions):
+        print(f"  [{i}] {instr}")
+
+    print("\n[2] Opcode Encoding:")
+    print("-" * 40)
+    for instr in instructions:
+        opcode_id = OpCodeEncoding.encode(instr.op)
+        print(f"  {instr.op.value} -> {opcode_id}")
+
+    print("\n[3] Flat Format (default):")
+    print("-" * 40)
+    encoder = CompactEncoder()
+    serializer = CompactSerializer(encoder)
+    print(serializer.serialize_compact(instructions))
+
+    print("\n[4] Stream Format:")
+    print("-" * 40)
+    print(serializer.serialize_stream(instructions, items_per_line=9))
+
+    print("\n[5] Minimal Format:")
+    print("-" * 40)
+    print(serializer.serialize_minimal(instructions))
+
+    print("\n[6] Lua Decoder:")
+    print("-" * 40)
+    decoder_gen = LuaCompactDecoderGenerator()
+    print(decoder_gen.generate())
+
+    print("\n[7] Complete Compact Program:")
+    print("-" * 40)
+    generator = CompactLuaProgramGenerator(format_type="flat")
+    print(generator.generate(instructions))
+
+    print("\n" + "=" * 60)
+    print("Demo Complete")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    demo_compact_encoding()
+
 
