@@ -22186,6 +22186,876 @@ class InitVarStrategy:
         return steps
 
 
+# =============================================================================
+# 分层执行模型 (Layered Execution Model)
+# 将 handler 逻辑拆分为多个可组合阶段
+# =============================================================================
+
+class ExecutionPhase(Enum):
+    """执行阶段枚举"""
+    PARSE = "parse"       # 参数解析阶段
+    PROCESS = "process"   # 数据处理阶段
+    COMMIT = "commit"     # 结果提交阶段
+    CONTROL = "control"   # 控制流阶段（跳转/停止）
+
+
+class PhaseResult:
+    """
+    阶段执行结果
+
+    封装每个阶段的执行结果和状态
+    """
+
+    def __init__(
+        self,
+        success: bool = True,
+        data: dict[str, Any] | None = None,
+        error: str | None = None
+    ):
+        self.success = success
+        self.data = data or {}
+        self.error = error
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """获取阶段数据"""
+        return self.data.get(key, default)
+
+    def set(self, key: str, value: Any) -> None:
+        """设置阶段数据"""
+        self.data[key] = value
+
+    @classmethod
+    def ok(cls, data: dict[str, Any] | None = None) -> 'PhaseResult':
+        """创建成功结果"""
+        return cls(success=True, data=data)
+
+    @classmethod
+    def fail(cls, error: str) -> 'PhaseResult':
+        """创建失败结果"""
+        return cls(success=False, error=error)
+
+
+class ExecutionStep:
+    """
+    分层执行步骤
+
+    代表 handler 执行过程中的一个原子步骤
+    """
+
+    def __init__(
+        self,
+        name: str,
+        phase: ExecutionPhase,
+        code_template: str,
+        reads: list[str] | None = None,
+        writes: list[str] | None = None,
+        depends_on: list[str] | None = None
+    ):
+        self.name = name
+        self.phase = phase
+        self.code_template = code_template
+        self.reads = reads or []
+        self.writes = writes or []
+        self.depends_on = depends_on or []
+
+    def generate_lua(self, context: 'LayeredExecutionContext') -> str:
+        """生成 Lua 代码"""
+        return self.code_template.format(
+            instr=context.instr_var,
+            state=context.state_var,
+            pc=context.pc_var,
+            **context.intermediate
+        )
+
+
+class LayeredExecutionContext:
+    """
+    分层执行上下文
+
+    在各阶段之间传递数据
+    """
+
+    def __init__(
+        self,
+        opcode: int,
+        instr_var: str = "instr",
+        state_var: str = "state",
+        pc_var: str = "pc"
+    ):
+        self.opcode = opcode
+        self.instr_var = instr_var
+        self.state_var = state_var
+        self.pc_var = pc_var
+
+        # 中间状态
+        self.intermediate: dict[str, Any] = {}
+        self.phase_results: dict[ExecutionPhase, PhaseResult] = {}
+
+        # 当前 PC 偏移
+        self.pc_offset = 1
+        self.jump_target: int | None = None
+        self.should_halt = False
+        self.return_value: Any = None
+
+    def set_intermediate(self, key: str, value: Any) -> None:
+        """设置中间变量"""
+        self.intermediate[key] = value
+
+    def get_intermediate(self, key: str, default: Any = None) -> Any:
+        """获取中间变量"""
+        return self.intermediate.get(key, default)
+
+    def add_phase_result(self, phase: ExecutionPhase, result: PhaseResult) -> None:
+        """记录阶段结果"""
+        self.phase_results[phase] = result
+        if result.data:
+            self.intermediate.update(result.data)
+
+    def get_phase_result(self, phase: ExecutionPhase) -> PhaseResult | None:
+        """获取阶段结果"""
+        return self.phase_results.get(phase)
+
+    def set_jump(self, target: int) -> None:
+        """设置跳转"""
+        self.jump_target = target
+
+    def set_halt(self, return_val: Any = None) -> None:
+        """设置停止"""
+        self.should_halt = True
+        self.return_value = return_val
+
+    def get_next_pc_expr(self) -> str:
+        """获取下一 PC 表达式"""
+        if self.should_halt:
+            return "nil"
+        if self.jump_target is not None:
+            return str(self.jump_target)
+        return f"{self.pc_var} + {self.pc_offset}"
+
+
+# =============================================================================
+# 阶段执行器
+# =============================================================================
+
+class PhaseExecutor:
+    """
+    阶段执行器
+
+    管理阶段的执行顺序和数据流
+    """
+
+    def __init__(self, steps: list[ExecutionStep] | None = None):
+        self.steps = steps or []
+
+    def add_step(self, step: ExecutionStep) -> 'PhaseExecutor':
+        """添加步骤"""
+        self.steps.append(step)
+        return self
+
+    def execute(self, context: LayeredExecutionContext) -> PhaseResult:
+        """
+        执行所有步骤
+
+        Args:
+            context: 执行上下文
+
+        Returns:
+            最终结果
+        """
+        for step in self.steps:
+            # 检查依赖是否满足
+            deps_met = all(
+                context.get_intermediate(dep) is not None
+                for dep in step.depends_on
+            )
+            if not deps_met:
+                return PhaseResult.fail(f"Dependencies not met for step: {step.name}")
+
+            # 执行步骤
+            code = step.generate_lua(context)
+
+            # 更新中间状态
+            if step.writes:
+                for var in step.writes:
+                    if var in context.intermediate:
+                        pass  # 已在 generate_lua 中更新
+
+        return PhaseResult.ok(context.intermediate)
+
+    def generate_lua(self, context: LayeredExecutionContext) -> str:
+        """
+        生成 Lua 代码
+
+        Args:
+            context: 执行上下文
+
+        Returns:
+            Lua 代码字符串
+        """
+        lines = []
+
+        for step in self.steps:
+            # 添加阶段注释
+            if step.phase != ExecutionPhase.CONTROL:
+                lines.append(f"    -- [{step.phase.value.upper()}] {step.name}")
+
+            # 生成代码
+            code = step.generate_lua(context)
+            for line in code.split("\n"):
+                if line.strip():
+                    lines.append(f"    {line.strip()}")
+
+        # 添加返回语句
+        lines.append(f"    return {context.get_next_pc_expr()}")
+
+        return "\n".join(lines)
+
+    def group_by_phase(self) -> dict[ExecutionPhase, list[ExecutionStep]]:
+        """按阶段分组步骤"""
+        groups: dict[ExecutionPhase, list[ExecutionStep]] = {
+            phase: [] for phase in ExecutionPhase
+        }
+        for step in self.steps:
+            groups[step.phase].append(step)
+        return groups
+
+    def generate_layered_lua(self, context: LayeredExecutionContext) -> str:
+        """
+        生成分层 Lua 代码（按阶段组织）
+
+        Args:
+            context: 执行上下文
+
+        Returns:
+            Lua 代码字符串
+        """
+        groups = self.group_by_phase()
+        lines = []
+
+        for phase in ExecutionPhase:
+            steps = groups[phase]
+            if not steps:
+                continue
+
+            lines.append(f"    -- === {phase.value.upper()} PHASE ===")
+
+            for step in steps:
+                code = step.generate_lua(context)
+                for line in code.split("\n"):
+                    if line.strip():
+                        lines.append(f"    {line.strip()}")
+
+            lines.append("")  # 阶段之间空行
+
+        # 返回语句
+        lines.append(f"    return {context.get_next_pc_expr()}")
+
+        return "\n".join(lines)
+
+
+# =============================================================================
+# 预定义分层步骤
+# =============================================================================
+
+class LayeredSteps:
+    """预定义的分层步骤工厂"""
+
+    @staticmethod
+    def parse_varname(index: int = 2) -> ExecutionStep:
+        """解析变量名"""
+        return ExecutionStep(
+            name="parse_varname",
+            phase=ExecutionPhase.PARSE,
+            code_template="local varname = {instr}[" + str(index) + "]",
+            reads=["instr"],
+            writes=["varname"],
+            depends_on=[]
+        )
+
+    @staticmethod
+    def parse_value(index: int = 3) -> ExecutionStep:
+        """解析值"""
+        return ExecutionStep(
+            name="parse_value",
+            phase=ExecutionPhase.PARSE,
+            code_template="local value = {instr}[" + str(index) + "]",
+            reads=["instr"],
+            writes=["value"],
+            depends_on=[]
+        )
+
+    @staticmethod
+    def parse_literal(index: int = 3) -> ExecutionStep:
+        """解析字面量"""
+        return ExecutionStep(
+            name="parse_literal",
+            phase=ExecutionPhase.PARSE,
+            code_template="local value = _eval_literal({instr}[" + str(index) + "])",
+            reads=["instr"],
+            writes=["value"],
+            depends_on=[]
+        )
+
+    @staticmethod
+    def eval_expr(expr: str, target: str) -> ExecutionStep:
+        """计算表达式"""
+        return ExecutionStep(
+            name="eval_expr",
+            phase=ExecutionPhase.PROCESS,
+            code_template=f"local {target} = {expr}",
+            reads=["instr", "state"],
+            writes=[target],
+            depends_on=["varname"]
+        )
+
+    @staticmethod
+    def get_from_state(varname: str, target: str) -> ExecutionStep:
+        """从状态获取"""
+        return ExecutionStep(
+            name=f"get_{varname}",
+            phase=ExecutionPhase.PROCESS,
+            code_template="local {target} = _get({state}, '" + varname + "')",
+            reads=["state"],
+            writes=[target],
+            depends_on=[]
+        )
+
+    @staticmethod
+    def set_to_state(varname: str, value: str) -> ExecutionStep:
+        """设置到状态"""
+        return ExecutionStep(
+            name=f"set_{varname}",
+            phase=ExecutionPhase.COMMIT,
+            code_template="_set({state}, '" + varname + "', " + value + ")",
+            writes=["state"],
+            depends_on=[varname, value]
+        )
+
+    @staticmethod
+    def compute_binary_op(left: str, op: str, right: str, target: str) -> ExecutionStep:
+        """计算二元运算"""
+        return ExecutionStep(
+            name=f"compute_{op}",
+            phase=ExecutionPhase.PROCESS,
+            code_template=f"local {target} = {left} {op} {right}",
+            reads=[left, right],
+            writes=[target],
+            depends_on=[left, right]
+        )
+
+    @staticmethod
+    def jump(target: str) -> ExecutionStep:
+        """跳转"""
+        return ExecutionStep(
+            name="jump",
+            phase=ExecutionPhase.CONTROL,
+            code_template="-- jump to " + target,
+            depends_on=[target]
+        )
+
+    @staticmethod
+    def conditional_jump(cond: str, target: str) -> ExecutionStep:
+        """条件跳转"""
+        return ExecutionStep(
+            name="conditional_jump",
+            phase=ExecutionPhase.CONTROL,
+            code_template="if " + cond + " then return " + target + " else return {pc} + 1 end",
+            reads=[cond],
+            depends_on=[cond]
+        )
+
+    @staticmethod
+    def halt(return_val: str | None = None) -> ExecutionStep:
+        """停止"""
+        return ExecutionStep(
+            name="halt",
+            phase=ExecutionPhase.CONTROL,
+            code_template="{state}.halted = true; {state}.return_value = " + (return_val or "nil"),
+            writes=["state"],
+            depends_on=[]
+        )
+
+    @staticmethod
+    def nop() -> ExecutionStep:
+        """空操作"""
+        return ExecutionStep(
+            name="nop",
+            phase=ExecutionPhase.CONTROL,
+            code_template="-- no-op",
+            depends_on=[]
+        )
+
+
+# =============================================================================
+# 分层策略定义
+# =============================================================================
+
+class LayeredStrategy:
+    """分层策略基类"""
+
+    name: str = "base"
+
+    def get_phases(self) -> list[ExecutionPhase]:
+        """返回使用的阶段列表"""
+        return [ExecutionPhase.PARSE, ExecutionPhase.PROCESS, ExecutionPhase.COMMIT]
+
+    def build_steps(self, opcode: int) -> list[ExecutionStep]:
+        """构建执行步骤"""
+        raise NotImplementedError
+
+
+class LayeredNopStrategy(LayeredStrategy):
+    """分层 NOP 策略"""
+
+    name = "nop"
+
+    def build_steps(self, opcode: int) -> list[ExecutionStep]:
+        return [LayeredSteps.nop()]
+
+
+class LayeredInitStrategy(LayeredStrategy):
+    """分层变量初始化策略 (3层: parse -> process -> commit)"""
+
+    name = "init"
+
+    def build_steps(self, opcode: int) -> list[ExecutionStep]:
+        return [
+            LayeredSteps.parse_varname(2),
+            LayeredSteps.parse_literal(3),
+            LayeredSteps.set_to_state("varname", "value"),
+        ]
+
+
+class LayeredAssignStrategy(LayeredStrategy):
+    """分层赋值策略 (3层)"""
+
+    name = "assign"
+
+    def build_steps(self, opcode: int) -> list[ExecutionStep]:
+        return [
+            LayeredSteps.parse_varname(2),
+            LayeredSteps.parse_value(3),
+            LayeredSteps.set_to_state("varname", "value"),
+        ]
+
+
+class LayeredComputeStrategy(LayeredStrategy):
+    """分层计算策略 (3层)"""
+
+    name = "compute"
+
+    def build_steps(self, opcode: int) -> list[ExecutionStep]:
+        return [
+            LayeredSteps.parse_varname(2),
+            LayeredSteps.eval_expr("{instr}[3]", "computed"),
+            LayeredSteps.set_to_state("varname", "computed"),
+        ]
+
+
+class LayeredJumpStrategy(LayeredStrategy):
+    """分层跳转策略"""
+
+    name = "jump"
+
+    def build_steps(self, opcode: int) -> list[ExecutionStep]:
+        return [
+            LayeredSteps.parse_value(3),
+        ]
+
+
+class LayeredCondJumpStrategy(LayeredStrategy):
+    """分层条件跳转策略"""
+
+    name = "cond_jump"
+
+    def get_phases(self) -> list[ExecutionPhase]:
+        return [ExecutionPhase.PARSE, ExecutionPhase.PROCESS, ExecutionPhase.CONTROL]
+
+    def build_steps(self, opcode: int) -> list[ExecutionStep]:
+        return [
+            LayeredSteps.parse_varname(2),
+            LayeredSteps.get_from_state("varname", "cond_val"),
+            LayeredSteps.parse_value(3),
+        ]
+
+
+class LayeredReturnStrategy(LayeredStrategy):
+    """分层返回策略"""
+
+    name = "return"
+
+    def get_phases(self) -> list[ExecutionPhase]:
+        return [ExecutionPhase.PARSE, ExecutionPhase.CONTROL]
+
+    def build_steps(self, opcode: int) -> list[ExecutionStep]:
+        return [
+            LayeredSteps.halt("nil"),
+        ]
+
+
+class LayeredReturnValStrategy(LayeredStrategy):
+    """分层返回值策略"""
+
+    name = "return_val"
+
+    def get_phases(self) -> list[ExecutionPhase]:
+        return [ExecutionPhase.PARSE, ExecutionPhase.PROCESS, ExecutionPhase.CONTROL]
+
+    def build_steps(self, opcode: int) -> list[ExecutionStep]:
+        return [
+            LayeredSteps.parse_varname(2),
+            LayeredSteps.get_from_state("varname", "ret_val"),
+            LayeredSteps.halt("ret_val"),
+        ]
+
+
+class LayeredCallStrategy(LayeredStrategy):
+    """分层函数调用策略"""
+
+    name = "call"
+
+    def build_steps(self, opcode: int) -> list[ExecutionStep]:
+        return [
+            LayeredSteps.parse_varname(2),
+            LayeredSteps.get_from_state("funcname", "func"),
+        ]
+
+
+# =============================================================================
+# 分层 Handler 生成器 (增强版)
+# =============================================================================
+
+class EnhancedLayeredHandlerGenerator:
+    """
+    增强型分层 Handler 生成器
+
+    使用分层执行模型生成 handler，支持：
+    - 多阶段执行 (Parse -> Process -> Commit -> Control)
+    - 中间状态传递
+    - 不同策略使用不同阶段组合
+    """
+
+    STRATEGIES: dict[int, type[LayeredStrategy]] = {
+        0: LayeredNopStrategy,           # nop
+        1: LayeredAssignStrategy,          # declare
+        2: LayeredInitStrategy,           # init
+        3: LayeredAssignStrategy,         # assign
+        4: LayeredCallStrategy,           # call
+        5: LayeredCallStrategy,           # call_assign
+        6: LayeredReturnStrategy,        # return
+        7: LayeredReturnValStrategy,     # return_val
+        8: LayeredJumpStrategy,          # jump
+        9: LayeredCondJumpStrategy,      # jump_if
+        10: LayeredNopStrategy,          # do
+        11: LayeredNopStrategy,          # end
+    }
+
+    def __init__(
+        self,
+        include_comments: bool = True,
+        use_layered_structure: bool = True,
+        include_phase_separators: bool = True
+    ):
+        self.include_comments = include_comments
+        self.use_layered_structure = use_layered_structure
+        self.include_phase_separators = include_phase_separators
+        self._custom_strategies: dict[int, LayeredStrategy] = {}
+
+    def register_strategy(self, opcode: int, strategy: LayeredStrategy) -> None:
+        """注册自定义策略"""
+        self._custom_strategies[opcode] = strategy
+
+    def get_strategy(self, opcode: int) -> LayeredStrategy | None:
+        """获取策略"""
+        if opcode in self._custom_strategies:
+            return self._custom_strategies[opcode]
+        strategy_cls = self.STRATEGIES.get(opcode)
+        if strategy_cls:
+            return strategy_cls()
+        return None
+
+    def generate_handler(
+        self,
+        opcode: int,
+        desc: str = "",
+        use_layered: bool | None = None
+    ) -> str:
+        """
+        生成单个分层 handler
+
+        Args:
+            opcode: 操作码
+            desc: 描述
+            use_layered: 是否使用分层结构
+
+        Returns:
+            Lua 代码字符串
+        """
+        use_layered = use_layered if use_layered is not None else self.use_layered_structure
+
+        lines = []
+
+        if self.include_comments:
+            lines.append(f"    -- opcode: {opcode} ({desc})")
+
+        strategy = self.get_strategy(opcode)
+        if not strategy:
+            lines.append("    -- No strategy, default to sequential")
+            lines.append("    return pc + 1")
+            return "\n".join(lines)
+
+        # 构建上下文
+        context = LayeredExecutionContext(opcode)
+
+        # 构建执行器
+        steps = strategy.build_steps(opcode)
+        executor = PhaseExecutor(steps)
+
+        # 生成代码
+        if use_layered:
+            handler_code = executor.generate_layered_lua(context)
+        else:
+            handler_code = executor.generate_lua(context)
+
+        lines.append(handler_code)
+        return "\n".join(lines)
+
+    def generate_all_handlers(
+        self,
+        templates: dict[int, dict[str, str]] | None = None,
+        use_layered: bool | None = None
+    ) -> str:
+        """
+        生成所有分层 handlers
+
+        Args:
+            templates: 模板字典
+            use_layered: 是否使用分层结构
+
+        Returns:
+            Lua 代码字符串
+        """
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Instruction Handlers (Enhanced Layered Model)")
+        lines.append("-- =========================================")
+        lines.append("")
+        lines.append("local handlers = {")
+
+        if templates is None:
+            templates = LuaHandlerGenerator.HANDLER_TEMPLATES
+
+        for opcode in sorted(templates.keys()):
+            template_data = templates[opcode]
+            desc = template_data.get("desc", "")
+
+            handler_code = self.generate_handler(opcode, desc, use_layered)
+            lines.append(handler_code)
+            lines.append("")  # handler 之间空行
+
+        # 默认处理器
+        lines.append("    -- Default handler for unknown opcodes")
+        lines.append("    default = function(instr, state, pc)")
+        lines.append("        if _DEBUG then")
+        lines.append("            print('Unknown opcode: ' .. tostring(instr[1]))")
+        lines.append("        end")
+        lines.append("        return pc + 1")
+        lines.append("    end,")
+
+        lines.append("}")
+        return "\n".join(lines)
+
+    def generate_layered_handlers_only(self) -> str:
+        """仅生成 handlers（不含 dispatcher）"""
+        return self.generate_all_handlers()
+
+
+# =============================================================================
+# 分层执行模块生成器
+# =============================================================================
+
+class LayeredExecutionModuleGenerator:
+    """
+    分层执行模块生成器
+
+    生成包含分层 handlers 和辅助函数的完整模块
+    """
+
+    def __init__(
+        self,
+        handler_gen: EnhancedLayeredHandlerGenerator | None = None,
+        include_utility: bool = True,
+        include_dispatcher: bool = True
+    ):
+        self.handler_gen = handler_gen or EnhancedLayeredHandlerGenerator()
+        self.include_utility = include_utility
+        self.include_dispatcher = include_dispatcher
+
+    def generate_utility_functions(self) -> str:
+        """生成工具函数"""
+        return LuaHandlerGenerator().generate_utility_functions()
+
+    def generate_handlers(self) -> str:
+        """生成 handlers"""
+        return self.handler_gen.generate_all_handlers()
+
+    def generate_dispatcher(self) -> str:
+        """生成 dispatcher"""
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Dispatcher")
+        lines.append("-- =========================================")
+        lines.append("")
+        lines.append("local function dispatch(instr, state, pc)")
+        lines.append("    local op = instr[1]")
+        lines.append("    local handler = handlers[op] or handlers.default")
+        lines.append("    return handler(instr, state, pc)")
+        lines.append("end")
+        return "\n".join(lines)
+
+    def generate_module(self) -> str:
+        """生成完整模块"""
+        parts = []
+
+        if self.include_utility:
+            parts.append(self.generate_utility_functions())
+            parts.append("")
+
+        parts.append(self.generate_handlers())
+        parts.append("")
+
+        if self.include_dispatcher:
+            parts.append(self.generate_dispatcher())
+
+        return "\n\n".join(parts)
+
+
+# =============================================================================
+# 便捷函数
+# =============================================================================
+
+def generate_layered_handlers(
+    use_layered: bool = True,
+    include_comments: bool = True
+) -> str:
+    """
+    便捷函数：生成分层 handlers
+
+    Args:
+        use_layered: 是否使用分层结构
+        include_comments: 是否包含注释
+
+    Returns:
+        Lua 代码字符串
+    """
+    gen = EnhancedLayeredHandlerGenerator(
+        include_comments=include_comments,
+        use_layered_structure=use_layered
+    )
+    return gen.generate_all_handlers()
+
+
+def generate_layered_module(
+    include_dispatcher: bool = True
+) -> str:
+    """
+    便捷函数：生成分层执行模块
+
+    Args:
+        include_dispatcher: 是否包含 dispatcher
+
+    Returns:
+        Lua 代码字符串
+    """
+    gen = LayeredExecutionModuleGenerator()
+    return gen.generate_module()
+
+
+def demo_layered_execution_model():
+    """
+    演示分层执行模型
+    """
+    print("=" * 70)
+    print("Layered Execution Model Demo")
+    print("=" * 70)
+
+    # 演示分层步骤
+    print("\n[1] 分层步骤定义:")
+    print("-" * 50)
+
+    context = LayeredExecutionContext(2)
+    print(f"Context: opcode={context.opcode}, instr={context.instr_var}, state={context.state_var}")
+
+    # 初始化策略步骤
+    init_steps = LayeredInitStrategy().build_steps(2)
+    print(f"\nInit Strategy ({len(init_steps)} steps):")
+    for step in init_steps:
+        print(f"  [{step.phase.value}] {step.name}")
+
+    # 计算策略步骤
+    compute_steps = LayeredComputeStrategy().build_steps(3)
+    print(f"\nCompute Strategy ({len(compute_steps)} steps):")
+    for step in compute_steps:
+        print(f"  [{step.phase.value}] {step.name}")
+
+    # 条件跳转策略步骤
+    condj_steps = LayeredCondJumpStrategy().build_steps(9)
+    print(f"\nConditional Jump Strategy ({len(condj_steps)} steps):")
+    for step in condj_steps:
+        print(f"  [{step.phase.value}] {step.name}")
+
+    # 演示增强型分层 handler 生成
+    print("\n[2] 增强型分层 Handler 生成:")
+    print("-" * 50)
+
+    gen = EnhancedLayeredHandlerGenerator(include_comments=True)
+
+    print("\nNOP Handler:")
+    nop = gen.generate_handler(0, "nop")
+    print(nop)
+
+    print("\nInit Handler (layered):")
+    init = gen.generate_handler(2, "init", use_layered=True)
+    print(init)
+
+    print("\nInit Handler (sequential):")
+    init_seq = gen.generate_handler(2, "init", use_layered=False)
+    print(init_seq)
+
+    print("\nAssign Handler (layered):")
+    assign = gen.generate_handler(3, "assign", use_layered=True)
+    print(assign)
+
+    print("\nReturn Handler (layered):")
+    ret = gen.generate_handler(6, "return", use_layered=True)
+    print(ret)
+
+    print("\nConditional Jump Handler (layered):")
+    condj = gen.generate_handler(9, "jump_if", use_layered=True)
+    print(condj)
+
+    # 演示完整模块
+    print("\n[3] 完整分层执行模块:")
+    print("-" * 50)
+
+    module_gen = LayeredExecutionModuleGenerator()
+    module = module_gen.generate_module()
+    print(module[:1500] + "..." if len(module) > 1500 else module)
+
+    print("\n" + "=" * 70)
+    print("Layered Execution Model Features:")
+    print("  - ExecutionPhase: PARSE, PROCESS, COMMIT, CONTROL")
+    print("  - ExecutionStep: 原子步骤，可组合")
+    print("  - PhaseExecutor: 阶段执行器")
+    print("  - LayeredStrategy: 分层策略定义")
+    print("  - EnhancedLayeredHandlerGenerator: 增强型生成器")
+    print("=" * 70)
+
+
+if __name__ == "__main__":
+    demo_layered_execution_model()
+
+
 class FunctionCallStrategy:
     """函数调用策略"""
 
@@ -28834,5 +29704,969 @@ def demo_modular_lua_generator():
 
 if __name__ == "__main__":
     demo_modular_lua_generator()
+
+
+# =============================================================================
+# 多策略生成系统 (Polymorphic Code Generation Pipeline)
+# 同一输入可产生结构不同但语义一致的 Lua 输出
+# =============================================================================
+
+from typing import Protocol, TypeVar, Generic
+from abc import ABC, abstractmethod
+
+
+# =============================================================================
+# 策略系统基础架构
+# =============================================================================
+
+class StrategyCategory(Enum):
+    """策略类别枚举"""
+    INSTRUCTION_ENCODING = "instruction_encoding"  # 指令编码策略
+    HANDLER_STRUCTURE = "handler_structure"         # Handler 结构策略
+    EXPRESSION_VARIATION = "expression_variation"  # 表达式变化策略
+    EXECUTION_DISPATCH = "execution_dispatch"      # 执行调度策略
+    STATE_MANAGEMENT = "state_management"           # 状态管理策略
+    CONTROL_FLOW = "control_flow"                   # 控制流策略
+
+
+class GenerationContext:
+    """
+    生成上下文
+
+    在策略之间传递共享信息
+    """
+
+    def __init__(
+        self,
+        rng: random.Random | None = None,
+        seed: int | None = None,
+        enabled_strategies: set[StrategyCategory] | None = None
+    ):
+        self.rng = rng or random.Random(seed)
+        self.seed = seed
+        self.enabled_strategies = enabled_strategies or set(StrategyCategory)
+
+        # 生成的代码数据
+        self.instruction_data: list[Instruction] = []
+        self.handler_templates: dict[int, dict[str, str]] = {}
+        self.utility_functions: list[str] = []
+        self.constant_pool: list[Any] = []
+
+        # 统计信息
+        self.stats: dict[str, int] = {}
+
+    def is_enabled(self, category: StrategyCategory) -> bool:
+        """检查策略类别是否启用"""
+        return category in self.enabled_strategies
+
+    def record_choice(self, category: StrategyCategory, choice: str) -> None:
+        """记录策略选择"""
+        key = category.value
+        if key not in self.stats:
+            self.stats[key] = {}
+        choices = self.stats[key]
+        choices[choice] = choices.get(choice, 0) + 1
+
+
+# =============================================================================
+# 统一策略接口
+# =============================================================================
+
+T = TypeVar('T')
+
+
+class CodeGenerationStrategy(ABC, Generic[T]):
+    """
+    代码生成策略基类
+
+    定义所有策略的通用接口
+    """
+
+    category: StrategyCategory
+
+    @abstractmethod
+    def apply(self, context: GenerationContext, data: Any = None) -> T:
+        """
+        应用策略
+
+        Args:
+            context: 生成上下文
+            data: 输入数据
+
+        Returns:
+            策略生成的结果
+        """
+        pass
+
+    @abstractmethod
+    def get_variants(self) -> list[str]:
+        """获取所有可用的变体"""
+        pass
+
+    @abstractmethod
+    def select_variant(self, context: GenerationContext) -> str:
+        """选择变体"""
+        pass
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """策略名称"""
+        pass
+
+    def is_active(self, context: GenerationContext) -> bool:
+        """检查策略是否激活"""
+        return context.is_enabled(self.category)
+
+
+class CompositeStrategy(CodeGenerationStrategy[Any]):
+    """
+    组合策略
+
+    将多个策略组合成一个策略
+    """
+
+    def __init__(self, strategies: list[CodeGenerationStrategy]):
+        self.strategies = strategies
+
+    def apply(self, context: GenerationContext, data: Any = None) -> Any:
+        result = data
+        for strategy in self.strategies:
+            if strategy.is_active(context):
+                result = strategy.apply(context, result)
+        return result
+
+    def get_variants(self) -> list[str]:
+        variants = []
+        for s in self.strategies:
+            variants.extend(s.get_variants())
+        return variants
+
+    def select_variant(self, context: GenerationContext) -> str:
+        if self.strategies:
+            return self.strategies[0].select_variant(context)
+        return "none"
+
+    @property
+    def name(self) -> str:
+        return "composite"
+
+
+# =============================================================================
+# 指令编码策略
+# =============================================================================
+
+class InstructionEncodingStrategy(CodeGenerationStrategy[str]):
+    """
+    指令编码策略
+
+    决定如何编码和表示指令数据
+    """
+
+    category = StrategyCategory.INSTRUCTION_ENCODING
+
+    class Variants(Enum):
+        COMPACT = "compact"           # 紧凑格式
+        VERBOSE = "verbose"           # 详细格式
+        NAMED = "named"               # 命名字段
+        INDEXED = "indexed"           # 索引格式
+        MAPPED = "mapped"             # 映射格式
+
+    def __init__(self, variant: str = "compact"):
+        self._variant = variant
+
+    def apply(self, context: GenerationContext, data: Any = None) -> str:
+        """编码指令"""
+        instructions = context.instruction_data if hasattr(context, 'instruction_data') else []
+        variant = self.select_variant(context)
+
+        if variant == "compact":
+            return self._encode_compact(instructions)
+        elif variant == "verbose":
+            return self._encode_verbose(instructions)
+        elif variant == "named":
+            return self._encode_named(instructions)
+        elif variant == "indexed":
+            return self._encode_indexed(instructions)
+        elif variant == "mapped":
+            return self._encode_mapped(instructions)
+        return self._encode_compact(instructions)
+
+    def get_variants(self) -> list[str]:
+        return [v.value for v in self.Variants]
+
+    def select_variant(self, context: GenerationContext) -> str:
+        if self._variant != "random":
+            return self._variant
+        return context.rng.choice(self.get_variants())
+
+    @property
+    def name(self) -> str:
+        return f"instruction_encoding:{self._variant}"
+
+    def _encode_compact(self, instructions: list[Instruction]) -> str:
+        """紧凑格式"""
+        lines = ["local code = {"]
+        for instr in instructions:
+            fields = ", ".join(str(f) if f is not None else "nil" for f in instr.fields)
+            lines.append(f"    {{{fields}}},")
+        lines.append("}")
+        return "\n".join(lines)
+
+    def _encode_verbose(self, instructions: list[Instruction]) -> str:
+        """详细格式"""
+        lines = ["local code = {"]
+        for i, instr in enumerate(instructions):
+            lines.append(f"    -- [{i}] {instr.op}")
+            fields = ", ".join(str(f) if f is not None else "nil" for f in instr.fields)
+            lines.append(f"    [{i+1}] = {{{fields}}},")
+        lines.append("}")
+        return "\n".join(lines)
+
+    def _encode_named(self, instructions: list[Instruction]) -> str:
+        """命名字段格式"""
+        lines = ["local code = {"]
+        for i, instr in enumerate(instructions):
+            lines.append(f"    -- [{i}] {instr.op}")
+            lines.append(f"    [{i+1}] = {{")
+            lines.append(f"        op = {instr.op.value if hasattr(instr.op, 'value') else instr.op},")
+            for j, f in enumerate(instr.fields):
+                lines.append(f"        f{j+1} = {repr(f)},")
+            lines.append(f"    }},")
+        lines.append("}")
+        return "\n".join(lines)
+
+    def _encode_indexed(self, instructions: list[Instruction]) -> str:
+        """索引格式"""
+        lines = ["local code = { -- indexed format"]
+        for i, instr in enumerate(instructions):
+            lines.append(f"    [{i+1}] = {{{', '.join(str(f) for f in instr.fields)}}},")
+        lines.append("}")
+        return "\n".join(lines)
+
+    def _encode_mapped(self, instructions: list[Instruction]) -> str:
+        """映射格式"""
+        lines = ["local code = { -- mapped format"]
+        for i, instr in enumerate(instructions):
+            lines.append(f"    [{i+1}] = {{op={instr.op.value if hasattr(instr.op, 'value') else instr.op},")
+            for j, f in enumerate(instr.fields):
+                lines.append(f"        [{j+2}] = {repr(f)},")
+            lines.append("    },")
+        lines.append("}")
+        return "\n".join(lines)
+
+
+# =============================================================================
+# Handler 结构策略
+# =============================================================================
+
+class HandlerStructureStrategy(CodeGenerationStrategy[str]):
+    """
+    Handler 结构策略
+
+    决定 handler 的内部结构实现方式
+    """
+
+    category = StrategyCategory.HANDLER_STRUCTURE
+
+    class Variants(Enum):
+        DIRECT = "direct"             # 直接实现
+        STEPWISE = "stepwise"         # 分步实现
+        TABLE_ASSISTED = "table"      # 表辅助
+        FUNCTION_COMPOSED = "composed" # 函数组合
+        CLOSURE_BASED = "closure"     # 闭包实现
+        LAYERED = "layered"           # 分层实现
+
+    def __init__(self, variant: str = "direct"):
+        self._variant = variant
+
+    def apply(self, context: GenerationContext, data: Any = None) -> str:
+        """生成 handler 结构"""
+        variant = self.select_variant(context)
+        templates = context.handler_templates or LuaHandlerGenerator.HANDLER_TEMPLATES
+
+        if variant == "direct":
+            return self._generate_direct(templates)
+        elif variant == "stepwise":
+            return self._generate_stepwise(templates)
+        elif variant == "table":
+            return self._generate_table_assisted(templates)
+        elif variant == "composed":
+            return self._generate_composed(templates)
+        elif variant == "closure":
+            return self._generate_closure(templates)
+        elif variant == "layered":
+            return self._generate_layered(templates)
+        return self._generate_direct(templates)
+
+    def get_variants(self) -> list[str]:
+        return [v.value for v in self.Variants]
+
+    def select_variant(self, context: GenerationContext) -> str:
+        if self._variant != "random":
+            return self._variant
+        return context.rng.choice(self.get_variants())
+
+    @property
+    def name(self) -> str:
+        return f"handler_structure:{self._variant}"
+
+    def _generate_direct(self, templates: dict) -> str:
+        """直接实现"""
+        lines = ["local handlers = {"]
+        for opcode in sorted(templates.keys()):
+            t = templates[opcode]
+            lines.append(f"    [{opcode}] = function(instr, state, pc)")
+            lines.append(f"        {t['template'].strip()}")
+            lines.append("    end,")
+        lines.append("}")
+        return "\n".join(lines)
+
+    def _generate_stepwise(self, templates: dict) -> str:
+        """分步实现"""
+        lines = ["-- Stepwise handler generation"]
+        lines.append("local function make_handler(template)")
+        lines.append("    return function(instr, state, pc)")
+        lines.append("        -- [PARSE]")
+        lines.append("        -- [PROCESS]")
+        lines.append("        -- [COMMIT]")
+        lines.append("        return (pc + 1)")
+        lines.append("    end")
+        lines.append("end")
+        lines.append("")
+        lines.append("local handlers = {")
+        for opcode in sorted(templates.keys()):
+            lines.append(f"    [{opcode}] = make_handler('{templates[opcode]['desc']}'),")
+        lines.append("}")
+        return "\n".join(lines)
+
+    def _generate_table_assisted(self, templates: dict) -> str:
+        """表辅助"""
+        lines = ["-- Table-assisted handler generation"]
+        lines.append("local _HANDLER_TABLE = {")
+        for opcode in sorted(templates.keys()):
+            t = templates[opcode]
+            lines.append(f"    [{opcode}] = {{desc='{t['desc']}', template='{t['template']}'}},")
+        lines.append("}")
+        lines.append("")
+        lines.append("local handlers = {")
+        lines.append("    __index = function(t, k)")
+        lines.append("        local h = _HANDLER_TABLE[k]")
+        lines.append("        if h then return function(i,s,p) return (p+1) end end")
+        lines.append("    end")
+        lines.append("}")
+        return "\n".join(lines)
+
+    def _generate_composed(self, templates: dict) -> str:
+        """函数组合"""
+        lines = ["-- Function-composed handler generation"]
+        lines.append("local function parse(instr) return instr end")
+        lines.append("local function process(instr, state) return state end")
+        lines.append("local function commit(state) return state end")
+        lines.append("")
+        lines.append("local function compose(...)")
+        lines.append("    local funcs = {...}")
+        lines.append("    return function(instr, state, pc)")
+        lines.append("        for _, f in ipairs(funcs) do f(instr, state) end")
+        lines.append("        return pc + 1")
+        lines.append("    end")
+        lines.append("end")
+        lines.append("")
+        lines.append("local handlers = {")
+        lines.append("    [0] = compose(parse, commit),")
+        lines.append("    [3] = compose(parse, process, commit),")
+        lines.append("}")
+        return "\n".join(lines)
+
+    def _generate_closure(self, templates: dict) -> str:
+        """闭包实现"""
+        lines = ["-- Closure-based handler generation"]
+        lines.append("local function make_closure(pc_offset)")
+        lines.append("    local offset = pc_offset")
+        lines.append("    return function(instr, state, pc)")
+        lines.append("        return pc + offset")
+        lines.append("    end")
+        lines.append("end")
+        lines.append("")
+        lines.append("local handlers = {")
+        for opcode in sorted(templates.keys()):
+            lines.append(f"    [{opcode}] = make_closure(1),")
+        lines.append("}")
+        return "\n".join(lines)
+
+    def _generate_layered(self, templates: dict) -> str:
+        """分层实现"""
+        lines = ["-- Layered handler generation"]
+        lines.append("local handlers = {")
+        for opcode in sorted(templates.keys()):
+            t = templates[opcode]
+            lines.append(f"    -- [{opcode}] {t['desc']}")
+            lines.append(f"    [{opcode}] = function(instr, state, pc)")
+            lines.append("        -- [PARSE] extract arguments")
+            lines.append("        -- [PROCESS] apply logic")
+            lines.append("        -- [COMMIT] update state")
+            lines.append("        -- [CONTROL] determine next pc")
+            lines.append("        return pc + 1")
+            lines.append("    end,")
+        lines.append("}")
+        return "\n".join(lines)
+
+
+# =============================================================================
+# 表达式变化策略
+# =============================================================================
+
+class ExpressionVariationStrategy(CodeGenerationStrategy[str]):
+    """
+    表达式变化策略
+
+    为同一表达式提供多种等价写法
+    """
+
+    category = StrategyCategory.EXPRESSION_VARIATION
+
+    class Variants(Enum):
+        DIRECT = "direct"             # 直接写法
+        NESTED = "nested"             # 嵌套写法
+        TEMP_VAR = "temp_var"         # 临时变量
+        TABLE_LOOKUP = "table"        # 表查找
+
+    # 等价表达式变体
+    ASSIGNMENT_VARIANTS = [
+        "state.locals['{v}'] = {expr}",
+        "local _v = {expr}; state.locals['{v}'] = _v",
+        "(state.locals['{v}'], _) = ({expr}, nil)",
+    ]
+
+    GET_VARIANTS = [
+        "state.locals['{v}']",
+        "_get(state, '{v}')",
+        "(state.locals['{v}'] or state.globals['{v}'])",
+    ]
+
+    CONDITION_VARIANTS = [
+        "if {cond} then return {t} end; return {f}",
+        "return {cond} and {t} or {f}",
+        "if not {cond} then return {f} end; return {t}",
+    ]
+
+    def __init__(self, variant: str = "direct"):
+        self._variant = variant
+
+    def apply(self, context: GenerationContext, data: Any = None) -> str:
+        """生成表达式"""
+        variant = self.select_variant(context)
+        context.record_choice(self.category, variant)
+
+        if isinstance(data, dict):
+            expr_type = data.get("type", "assignment")
+            if expr_type == "assignment":
+                return self._variate_assignment(data, variant, context)
+            elif expr_type == "get":
+                return self._variate_get(data, variant, context)
+            elif expr_type == "condition":
+                return self._variate_condition(data, variant, context)
+        return "nil"
+
+    def get_variants(self) -> list[str]:
+        return [v.value for v in self.Variants]
+
+    def select_variant(self, context: GenerationContext) -> str:
+        if self._variant != "random":
+            return self._variant
+        return context.rng.choice(self.get_variants())
+
+    @property
+    def name(self) -> str:
+        return f"expression_variation:{self._variant}"
+
+    def _variate_assignment(self, data: dict, variant: str, context: GenerationContext) -> str:
+        """变化赋值表达式"""
+        v = data.get("var", "x")
+        expr = data.get("expr", "42")
+
+        if variant == "direct":
+            return f"state.locals['{v}'] = {expr}"
+        elif variant == "nested":
+            return f"(function() local __v = {expr}; state.locals['{v}'] = __v; return __v end)()"
+        elif variant == "temp_var":
+            idx = context.rng.randint(0, len(self.ASSIGNMENT_VARIANTS) - 1)
+            return self.ASSIGNMENT_VARIANTS[idx].format(v=v, expr=expr)
+        else:
+            return f"state.locals['{v}'] = {expr}"
+
+    def _variate_get(self, data: dict, variant: str, context: GenerationContext) -> str:
+        """变化获取表达式"""
+        v = data.get("var", "x")
+
+        if variant == "direct":
+            return f"state.locals['{v}']"
+        elif variant == "nested":
+            return f"(state.locals['{v}'] or error('var not found'))"
+        elif variant == "temp_var":
+            idx = context.rng.randint(0, len(self.GET_VARIANTS) - 1)
+            return self.GET_VARIANTS[idx].format(v=v)
+        else:
+            return f"state.locals['{v}']"
+
+    def _variate_condition(self, data: dict, variant: str, context: GenerationContext) -> str:
+        """变化条件表达式"""
+        cond = data.get("cond", "x > 0")
+        t = data.get("true", "target")
+        f = data.get("false", "pc + 1")
+
+        if variant == "direct":
+            return f"if {cond} then return {t} end; return {f}"
+        elif variant == "nested":
+            return f"return ({cond} and {t} or {f})"
+        elif variant == "temp_var":
+            idx = context.rng.randint(0, len(self.CONDITION_VARIANTS) - 1)
+            return self.CONDITION_VARIANTS[idx].format(cond=cond, t=t, f=f)
+        else:
+            return f"if {cond} then return {t} end; return {f}"
+
+
+# =============================================================================
+# 执行调度策略
+# =============================================================================
+
+class ExecutionDispatchStrategy(CodeGenerationStrategy[str]):
+    """
+    执行调度策略
+
+    决定执行循环和调度的实现方式
+    """
+
+    category = StrategyCategory.EXECUTION_DISPATCH
+
+    class Variants(Enum):
+        WHILE_LOOP = "while_loop"         # while 循环
+        REPEAT_LOOP = "repeat_loop"       # repeat 循环
+        FOR_LOOP = "for_loop"             # for 循环
+        TAIL_CALL = "tail_call"            # 尾调用
+        TABLE_DISPATCH = "table_dispatch"  # 表调度
+
+    def __init__(self, variant: str = "while_loop"):
+        self._variant = variant
+
+    def apply(self, context: GenerationContext, data: Any = None) -> str:
+        """生成执行调度代码"""
+        variant = self.select_variant(context)
+
+        if variant == "while_loop":
+            return self._generate_while_loop()
+        elif variant == "repeat_loop":
+            return self._generate_repeat_loop()
+        elif variant == "for_loop":
+            return self._generate_for_loop()
+        elif variant == "tail_call":
+            return self._generate_tail_call()
+        elif variant == "table_dispatch":
+            return self._generate_table_dispatch()
+        return self._generate_while_loop()
+
+    def get_variants(self) -> list[str]:
+        return [v.value for v in self.Variants]
+
+    def select_variant(self, context: GenerationContext) -> str:
+        if self._variant != "random":
+            return self._variant
+        return context.rng.choice(self.get_variants())
+
+    @property
+    def name(self) -> str:
+        return f"execution_dispatch:{self._variant}"
+
+    def _generate_while_loop(self) -> str:
+        return """local function execute(code, state)
+    local pc = 1
+    while pc and not state.halted do
+        local instr = code[pc]
+        if not instr then break end
+        local op = instr[1]
+        local handler = handlers[op] or handlers.default
+        pc = handler(instr, state, pc)
+        if pc < 1 or pc > #code + 1 then break end
+    end
+    return state.return_value
+end"""
+
+    def _generate_repeat_loop(self) -> str:
+        return """local function execute(code, state)
+    local pc = 1
+    repeat
+        local instr = code[pc]
+        if not instr then break end
+        local op = instr[1]
+        local handler = handlers[op] or handlers.default
+        pc = handler(instr, state, pc)
+    until state.halted or not pc or pc < 1 or pc > #code + 1
+    return state.return_value
+end"""
+
+    def _generate_for_loop(self) -> str:
+        return """local function execute(code, state)
+    local pc = 1
+    local max_pc = #code + 1
+    for _ in function() end, nil, nil do
+        if state.halted or not pc or pc < 1 or pc > max_pc then break end
+        local instr = code[pc]
+        if not instr then break end
+        local op = instr[1]
+        local handler = handlers[op] or handlers.default
+        pc = handler(instr, state, pc)
+    end
+    return state.return_value
+end"""
+
+    def _generate_tail_call(self) -> str:
+        return """local function step(pc, code, state)
+    if state.halted then return state.return_value end
+    local instr = code[pc]
+    if not instr then return state.return_value end
+    local op = instr[1]
+    local handler = handlers[op] or handlers.default
+    return step(handler(instr, state, pc), code, state)
+end
+local function execute(code, state)
+    return step(1, code, state)
+end"""
+
+    def _generate_table_dispatch(self) -> str:
+        return """local _DISPATCH_TABLE = setmetatable({}, {__index = function() return handlers.default end})
+local function execute(code, state)
+    local pc = 1
+    while pc and not state.halted do
+        local instr = code[pc]
+        if not instr then break end
+        local handler = _DISPATCH_TABLE[instr[1]]
+        pc = handler(instr, state, pc)
+        if pc < 1 or pc > #code + 1 then break end
+    end
+    return state.return_value
+end"""
+
+
+# =============================================================================
+# 多策略生成管道
+# =============================================================================
+
+class PolymorphicCodeGenerator:
+    """
+    多策略代码生成器
+
+    整合多个策略，按配置或随机选择生成代码
+    """
+
+    def __init__(
+        self,
+        rng: random.Random | None = None,
+        seed: int | None = None,
+        instruction_encoding: str = "compact",
+        handler_structure: str = "direct",
+        expression_variation: str = "direct",
+        execution_dispatch: str = "while_loop"
+    ):
+        self.rng = rng or random.Random(seed)
+        self.seed = seed
+
+        # 策略配置
+        self.config = {
+            StrategyCategory.INSTRUCTION_ENCODING: instruction_encoding,
+            StrategyCategory.HANDLER_STRUCTURE: handler_structure,
+            StrategyCategory.EXPRESSION_VARIATION: expression_variation,
+            StrategyCategory.EXECUTION_DISPATCH: execution_dispatch,
+        }
+
+        # 策略实例
+        self.strategies: dict[StrategyCategory, CodeGenerationStrategy] = {
+            StrategyCategory.INSTRUCTION_ENCODING: InstructionEncodingStrategy(instruction_encoding),
+            StrategyCategory.HANDLER_STRUCTURE: HandlerStructureStrategy(handler_structure),
+            StrategyCategory.EXPRESSION_VARIATION: ExpressionVariationStrategy(expression_variation),
+            StrategyCategory.EXECUTION_DISPATCH: ExecutionDispatchStrategy(execution_dispatch),
+        }
+
+        # 组合策略
+        self.composite = CompositeStrategy(list(self.strategies.values()))
+
+    def create_context(self) -> GenerationContext:
+        """创建生成上下文"""
+        return GenerationContext(
+            rng=self.rng,
+            seed=self.seed,
+            enabled_strategies=set(self.config.keys())
+        )
+
+    def set_strategy(self, category: StrategyCategory, variant: str) -> None:
+        """设置策略变体"""
+        self.config[category] = variant
+        if category == StrategyCategory.INSTRUCTION_ENCODING:
+            self.strategies[category] = InstructionEncodingStrategy(variant)
+        elif category == StrategyCategory.HANDLER_STRUCTURE:
+            self.strategies[category] = HandlerStructureStrategy(variant)
+        elif category == StrategyCategory.EXPRESSION_VARIATION:
+            self.strategies[category] = ExpressionVariationStrategy(variant)
+        elif category == StrategyCategory.EXECUTION_DISPATCH:
+            self.strategies[category] = ExecutionDispatchStrategy(variant)
+
+    def randomize_strategies(self) -> None:
+        """随机化所有策略"""
+        for category in StrategyCategory:
+            variants = self.strategies[category].get_variants()
+            self.set_strategy(category, self.rng.choice(variants))
+
+    def generate_instruction_table(self, instructions: list[Instruction]) -> str:
+        """生成指令表"""
+        context = self.create_context()
+        context.instruction_data = instructions
+        return self.strategies[StrategyCategory.INSTRUCTION_ENCODING].apply(context)
+
+    def generate_handlers(self, templates: dict | None = None) -> str:
+        """生成 handlers"""
+        context = self.create_context()
+        context.handler_templates = templates or LuaHandlerGenerator.HANDLER_TEMPLATES
+        return self.strategies[StrategyCategory.HANDLER_STRUCTURE].apply(context)
+
+    def generate_expression(self, expr_type: str, **kwargs) -> str:
+        """生成表达式"""
+        context = self.create_context()
+        data = {"type": expr_type, **kwargs}
+        return self.strategies[StrategyCategory.EXPRESSION_VARIATION].apply(context, data)
+
+    def generate_execute_loop(self) -> str:
+        """生成执行循环"""
+        context = self.create_context()
+        return self.strategies[StrategyCategory.EXECUTION_DISPATCH].apply(context)
+
+    def generate_complete_program(
+        self,
+        instructions: list[Instruction] | None = None
+    ) -> str:
+        """生成完整程序（使用所有策略）"""
+        parts = []
+
+        # 头部
+        parts.append("--" + "=" * 50)
+        parts.append("-- Polymorphic Code Generator Output")
+        parts.append(f"-- Seed: {self.seed or 'random'}")
+        parts.append(f"-- Strategies: {self._get_strategy_summary()}")
+        parts.append("--" + "=" * 50)
+        parts.append("")
+
+        # 调试开关
+        parts.append("local _DEBUG = false")
+        parts.append("")
+
+        # 指令表
+        if instructions:
+            parts.append(self.generate_instruction_table(instructions))
+            parts.append("")
+
+        # 执行状态
+        parts.append("local state = {locals={}, globals={}, pc=1, halted=false, return_value=nil}")
+        parts.append("")
+
+        # 工具函数
+        parts.append(self._generate_utility_functions())
+        parts.append("")
+
+        # Handlers
+        parts.append(self.generate_handlers())
+        parts.append("")
+
+        # 执行循环
+        parts.append(self.generate_execute_loop())
+        parts.append("")
+
+        # 运行
+        parts.append("local result = execute(code, state)")
+        parts.append('if _DEBUG then print("Result: " .. tostring(result)) end')
+
+        return "\n".join(parts)
+
+    def _generate_utility_functions(self) -> str:
+        return """-- Utility functions
+local function _get(state, varname)
+    return state.locals[varname] or state.globals[varname]
+end
+local function _set(state, varname, value)
+    state.locals[varname] = value
+end"""
+
+    def _get_strategy_summary(self) -> str:
+        return ", ".join(f"{k.value}={v}" for k, v in self.config.items())
+
+
+# =============================================================================
+# 策略工厂
+# =============================================================================
+
+class StrategyFactory:
+    """
+    策略工厂
+
+    根据配置创建策略实例
+    """
+
+    @staticmethod
+    def create_instruction_encoding_strategy(variant: str = "random") -> InstructionEncodingStrategy:
+        return InstructionEncodingStrategy(variant)
+
+    @staticmethod
+    def create_handler_structure_strategy(variant: str = "random") -> HandlerStructureStrategy:
+        return HandlerStructureStrategy(variant)
+
+    @staticmethod
+    def create_expression_variation_strategy(variant: str = "random") -> ExpressionVariationStrategy:
+        return ExpressionVariationStrategy(variant)
+
+    @staticmethod
+    def create_execution_dispatch_strategy(variant: str = "random") -> ExecutionDispatchStrategy:
+        return ExecutionDispatchStrategy(variant)
+
+    @staticmethod
+    def create_all_strategies(config: dict | None = None) -> dict[StrategyCategory, CodeGenerationStrategy]:
+        """创建所有策略"""
+        cfg = config or {}
+        return {
+            StrategyCategory.INSTRUCTION_ENCODING: StrategyFactory.create_instruction_encoding_strategy(
+                cfg.get("instruction_encoding", "random")
+            ),
+            StrategyCategory.HANDLER_STRUCTURE: StrategyFactory.create_handler_structure_strategy(
+                cfg.get("handler_structure", "random")
+            ),
+            StrategyCategory.EXPRESSION_VARIATION: StrategyFactory.create_expression_variation_strategy(
+                cfg.get("expression_variation", "random")
+            ),
+            StrategyCategory.EXECUTION_DISPATCH: StrategyFactory.create_execution_dispatch_strategy(
+                cfg.get("execution_dispatch", "random")
+            ),
+        }
+
+
+# =============================================================================
+# 便捷函数
+# =============================================================================
+
+def create_polymorphic_generator(
+    seed: int | None = None,
+    **strategy_config
+) -> PolymorphicCodeGenerator:
+    """
+    创建多策略代码生成器
+
+    Args:
+        seed: 随机种子（可复现）
+        **strategy_config: 策略配置
+
+    Returns:
+        生成器实例
+    """
+    return PolymorphicCodeGenerator(
+        seed=seed,
+        **strategy_config
+    )
+
+
+def generate_with_random_strategies(
+    instructions: list[Instruction] | None = None,
+    seed: int | None = None
+) -> str:
+    """
+    使用随机策略生成代码
+
+    Args:
+        instructions: 指令列表
+        seed: 随机种子
+
+    Returns:
+        Lua 代码
+    """
+    gen = create_polymorphic_generator(seed=seed)
+    gen.randomize_strategies()
+    return gen.generate_complete_program(instructions)
+
+
+def demo_polymorphic_code_generation():
+    """
+    演示多策略代码生成
+    """
+    print("=" * 70)
+    print("Polymorphic Code Generation Pipeline Demo")
+    print("=" * 70)
+
+    # 测试指令
+    instructions = [
+        Instruction(OpCode.INIT, ["x"], None, "10"),
+        Instruction(OpCode.INIT, ["y"], None, "20"),
+        Instruction(OpCode.ASSIGN, ["sum"], None, "x + y"),
+        Instruction(OpCode.RETURN_VAL, ["sum"]),
+    ]
+
+    print("\n[1] 固定策略生成:")
+    print("-" * 50)
+
+    gen = PolymorphicCodeGenerator(
+        seed=42,
+        instruction_encoding="compact",
+        handler_structure="direct",
+        expression_variation="direct",
+        execution_dispatch="while_loop"
+    )
+    print(gen.generate_complete_program(instructions))
+
+    print("\n" + "=" * 70)
+    print("\n[2] 不同编码策略对比:")
+    print("-" * 50)
+
+    for encoding in ["compact", "verbose", "named"]:
+        gen.set_strategy(StrategyCategory.INSTRUCTION_ENCODING, encoding)
+        print(f"\n--- {encoding} encoding ---")
+        print(gen.generate_instruction_table(instructions))
+
+    print("\n" + "=" * 70)
+    print("\n[3] 不同 Handler 结构对比:")
+    print("-" * 50)
+
+    for structure in ["direct", "stepwise", "closure"]:
+        gen.set_strategy(StrategyCategory.HANDLER_STRUCTURE, structure)
+        print(f"\n--- {structure} structure ---")
+        print(gen.generate_handlers())
+
+    print("\n" + "=" * 70)
+    print("\n[4] 不同执行调度对比:")
+    print("-" * 50)
+
+    for dispatch in ["while_loop", "tail_call", "table_dispatch"]:
+        gen.set_strategy(StrategyCategory.EXECUTION_DISPATCH, dispatch)
+        print(f"\n--- {dispatch} dispatch ---")
+        print(gen.generate_execute_loop())
+
+    print("\n" + "=" * 70)
+    print("\n[5] 完全随机策略多次生成:")
+    print("-" * 50)
+
+    for i in range(3):
+        rng = random.Random(i * 100)
+        gen = PolymorphicCodeGenerator(seed=i * 100)
+        gen.randomize_strategies()
+        print(f"\n--- Random generation {i+1} ---")
+        print(f"Strategies: {gen._get_strategy_summary()}")
+        print(gen.generate_complete_program(instructions))
+
+    print("\n" + "=" * 70)
+    print("Polymorphic Code Generation Features:")
+    print("  - 4 strategy categories:")
+    print("    * INSTRUCTION_ENCODING: compact/verbose/named/indexed/mapped")
+    print("    * HANDLER_STRUCTURE: direct/stepwise/table/composed/closure/layered")
+    print("    * EXPRESSION_VARIATION: direct/nested/temp_var/table")
+    print("    * EXECUTION_DISPATCH: while_loop/repeat_loop/for_loop/tail_call/table_dispatch")
+    print("  - Seed-based reproducibility")
+    print("  - Strategy composition support")
+    print("=" * 70)
+
+
+if __name__ == "__main__":
+    demo_polymorphic_code_generation()
 
 
