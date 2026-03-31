@@ -1839,6 +1839,2071 @@ def simple_test():
     print("=" * 50)
 
 
+# ===== 标准解释器模型 (Standard Interpreter Model) =====
+
+
+from typing import Callable, Optional
+from dataclasses import dataclass, field
+
+
+@dataclass
+class PCNext:
+    """
+    程序计数器下一步指示器
+
+    用于标准化指令处理器的返回值，支持：
+    - PC_CONTINUE: 顺序执行下一条指令
+    - PC_JUMP(n): 跳转到指定位置
+    - PC_SKIP(n): 跳过指定数量指令
+    - PC_BREAK: 结束执行循环
+    - PC_HALT: 正常结束执行
+    """
+    NEXT: int = 0      # 继续执行
+    JUMP: int = 1      # 跳转
+    SKIP: int = 4      # 跳过（用于调度策略实验）
+    BREAK: int = 2     # 跳出循环
+    HALT: int = 3      # 正常结束
+
+    def __init__(self, action: int, target: int = 0):
+        self.action = action
+        self.target = target
+
+    @staticmethod
+    def continue_() -> 'PCNext':
+        """顺序执行下一条指令"""
+        return PCNext(PCNext.NEXT, 1)  # 默认偏移量 1
+
+    @staticmethod
+    def jump(target: int) -> 'PCNext':
+        """跳转到指定位置"""
+        return PCNext(PCNext.JUMP, target)
+
+    @staticmethod
+    def skip(count: int = 1) -> 'PCNext':
+        """跳过指定数量的指令（使用 SKIP action）"""
+        return PCNext(PCNext.SKIP, count)
+
+    @staticmethod
+    def break_() -> 'PCNext':
+        """跳出执行循环"""
+        return PCNext(PCNext.BREAK, 0)
+
+    @staticmethod
+    def halt() -> 'PCNext':
+        """正常结束执行"""
+        return PCNext(PCNext.HALT, 0)
+
+
+# Handler 类型别名
+InstructionHandlerFunc = Callable[['VMContext', 'Instruction'], PCNext]
+
+
+class VMContext:
+    """
+    虚拟机上下文
+
+    保存执行过程中的所有状态。
+    """
+    locals: dict[str, Any]
+    globals: dict[str, Any]
+    stack: list[Any]
+    pc: int
+    running: bool
+    return_value: Any
+    call_depth: int
+    labels: dict[str, int]
+
+    def __init__(self):
+        self.locals = {}
+        self.globals = {}
+        self.stack = []
+        self.pc = 0
+        self.running = True
+        self.return_value = None
+        self.call_depth = 0
+        self.labels = {}
+
+    def get(self, name: str) -> Any:
+        """获取变量值（局部优先）"""
+        if name in self.locals:
+            return self.locals[name]
+        if name in self.globals:
+            return self.globals[name]
+        return None
+
+    def set_local(self, name: str, value: Any) -> None:
+        """设置局部变量"""
+        self.locals[name] = value
+
+    def set_global(self, name: str, value: Any) -> None:
+        """设置全局变量"""
+        self.globals[name] = value
+
+    def set_value(self, name: str, value: Any) -> None:
+        """设置变量值"""
+        self.locals[name] = value
+
+    def push(self, value: Any) -> None:
+        """压入栈"""
+        self.stack.append(value)
+
+    def pop(self) -> Any:
+        """弹出栈"""
+        if self.stack:
+            return self.stack.pop()
+        return None
+
+    def top(self) -> Any:
+        """查看栈顶"""
+        if self.stack:
+            return self.stack[-1]
+        return None
+
+    def add_label(self, name: str, pc: int) -> None:
+        """添加标签"""
+        self.labels[name] = pc
+
+    def get_label(self, name: str) -> int | None:
+        """获取标签位置"""
+        return self.labels.get(name)
+
+    def halt(self) -> None:
+        """停止执行"""
+        self.running = False
+
+    def reset(self) -> None:
+        """重置上下文"""
+        self.pc = 0
+        self.running = True
+        self.return_value = None
+        self.stack.clear()
+
+
+@dataclass
+class VMResult:
+    """虚拟机执行结果"""
+    success: bool
+    return_value: Any = None
+    error: str | None = None
+    pc: int = 0
+    executed_count: int = 0
+    context: VMContext | None = None
+
+
+class InstructionVM:
+    """
+    标准指令虚拟机
+
+    使用显式 PC 和统一分发机制执行指令序列。
+    符合经典解释器模型设计。
+    """
+
+    def __init__(self, max_instructions: int = 10000, debug: bool = False):
+        self.max_instructions = max_instructions
+        self.debug = debug
+        self.context: VMContext | None = None
+        self.instructions: list[Instruction] = []
+        self.handlers: dict[OpCode, InstructionHandlerFunc] = {}
+
+        # 注册默认处理器
+        self._register_default_handlers()
+
+    def _register_default_handlers(self) -> None:
+        """注册默认指令处理器"""
+
+        # 空操作
+        def h_nop(ctx: VMContext, instr: Instruction) -> PCNext:
+            return PCNext.continue_()
+
+        # 变量声明
+        def h_declare(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                ctx.set_local(instr.args[0], None)
+            return PCNext.continue_()
+
+        # 变量初始化
+        def h_init(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                value = self._eval_expr(instr.result, ctx)
+                ctx.set_local(instr.args[0], value)
+            return PCNext.continue_()
+
+        # 赋值
+        def h_assign(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                value = self._eval_expr(instr.result, ctx)
+                ctx.set_value(instr.args[0], value)
+            return PCNext.continue_()
+
+        # 函数调用
+        def h_call(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                func_name = instr.args[0]
+                args = [self._eval_expr(a, ctx) for a in instr.args[1:]]
+                func = ctx.get(func_name)
+                if callable(func):
+                    result = func(*args)
+                    ctx.push(result)
+                else:
+                    ctx.push(None)
+            return PCNext.continue_()
+
+        # 调用并赋值
+        def h_call_assign(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.result and instr.args:
+                result = self._eval_expr(instr.args[0], ctx)
+                ctx.set_local(instr.result, result)
+            return PCNext.continue_()
+
+        # 返回空
+        def h_return(ctx: VMContext, instr: Instruction) -> PCNext:
+            ctx.return_value = None
+            ctx.halt()
+            return PCNext.halt()
+
+        # 返回值
+        def h_return_val(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                ctx.return_value = self._eval_expr(instr.args[0], ctx)
+            ctx.halt()
+            return PCNext.halt()
+
+        # 标签
+        def h_label(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                ctx.add_label(str(instr.args[0]), ctx.pc)
+            return PCNext.continue_()
+
+        # 无条件跳转
+        def h_jump(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                target = instr.args[0]
+                if isinstance(target, int):
+                    return PCNext.jump(target)
+                label_pc = ctx.get_label(str(target))
+                if label_pc is not None:
+                    return PCNext.jump(label_pc)
+            return PCNext.continue_()
+
+        # 条件跳转
+        def h_jump_if(ctx: VMContext, instr: Instruction) -> PCNext:
+            if len(instr.args) >= 2:
+                cond = self._eval_expr(instr.args[0], ctx)
+                target = instr.args[1]
+                if self._is_truthy(cond):
+                    if isinstance(target, int):
+                        return PCNext.jump(target)
+                    label_pc = ctx.get_label(str(target))
+                    if label_pc is not None:
+                        return PCNext.jump(label_pc)
+            return PCNext.continue_()
+
+        # if 块
+        def h_if(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                cond = self._eval_expr(instr.args[0], ctx)
+                ctx.set_local("_cond", self._is_truthy(cond))
+            return PCNext.continue_()
+
+        # while 块
+        def h_while(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                cond = self._eval_expr(instr.args[0], ctx)
+                ctx.set_local("_while_cond", self._is_truthy(cond))
+            return PCNext.continue_()
+
+        # repeat 块
+        def h_repeat(ctx: VMContext, instr: Instruction) -> PCNext:
+            ctx.set_local("_repeat_active", True)
+            return PCNext.continue_()
+
+        # until 块
+        def h_until(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                cond = self._eval_expr(instr.args[0], ctx)
+                if self._is_truthy(cond):
+                    ctx.set_local("_repeat_active", False)
+                    return PCNext.continue_()
+                return PCNext.jump(ctx.pc - 1)  # 跳回 repeat
+            return PCNext.continue_()
+
+        # break
+        def h_break(ctx: VMContext, instr: Instruction) -> PCNext:
+            return PCNext.break_()
+
+        # continue
+        def h_continue(ctx: VMContext, instr: Instruction) -> PCNext:
+            return PCNext.skip(-1)  # 回到循环开始
+
+        # 表达式语句
+        def h_expr(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                self._eval_expr(instr.args[0], ctx)
+            return PCNext.continue_()
+
+        # error 语句
+        def h_error(ctx: VMContext, instr: Instruction) -> PCNext:
+            msg = instr.args[0] if instr.args else "unknown error"
+            ctx.return_value = f"error: {msg}"
+            ctx.halt()
+            return PCNext.halt()
+
+        # 恒等变换（辅助指令）
+        def h_identity(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                value = ctx.get(instr.args[0])
+                ctx.set_local(instr.args[0], value)
+            return PCNext.continue_()
+
+        # 哑操作（辅助指令）
+        def h_dummy(ctx: VMContext, instr: Instruction) -> PCNext:
+            return PCNext.continue_()
+
+        # 表创建
+        def h_table_new(ctx: VMContext, instr: Instruction) -> PCNext:
+            ctx.push({})
+            return PCNext.continue_()
+
+        # 表设置
+        def h_table_set(ctx: VMContext, instr: Instruction) -> PCNext:
+            return PCNext.continue_()
+
+        # 注册所有处理器
+        self.handlers = {
+            OpCode.NOP: h_nop,
+            OpCode.DECLARE: h_declare,
+            OpCode.INIT: h_init,
+            OpCode.ASSIGN: h_assign,
+            OpCode.CALL: h_call,
+            OpCode.CALL_ASSIGN: h_call_assign,
+            OpCode.RETURN: h_return,
+            OpCode.RETURN_VAL: h_return_val,
+            OpCode.JUMP: h_jump,
+            OpCode.JUMP_IF: h_jump_if,
+            OpCode.IF: h_if,
+            OpCode.WHILE: h_while,
+            OpCode.REPEAT: h_repeat,
+            OpCode.UNTIL: h_until,
+            OpCode.BREAK: h_break,
+            OpCode.CONTINUE: h_continue,
+            OpCode.EXPR: h_expr,
+            OpCode.ERROR: h_error,
+            OpCode.IDENTITY: h_identity,
+            OpCode.DUMMY: h_dummy,
+            OpCode.TABLE_NEW: h_table_new,
+            OpCode.TABLE_SET: h_table_set,
+            OpCode.LABEL: h_label,
+            OpCode.DO: h_nop,
+            OpCode.END: h_nop,
+            OpCode.THEN: h_nop,
+            OpCode.ELSE: h_nop,
+            OpCode.ELSEIF: h_nop,
+            OpCode.FOR: h_expr,
+            OpCode.FUNC_DEF: h_nop,
+            OpCode.FUNC_END: h_nop,
+            OpCode.COMMENT: h_nop,
+            OpCode.TABLE_GET: h_nop,
+            OpCode.ASSERT: h_nop,
+        }
+
+    def register_handler(self, opcode: OpCode, handler: InstructionHandlerFunc) -> None:
+        """注册指令处理器"""
+        self.handlers[opcode] = handler
+
+    def _eval_expr(self, expr: str | None, ctx: VMContext) -> Any:
+        """求值简单表达式"""
+        if expr is None:
+            return None
+        expr = str(expr).strip()
+        if not expr:
+            return None
+
+        # 字符串字面量
+        if (expr.startswith('"') and expr.endswith('"')) or \
+           (expr.startswith("'") and expr.endswith("'")):
+            return expr[1:-1]
+
+        # 数字字面量
+        try:
+            if "." in expr:
+                return float(expr)
+            return int(expr)
+        except ValueError:
+            pass
+
+        # 布尔和 nil
+        if expr == "nil":
+            return None
+        if expr == "true":
+            return True
+        if expr == "false":
+            return False
+
+        # 变量引用
+        return ctx.get(expr)
+
+    def _is_truthy(self, value: Any) -> bool:
+        """判断真值"""
+        if value is None:
+            return False
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        if isinstance(value, str):
+            return len(value) > 0
+        if isinstance(value, (list, dict, tuple)):
+            return len(value) > 0
+        return True
+
+    def execute(self, instructions: list[Instruction], debug: bool = False) -> VMResult:
+        """
+        执行指令序列
+
+        标准解释器执行循环：
+        1. 根据 PC 读取指令
+        2. 分发到对应 handler
+        3. Handler 返回下一个 PC
+        4. 更新 PC，继续执行
+        """
+        self.instructions = instructions
+        self.context = VMContext()
+        debug = debug or self.debug
+
+        if debug:
+            print(f"[VM] Starting execution with {len(instructions)} instructions")
+
+        executed = 0
+        pc = 0
+
+        # 标准解释器执行循环
+        while pc < len(self.instructions) and self.context.running:
+            # 1. 读取指令
+            instr = self.instructions[pc]
+
+            if debug:
+                print(f"  PC={pc}: {instr.op.value} {instr.args} -> {instr.result}")
+
+            # 2. 获取处理器
+            handler = self.handlers.get(instr.op)
+
+            if handler:
+                try:
+                    # 3. 执行处理器
+                    result = handler(self.context, instr)
+
+                    # 4. 处理 PC 更新
+                    if result.action == PCNext.NEXT:
+                        pc += 1
+                    elif result.action == PCNext.JUMP:
+                        if result.target == 0:
+                            pc += 1  # skip(0) 等同于 continue
+                        elif result.target > 0:
+                            pc = result.target
+                        else:
+                            pc += result.target  # 相对跳转
+
+                    elif result.action == PCNext.BREAK:
+                        break
+                    elif result.action == PCNext.HALT:
+                        break
+
+                except Exception as e:
+                    return VMResult(
+                        success=False,
+                        error=f"Error at PC={pc}: {e}",
+                        pc=pc,
+                        executed_count=executed,
+                        context=self.context
+                    )
+            else:
+                if debug:
+                    print(f"    Unsupported opcode: {instr.op.value}")
+                pc += 1
+
+            executed += 1
+
+            # 防止无限循环
+            if executed > self.max_instructions:
+                return VMResult(
+                    success=False,
+                    error="Execution limit exceeded",
+                    pc=pc,
+                    executed_count=executed,
+                    context=self.context
+                )
+
+        if debug:
+            print(f"[VM] Execution finished: pc={pc}, executed={executed}")
+
+        return VMResult(
+            success=True,
+            return_value=self.context.return_value,
+            pc=pc,
+            executed_count=executed,
+            context=self.context
+        )
+
+    def execute_from_block(self, block: CodeBlock, debug: bool = False) -> VMResult:
+        """从 CodeBlock 执行"""
+        converter = InstructionConverter()
+        block_instr = converter.convert_block(block)
+        return self.execute(block_instr.instructions, debug=debug)
+
+
+# ===== 可配置执行路径的调度执行器 =====
+# (Dispatch Strategy Executor with Configurable PC Resolution)
+
+
+@dataclass
+class ExecutionState:
+    """
+    执行路径计算的中间状态
+
+    在计算下一条指令位置时使用的上下文数据，
+    独立于 VMContext，用于解耦调度策略与指令执行。
+    """
+    pc: int                          # 当前指令位置
+    raw_offset: int = 1             # handler 返回的基础偏移量（1 = 顺序执行）
+    modifier: int = 0               # 额外的修正值（用于复杂调度策略）
+    dispatch_mode: str = "sequential"  # 调度模式标识
+    metadata: dict = None           # 扩展元数据
+
+    def __post_init__(self):
+        if self.metadata is None:
+            self.metadata = {}
+
+    def copy(self) -> 'ExecutionState':
+        """创建状态副本"""
+        return ExecutionState(
+            pc=self.pc,
+            raw_offset=self.raw_offset,
+            modifier=self.modifier,
+            dispatch_mode=self.dispatch_mode,
+            metadata=dict(self.metadata)
+        )
+
+
+class PCResolver(ABC):
+    """
+    PC 计算策略抽象基类
+
+    定义如何根据 ExecutionState 计算最终的下一条指令位置。
+    支持不同的调度策略，便于实验和研究。
+    """
+
+    @abstractmethod
+    def resolve(self, state: ExecutionState, ctx: VMContext) -> int:
+        """
+        计算下一条指令位置
+
+        Args:
+            state: 执行路径状态（包含 raw_offset, modifier 等）
+            ctx: 虚拟机上下文
+
+        Returns:
+            下一条指令的 PC 值
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """策略名称"""
+        pass
+
+    def on_instruction_executed(self, instr: Instruction, ctx: VMContext) -> None:
+        """
+        指令执行后的钩子（可选实现）
+
+        可用于在每次指令执行后更新 state 中的 metadata。
+        默认空实现。
+        """
+        pass
+
+
+class SequentialPCResolver(PCResolver):
+    """
+    顺序执行解析器（默认策略）
+
+    简单的 pc + 1 逻辑，保持与传统解释器一致。
+    """
+
+    @property
+    def name(self) -> str:
+        return "sequential"
+
+    def resolve(self, state: ExecutionState, ctx: VMContext) -> int:
+        """直接使用 raw_offset 计算下一步"""
+        return state.pc + state.raw_offset
+
+
+class OffsetPCResolver(PCResolver):
+    """
+    带修正的偏移量解析器
+
+    支持在 raw_offset 基础上加上 modifier，
+    适用于需要累积偏移量的复杂调度策略。
+    """
+
+    @property
+    def name(self) -> str:
+        return "offset_with_modifier"
+
+    def resolve(self, state: ExecutionState, ctx: VMContext) -> int:
+        """raw_offset + modifier"""
+        return state.pc + state.raw_offset + state.modifier
+
+
+class ConditionalPCResolver(PCResolver):
+    """
+    条件式解析器
+
+    根据上下文条件在两种 offset 模式间切换，
+    可用于研究分支预测类策略。
+    """
+
+    def __init__(self, true_offset: int = 1, false_offset: int = 1):
+        self.true_offset = true_offset
+        self.false_offset = false_offset
+
+    @property
+    def name(self) -> str:
+        return "conditional"
+
+    def resolve(self, state: ExecutionState, ctx: VMContext) -> int:
+        """根据条件选择不同的偏移量"""
+        use_alt = state.metadata.get("_use_alternate_offset", False)
+        offset = self.false_offset if use_alt else self.true_offset
+        return state.pc + offset
+
+    def on_instruction_executed(self, instr: Instruction, ctx: VMContext) -> None:
+        """根据指令类型切换偏移模式"""
+        if instr.op in (OpCode.JUMP, OpCode.JUMP_IF):
+            ctx.set_local("_use_alternate_offset", True)
+        else:
+            ctx.set_local("_use_alternate_offset", False)
+
+
+class StatePCResolver(PCResolver):
+    """
+    状态感知解析器
+
+    基于执行上下文的状态来决定下一步偏移量。
+    可以根据运行时状态（如条件、循环深度等）动态调整策略。
+    """
+
+    def __init__(self):
+        self._loop_depth: int = 0  # 循环深度追踪
+
+    @property
+    def name(self) -> str:
+        return "state_aware"
+
+    def resolve(self, state: ExecutionState, ctx: VMContext) -> int:
+        """基于上下文状态计算偏移"""
+        # 使用条件标志来影响偏移选择（仅影响调度，不影响语义）
+        cond_override = state.metadata.get("_cond_override", False)
+        if cond_override:
+            return state.pc + state.raw_offset + 1
+        return state.pc + state.raw_offset
+
+    def on_instruction_executed(self, instr: Instruction, ctx: VMContext) -> None:
+        """根据指令类型更新状态"""
+        if instr.op == OpCode.WHILE:
+            self._loop_depth += 1
+        elif instr.op == OpCode.END:
+            self._loop_depth = max(0, self._loop_depth - 1)
+        elif instr.op == OpCode.JUMP_IF:
+            # 设置条件覆盖标志（用于实验性调度）
+            ctx.set_local("_cond_override", True)
+        else:
+            ctx.set_local("_cond_override", False)
+
+
+# 注册默认策略的工厂函数
+def create_default_resolver(strategy: str = "sequential") -> PCResolver:
+    """创建默认的 PC 解析器"""
+    resolvers = {
+        "sequential": SequentialPCResolver,
+        "offset": OffsetPCResolver,
+        "conditional": ConditionalPCResolver,
+        "state_aware": StatePCResolver,
+    }
+    resolver_class = resolvers.get(strategy, SequentialPCResolver)
+    return resolver_class()
+
+
+class DispatchStrategyExecutor:
+    """
+    调度策略执行器
+
+    核心改进：
+    1. 引入 ExecutionState 作为 PC 计算的中间状态
+    2. Handler 只返回 raw_offset（基础偏移量）
+    3. 通过 PCResolver 统一计算最终 PC
+    4. 调度逻辑集中管理，handler 与路径计算解耦
+
+    这种设计允许在运行时切换不同的执行路径计算策略，
+    而不影响指令执行本身的语义。
+    """
+
+    def __init__(
+        self,
+        max_instructions: int = 10000,
+        debug: bool = False,
+        resolver: PCResolver | str = "sequential"
+    ):
+        self.max_instructions = max_instructions
+        self.debug = debug
+
+        # 支持字符串或实例两种方式指定 resolver
+        if isinstance(resolver, str):
+            self.resolver = create_default_resolver(resolver)
+        else:
+            self.resolver = resolver
+
+        self.context: VMContext | None = None
+        self.instructions: list[Instruction] = []
+        self.handlers: dict[OpCode, InstructionHandlerFunc] = {}
+        self._exec_state: ExecutionState | None = None
+
+        # 注册默认处理器
+        self._register_default_handlers()
+
+    def _register_default_handlers(self) -> None:
+        """注册默认指令处理器（返回 raw_offset）"""
+
+        # 通用辅助函数
+        def make_continue() -> PCNext:
+            return PCNext(PCNext.NEXT, 1)  # NEXT action, raw_offset=1
+
+        def make_jump(target: int) -> PCNext:
+            return PCNext(PCNext.JUMP, target)  # JUMP action, target=跳转目标
+
+        # 空操作
+        def h_nop(ctx: VMContext, instr: Instruction) -> PCNext:
+            return make_continue()
+
+        # 变量声明
+        def h_declare(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                ctx.set_local(instr.args[0], None)
+            return make_continue()
+
+        # 变量初始化
+        def h_init(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                value = self._eval_expr(instr.result, ctx)
+                ctx.set_local(instr.args[0], value)
+            return make_continue()
+
+        # 赋值
+        def h_assign(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                value = self._eval_expr(instr.result, ctx)
+                ctx.set_value(instr.args[0], value)
+            return make_continue()
+
+        # 函数调用
+        def h_call(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                func_name = instr.args[0]
+                args = [self._eval_expr(a, ctx) for a in instr.args[1:]]
+                func = ctx.get(func_name)
+                if callable(func):
+                    result = func(*args)
+                    ctx.push(result)
+                else:
+                    ctx.push(None)
+            return make_continue()
+
+        # 调用并赋值
+        def h_call_assign(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.result and instr.args:
+                result = self._eval_expr(instr.args[0], ctx)
+                ctx.set_local(instr.result, result)
+            return make_continue()
+
+        # 返回空
+        def h_return(ctx: VMContext, instr: Instruction) -> PCNext:
+            ctx.return_value = None
+            ctx.halt()
+            return PCNext(PCNext.HALT, 0)
+
+        # 返回值
+        def h_return_val(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                ctx.return_value = self._eval_expr(instr.args[0], ctx)
+            ctx.halt()
+            return PCNext(PCNext.HALT, 0)
+
+        # 标签
+        def h_label(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                ctx.add_label(str(instr.args[0]), ctx.pc)
+            return make_continue()
+
+        # 无条件跳转
+        def h_jump(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                target = instr.args[0]
+                if isinstance(target, int):
+                    return make_jump(target)
+                label_pc = ctx.get_label(str(target))
+                if label_pc is not None:
+                    return make_jump(label_pc)
+            return make_continue()
+
+        # 条件跳转
+        def h_jump_if(ctx: VMContext, instr: Instruction) -> PCNext:
+            if len(instr.args) >= 2:
+                cond = self._eval_expr(instr.args[0], ctx)
+                target = instr.args[1]
+                if self._is_truthy(cond):
+                    if isinstance(target, int):
+                        return make_jump(target)
+                    label_pc = ctx.get_label(str(target))
+                    if label_pc is not None:
+                        return make_jump(label_pc)
+            return make_continue()
+
+        # if 块
+        def h_if(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                cond = self._eval_expr(instr.args[0], ctx)
+                ctx.set_local("_cond", self._is_truthy(cond))
+            return make_continue()
+
+        # while 块
+        def h_while(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                cond = self._eval_expr(instr.args[0], ctx)
+                ctx.set_local("_while_cond", self._is_truthy(cond))
+            return make_continue()
+
+        # repeat 块
+        def h_repeat(ctx: VMContext, instr: Instruction) -> PCNext:
+            ctx.set_local("_repeat_active", True)
+            return make_continue()
+
+        # until 块
+        def h_until(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                cond = self._eval_expr(instr.args[0], ctx)
+                if self._is_truthy(cond):
+                    ctx.set_local("_repeat_active", False)
+                    return make_continue()
+                return make_jump(ctx.pc - 1)
+            return make_continue()
+
+        # break
+        def h_break(ctx: VMContext, instr: Instruction) -> PCNext:
+            return PCNext(PCNext.BREAK, 0)
+
+        # continue
+        def h_continue(ctx: VMContext, instr: Instruction) -> PCNext:
+            return PCNext(PCNext.SKIP, -1)
+
+        # 表达式语句
+        def h_expr(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                self._eval_expr(instr.args[0], ctx)
+            return make_continue()
+
+        # error 语句
+        def h_error(ctx: VMContext, instr: Instruction) -> PCNext:
+            msg = instr.args[0] if instr.args else "unknown error"
+            ctx.return_value = f"error: {msg}"
+            ctx.halt()
+            return PCNext(PCNext.HALT, 0)
+
+        # 恒等变换
+        def h_identity(ctx: VMContext, instr: Instruction) -> PCNext:
+            if instr.args:
+                value = ctx.get(instr.args[0])
+                ctx.set_local(instr.args[0], value)
+            return make_continue()
+
+        # 哑操作
+        def h_dummy(ctx: VMContext, instr: Instruction) -> PCNext:
+            return make_continue()
+
+        # 表创建
+        def h_table_new(ctx: VMContext, instr: Instruction) -> PCNext:
+            ctx.push({})
+            return make_continue()
+
+        # 表设置
+        def h_table_set(ctx: VMContext, instr: Instruction) -> PCNext:
+            return make_continue()
+
+        # 注册所有处理器
+        self.handlers = {
+            OpCode.NOP: h_nop,
+            OpCode.DECLARE: h_declare,
+            OpCode.INIT: h_init,
+            OpCode.ASSIGN: h_assign,
+            OpCode.CALL: h_call,
+            OpCode.CALL_ASSIGN: h_call_assign,
+            OpCode.RETURN: h_return,
+            OpCode.RETURN_VAL: h_return_val,
+            OpCode.JUMP: h_jump,
+            OpCode.JUMP_IF: h_jump_if,
+            OpCode.IF: h_if,
+            OpCode.WHILE: h_while,
+            OpCode.REPEAT: h_repeat,
+            OpCode.UNTIL: h_until,
+            OpCode.BREAK: h_break,
+            OpCode.CONTINUE: h_continue,
+            OpCode.EXPR: h_expr,
+            OpCode.ERROR: h_error,
+            OpCode.IDENTITY: h_identity,
+            OpCode.DUMMY: h_dummy,
+            OpCode.TABLE_NEW: h_table_new,
+            OpCode.TABLE_SET: h_table_set,
+            OpCode.LABEL: h_label,
+            OpCode.DO: h_nop,
+            OpCode.END: h_nop,
+            OpCode.THEN: h_nop,
+            OpCode.ELSE: h_nop,
+            OpCode.ELSEIF: h_nop,
+            OpCode.FOR: h_expr,
+            OpCode.FUNC_DEF: h_nop,
+            OpCode.FUNC_END: h_nop,
+            OpCode.COMMENT: h_nop,
+            OpCode.TABLE_GET: h_nop,
+            OpCode.ASSERT: h_nop,
+        }
+
+    def register_handler(self, opcode: OpCode, handler: InstructionHandlerFunc) -> None:
+        """注册指令处理器"""
+        self.handlers[opcode] = handler
+
+    def set_resolver(self, resolver: PCResolver | str) -> None:
+        """切换 PC 解析策略"""
+        if isinstance(resolver, str):
+            self.resolver = create_default_resolver(resolver)
+        else:
+            self.resolver = resolver
+
+    def _eval_expr(self, expr: str | None, ctx: VMContext) -> Any:
+        """求值简单表达式"""
+        if expr is None:
+            return None
+        expr = str(expr).strip()
+        if not expr:
+            return None
+
+        if (expr.startswith('"') and expr.endswith('"')) or \
+           (expr.startswith("'") and expr.endswith("'")):
+            return expr[1:-1]
+
+        try:
+            if "." in expr:
+                return float(expr)
+            return int(expr)
+        except ValueError:
+            pass
+
+        if expr == "nil":
+            return None
+        if expr == "true":
+            return True
+        if expr == "false":
+            return False
+
+        return ctx.get(expr)
+
+    def _is_truthy(self, value: Any) -> bool:
+        """判断真值"""
+        if value is None:
+            return False
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        if isinstance(value, str):
+            return len(value) > 0
+        if isinstance(value, (list, dict, tuple)):
+            return len(value) > 0
+        return True
+
+    def _build_state(self, pc: int, raw_offset: int = 1) -> ExecutionState:
+        """构建执行状态"""
+        return ExecutionState(
+            pc=pc,
+            raw_offset=raw_offset,
+            modifier=0,
+            dispatch_mode=self.resolver.name,
+            metadata={}
+        )
+
+    def _resolve_next_pc(self, state: ExecutionState, ctx: VMContext) -> int:
+        """
+        核心：统一计算下一条指令位置
+
+        这是调度策略的核心方法：
+        1. 接收 handler 返回的 raw_offset
+        2. 结合 ExecutionState 中的 modifier/metadata
+        3. 通过 PCResolver 计算最终 PC
+        """
+        return self.resolver.resolve(state, ctx)
+
+    def _advance_pc(
+        self,
+        pc: int,
+        pc_next: PCNext,
+        state: ExecutionState
+    ) -> tuple[int, ExecutionState]:
+        """
+        根据 PCNext 和 state 计算新 PC
+
+        返回 (new_pc, updated_state)
+        """
+        ctx = self.context
+
+        if pc_next.action == PCNext.NEXT:
+            # 顺序执行：raw_offset 由 handler 返回
+            state.raw_offset = pc_next.target if pc_next.target != 0 else 1
+            new_pc = self._resolve_next_pc(state, ctx)
+            return new_pc, state
+
+        elif pc_next.action == PCNext.JUMP:
+            # 跳转：target 直接指定目标位置
+            if pc_next.target == 0:
+                # skip(0) 等同于继续
+                return pc + 1, state
+            elif pc_next.target > 0:
+                return pc_next.target, state
+            else:
+                # 相对跳转
+                return pc + pc_next.target, state
+
+        elif pc_next.action == PCNext.SKIP:
+            # 跳过指定数量
+            state.raw_offset = pc_next.target
+            new_pc = self._resolve_next_pc(state, ctx)
+            return new_pc, state
+
+        elif pc_next.action == PCNext.BREAK:
+            return len(self.instructions), state
+
+        elif pc_next.action == PCNext.HALT:
+            return len(self.instructions), state
+
+        # 默认顺序
+        return pc + 1, state
+
+    def execute(
+        self,
+        instructions: list[Instruction],
+        debug: bool = False
+    ) -> VMResult:
+        """
+        执行指令序列
+
+        调度流程：
+        1. 从指令列表读取当前 pc 的指令
+        2. 分发到对应 handler 执行
+        3. Handler 返回 PCNext（包含 action 和 raw_offset/target）
+        4. 通过 _advance_pc 计算新 PC（解耦点）
+        5. 更新 pc，继续循环
+        """
+        self.instructions = instructions
+        self.context = VMContext()
+        self._exec_state = None
+        debug = debug or self.debug
+
+        if debug:
+            print(f"[DispatchStrategyVM] Starting with {len(instructions)} instructions")
+            print(f"  Resolver: {self.resolver.name}")
+
+        executed = 0
+        pc = 0
+
+        while pc < len(self.instructions) and self.context.running:
+            instr = self.instructions[pc]
+
+            if debug:
+                print(f"  PC={pc}: {instr.op.value} {instr.args} -> {instr.result}")
+
+            handler = self.handlers.get(instr.op)
+
+            if handler:
+                try:
+                    # 初始化或更新执行状态
+                    self._exec_state = self._build_state(pc)
+
+                    # 执行 handler
+                    pc_next = handler(self.context, instr)
+
+                    # 调用 resolver 的钩子（如果实现了）
+                    self.resolver.on_instruction_executed(instr, self.context)
+
+                    # 计算新 PC（核心解耦点）
+                    pc, self._exec_state = self._advance_pc(
+                        pc, pc_next, self._exec_state
+                    )
+
+                except Exception as e:
+                    return VMResult(
+                        success=False,
+                        error=f"Error at PC={pc}: {e}",
+                        pc=pc,
+                        executed_count=executed,
+                        context=self.context
+                    )
+            else:
+                if debug:
+                    print(f"    Unsupported opcode: {instr.op.value}")
+                pc += 1
+
+            executed += 1
+
+            if executed > self.max_instructions:
+                return VMResult(
+                    success=False,
+                    error="Execution limit exceeded",
+                    pc=pc,
+                    executed_count=executed,
+                    context=self.context
+                )
+
+        if debug:
+            print(f"[DispatchStrategyVM] Finished: pc={pc}, executed={executed}")
+
+        return VMResult(
+            success=True,
+            return_value=self.context.return_value,
+            pc=pc,
+            executed_count=executed,
+            context=self.context
+        )
+
+    def execute_from_block(self, block: CodeBlock, debug: bool = False) -> VMResult:
+        """从 CodeBlock 执行"""
+        converter = InstructionConverter()
+        block_instr = converter.convert_block(block)
+        return self.execute(block_instr.instructions, debug=debug)
+
+
+# ===== 表驱动执行模型 (Table-Driven Execution Model) =====
+
+
+@dataclass
+class InstructionSpec:
+    """
+    指令规格定义
+
+    集中定义每条指令的元数据和行为参数。
+    """
+    opcode: OpCode
+    name: str
+    category: str
+    description: str
+
+    # 参数规格
+    min_args: int = 0
+    max_args: int = 0
+    arg_types: list[str] = None  # "var", "imm", "label", "expr"
+
+    # 执行行为
+    has_result: bool = False
+    terminates: bool = False  # 是否终止执行
+    updates_pc: bool = False   # 是否修改 PC
+
+    # 内存操作
+    reads_memory: bool = False
+    writes_memory: bool = False
+    uses_stack: bool = False
+
+    # 元数据
+    metadata: dict = None
+
+    def __post_init__(self):
+        if self.arg_types is None:
+            self.arg_types = []
+        if self.metadata is None:
+            self.metadata = {}
+
+
+class InstructionTable:
+    """
+    中央指令表
+
+    集中管理所有指令的规格定义和行为配置。
+    类似于 CPU 的指令集架构（ISA）文档。
+    """
+
+    _table: dict[OpCode, InstructionSpec] = {}
+    _by_category: dict[str, list[OpCode]] = {}
+
+    @classmethod
+    def register(cls, spec: InstructionSpec) -> None:
+        """注册指令规格"""
+        cls._table[spec.opcode] = spec
+
+        # 按类别索引
+        if spec.category not in cls._by_category:
+            cls._by_category[spec.category] = []
+        if spec.opcode not in cls._by_category[spec.category]:
+            cls._by_category[spec.category].append(spec.opcode)
+
+    @classmethod
+    def get(cls, opcode: OpCode) -> InstructionSpec | None:
+        """获取指令规格"""
+        return cls._table.get(opcode)
+
+    @classmethod
+    def get_handler_name(cls, opcode: OpCode) -> str:
+        """获取处理器名称"""
+        return f"h_{opcode.value}"
+
+    @classmethod
+    def get_by_category(cls, category: str) -> list[OpCode]:
+        """按类别获取指令"""
+        return cls._by_category.get(category, [])
+
+    @classmethod
+    def get_all_categories(cls) -> list[str]:
+        """获取所有类别"""
+        return list(cls._by_category.keys())
+
+    @classmethod
+    def get_all_opcodes(cls) -> list[OpCode]:
+        """获取所有操作码"""
+        return list(cls._table.keys())
+
+    @classmethod
+    def validate(cls, instr: Instruction) -> tuple[bool, str]:
+        """验证指令格式"""
+        spec = cls.get(instr.op)
+        if not spec:
+            return False, f"Unknown opcode: {instr.op}"
+
+        arg_count = len(instr.args) if instr.args else 0
+        if arg_count < spec.min_args:
+            return False, f"{instr.op.value}: too few args (min={spec.min_args})"
+        if spec.max_args > 0 and arg_count > spec.max_args:
+            return False, f"{instr.op.value}: too many args (max={spec.max_args})"
+
+        return True, "OK"
+
+
+class InstructionDescriptor:
+    """
+    指令描述符
+
+    将指令规格与实际处理器函数关联。
+    """
+
+    def __init__(
+        self,
+        spec: InstructionSpec,
+        handler: callable,
+        generator: callable | None = None
+    ):
+        self.spec = spec
+        self.handler = handler
+        self.generator = generator
+
+    def execute(self, ctx: VMContext, instr: Instruction) -> PCNext:
+        """执行指令"""
+        return self.handler(ctx, instr)
+
+    def generate(self, instr: Instruction) -> str:
+        """生成代码"""
+        if self.generator:
+            return self.generator(instr)
+        return f"-- {instr.op.value}"
+
+
+class TableDrivenExecutor:
+    """
+    表驱动执行器
+
+    核心思想：用数据表驱动执行，而不是硬编码 if/elif。
+    类似于 Forth 虚拟机或 SQL 查询引擎的执行方式。
+    """
+
+    def __init__(
+        self,
+        max_instructions: int = 10000,
+        debug: bool = False,
+        strict_mode: bool = True
+    ):
+        self.max_instructions = max_instructions
+        self.debug = debug
+        self.strict_mode = strict_mode
+
+        self.context: VMContext | None = None
+        self.instructions: list[Instruction] = []
+        self.descriptors: dict[OpCode, InstructionDescriptor] = {}
+        self.spec_table: dict[OpCode, InstructionSpec] = {}
+
+        # 初始化
+        self._init_spec_table()
+        self._init_descriptors()
+
+    def _init_spec_table(self) -> None:
+        """初始化指令规格表"""
+        specs = [
+            # === 控制流 ===
+            InstructionSpec(
+                opcode=OpCode.NOP,
+                name="nop",
+                category="control_flow",
+                description="空操作",
+                min_args=0, max_args=0,
+                terminates=False, updates_pc=False
+            ),
+            InstructionSpec(
+                opcode=OpCode.RETURN,
+                name="return",
+                category="control_flow",
+                description="返回（无值）",
+                min_args=0, max_args=0,
+                terminates=True
+            ),
+            InstructionSpec(
+                opcode=OpCode.RETURN_VAL,
+                name="return_val",
+                category="control_flow",
+                description="返回值",
+                min_args=1, max_args=1,
+                arg_types=["expr"],
+                terminates=True
+            ),
+            InstructionSpec(
+                opcode=OpCode.JUMP,
+                name="jump",
+                category="control_flow",
+                description="无条件跳转",
+                min_args=1, max_args=1,
+                arg_types=["label"],
+                updates_pc=True
+            ),
+            InstructionSpec(
+                opcode=OpCode.JUMP_IF,
+                name="jump_if",
+                category="control_flow",
+                description="条件跳转",
+                min_args=2, max_args=2,
+                arg_types=["expr", "label"],
+                updates_pc=True
+            ),
+            InstructionSpec(
+                opcode=OpCode.BREAK,
+                name="break",
+                category="control_flow",
+                description="跳出循环",
+                min_args=0, max_args=0,
+                updates_pc=True
+            ),
+            InstructionSpec(
+                opcode=OpCode.CONTINUE,
+                name="continue",
+                category="control_flow",
+                description="继续循环",
+                min_args=0, max_args=0,
+                updates_pc=True
+            ),
+            InstructionSpec(
+                opcode=OpCode.LABEL,
+                name="label",
+                category="control_flow",
+                description="标签定义",
+                min_args=1, max_args=1,
+                arg_types=["label"]
+            ),
+
+            # === 变量和赋值 ===
+            InstructionSpec(
+                opcode=OpCode.DECLARE,
+                name="declare",
+                category="assignment",
+                description="声明局部变量",
+                min_args=1, max_args=1,
+                arg_types=["var"],
+                writes_memory=True
+            ),
+            InstructionSpec(
+                opcode=OpCode.INIT,
+                name="init",
+                category="assignment",
+                description="初始化变量",
+                min_args=1, max_args=1,
+                arg_types=["var"],
+                has_result=True,
+                writes_memory=True
+            ),
+            InstructionSpec(
+                opcode=OpCode.ASSIGN,
+                name="assign",
+                category="assignment",
+                description="赋值",
+                min_args=1, max_args=1,
+                arg_types=["var"],
+                writes_memory=True
+            ),
+            InstructionSpec(
+                opcode=OpCode.CALL_ASSIGN,
+                name="call_assign",
+                category="assignment",
+                description="调用并赋值",
+                min_args=1, max_args=1,
+                arg_types=["expr"],
+                has_result=True,
+                writes_memory=True
+            ),
+
+            # === 函数调用 ===
+            InstructionSpec(
+                opcode=OpCode.CALL,
+                name="call",
+                category="call",
+                description="函数调用",
+                min_args=1, max_args=16,
+                arg_types=["var"],
+                uses_stack=True
+            ),
+
+            # === 表达式 ===
+            InstructionSpec(
+                opcode=OpCode.EXPR,
+                name="expr",
+                category="expression",
+                description="表达式语句",
+                min_args=1, max_args=1,
+                arg_types=["expr"],
+                reads_memory=True
+            ),
+            InstructionSpec(
+                opcode=OpCode.ERROR,
+                name="error",
+                category="expression",
+                description="错误语句",
+                min_args=1, max_args=1,
+                arg_types=["expr"],
+                terminates=True
+            ),
+
+            # === 控制结构 ===
+            InstructionSpec(
+                opcode=OpCode.IF,
+                name="if",
+                category="control_struct",
+                description="if 条件",
+                min_args=1, max_args=1,
+                arg_types=["expr"]
+            ),
+            InstructionSpec(
+                opcode=OpCode.THEN,
+                name="then",
+                category="control_struct",
+                description="then 分支",
+                min_args=0, max_args=0
+            ),
+            InstructionSpec(
+                opcode=OpCode.ELSE,
+                name="else",
+                category="control_struct",
+                description="else 分支",
+                min_args=0, max_args=0
+            ),
+            InstructionSpec(
+                opcode=OpCode.ELSEIF,
+                name="elseif",
+                category="control_struct",
+                description="elseif 分支",
+                min_args=1, max_args=1,
+                arg_types=["expr"]
+            ),
+            InstructionSpec(
+                opcode=OpCode.WHILE,
+                name="while",
+                category="control_struct",
+                description="while 循环",
+                min_args=1, max_args=1,
+                arg_types=["expr"]
+            ),
+            InstructionSpec(
+                opcode=OpCode.DO,
+                name="do",
+                category="control_struct",
+                description="do 块开始",
+                min_args=0, max_args=0
+            ),
+            InstructionSpec(
+                opcode=OpCode.END,
+                name="end",
+                category="control_struct",
+                description="块结束",
+                min_args=0, max_args=0
+            ),
+            InstructionSpec(
+                opcode=OpCode.FOR,
+                name="for",
+                category="control_struct",
+                description="for 循环",
+                min_args=1, max_args=1,
+                arg_types=["expr"]
+            ),
+            InstructionSpec(
+                opcode=OpCode.REPEAT,
+                name="repeat",
+                category="control_struct",
+                description="repeat 循环开始",
+                min_args=0, max_args=0
+            ),
+            InstructionSpec(
+                opcode=OpCode.UNTIL,
+                name="until",
+                category="control_struct",
+                description="until 条件",
+                min_args=1, max_args=1,
+                arg_types=["expr"],
+                updates_pc=True
+            ),
+
+            # === 表操作 ===
+            InstructionSpec(
+                opcode=OpCode.TABLE_NEW,
+                name="table_new",
+                category="table",
+                description="创建表",
+                min_args=0, max_args=0,
+                has_result=True,
+                uses_stack=True
+            ),
+            InstructionSpec(
+                opcode=OpCode.TABLE_SET,
+                name="table_set",
+                category="table",
+                description="设置表元素",
+                min_args=0, max_args=0,
+                writes_memory=True
+            ),
+            InstructionSpec(
+                opcode=OpCode.TABLE_GET,
+                name="table_get",
+                category="table",
+                description="获取表元素",
+                min_args=0, max_args=0,
+                has_result=True,
+                reads_memory=True
+            ),
+
+            # === 函数定义 ===
+            InstructionSpec(
+                opcode=OpCode.FUNC_DEF,
+                name="func_def",
+                category="function",
+                description="函数定义",
+                min_args=1, max_args=16,
+                arg_types=["var"]
+            ),
+            InstructionSpec(
+                opcode=OpCode.FUNC_END,
+                name="func_end",
+                category="function",
+                description="函数结束",
+                min_args=0, max_args=0
+            ),
+
+            # === 辅助指令 ===
+            InstructionSpec(
+                opcode=OpCode.IDENTITY,
+                name="identity",
+                category="auxiliary",
+                description="恒等变换",
+                min_args=1, max_args=1,
+                arg_types=["var"],
+                reads_memory=True,
+                writes_memory=True
+            ),
+            InstructionSpec(
+                opcode=OpCode.DUMMY,
+                name="dummy",
+                category="auxiliary",
+                description="哑操作",
+                min_args=0, max_args=0
+            ),
+
+            # === 特殊 ===
+            InstructionSpec(
+                opcode=OpCode.COMMENT,
+                name="comment",
+                category="special",
+                description="注释",
+                min_args=1, max_args=1,
+                arg_types=["expr"]
+            ),
+            InstructionSpec(
+                opcode=OpCode.ASSERT,
+                name="assert",
+                category="special",
+                description="断言",
+                min_args=1, max_args=16,
+                arg_types=["expr"]
+            ),
+        ]
+
+        for spec in specs:
+            InstructionTable.register(spec)
+            self.spec_table[spec.opcode] = spec
+
+    def _init_descriptors(self) -> None:
+        """初始化指令描述符（将规格与处理器关联）"""
+        # 从 HandlerMap 获取生成器
+        for opcode in self.spec_table:
+            spec = self.spec_table[opcode]
+            handler = self._get_handler(opcode)
+            generator = self._get_generator(opcode)
+            self.descriptors[opcode] = InstructionDescriptor(spec, handler, generator)
+
+    def _get_handler(self, opcode: OpCode) -> callable:
+        """获取处理器函数"""
+        # 默认处理器实现
+        def default_handler(ctx: VMContext, instr: Instruction) -> PCNext:
+            return PCNext.continue_()
+
+        handlers = {
+            OpCode.NOP: lambda c, i: PCNext.continue_(),
+            OpCode.DECLARE: lambda c, i: (c.set_local(i.args[0], None) if i.args else None, PCNext.continue_())[1],
+            OpCode.INIT: lambda c, i: (c.set_local(i.args[0], self._eval(i.result, c)) if i.args else None, PCNext.continue_())[1],
+            OpCode.ASSIGN: lambda c, i: (c.set_value(i.args[0], self._eval(i.result, c)) if i.args else None, PCNext.continue_())[1],
+            OpCode.RETURN: lambda c, i: (setattr(c, 'return_value', None), c.halt(), PCNext.halt())[2],
+            OpCode.RETURN_VAL: lambda c, i: (setattr(c, 'return_value', self._eval(i.args[0], c) if i.args else None), c.halt(), PCNext.halt())[2],
+            OpCode.JUMP: lambda c, i: self._do_jump(c, i),
+            OpCode.JUMP_IF: lambda c, i: self._do_jump_if(c, i),
+            OpCode.LABEL: lambda c, i: (c.add_label(str(i.args[0]), c.pc) if i.args else None, PCNext.continue_())[1],
+            OpCode.BREAK: lambda c, i: PCNext.break_(),
+            OpCode.CONTINUE: lambda c, i: PCNext.skip(-1),
+            OpCode.EXPR: lambda c, i: (self._eval(i.args[0], c) if i.args else None, PCNext.continue_())[1],
+            OpCode.ERROR: lambda c, i: (setattr(c, 'return_value', f"error: {i.args[0] if i.args else ''}"), c.halt(), PCNext.halt())[2],
+            OpCode.IDENTITY: lambda c, i: (c.set_local(i.args[0], c.get(i.args[0])) if i.args else None, PCNext.continue_())[1],
+            OpCode.DUMMY: lambda c, i: PCNext.continue_(),
+            OpCode.TABLE_NEW: lambda c, i: (c.push({}), PCNext.continue_())[1],
+            OpCode.IF: lambda c, i: (c.set_local("_cond", self._is_truthy(self._eval(i.args[0], c))) if i.args else None, PCNext.continue_())[1],
+            OpCode.WHILE: lambda c, i: (c.set_local("_while_cond", self._is_truthy(self._eval(i.args[0], c))) if i.args else None, PCNext.continue_())[1],
+            OpCode.REPEAT: lambda c, i: (c.set_local("_repeat_active", True), PCNext.continue_())[1],
+            OpCode.UNTIL: lambda c, i: self._do_until(c, i),
+            OpCode.CALL: lambda c, i: (self._do_call(c, i), PCNext.continue_())[1],
+            OpCode.CALL_ASSIGN: lambda c, i: (c.set_local(i.result, self._eval(i.args[0], c)) if i.result and i.args else None, PCNext.continue_())[1],
+        }
+
+        return handlers.get(opcode, default_handler)
+
+    def _get_generator(self, opcode: OpCode) -> callable | None:
+        """从 HandlerMap 获取生成器"""
+        return HandlerMap.get_generator(opcode)
+
+    def _eval(self, expr: str | None, ctx: VMContext) -> Any:
+        """表达式求值"""
+        if expr is None:
+            return None
+        expr = str(expr).strip()
+        if not expr:
+            return None
+
+        # 字符串字面量
+        if (expr.startswith('"') and expr.endswith('"')) or \
+           (expr.startswith("'") and expr.endswith("'")):
+            return expr[1:-1]
+
+        # 数字字面量
+        try:
+            if "." in expr:
+                return float(expr)
+            return int(expr)
+        except ValueError:
+            pass
+
+        # 布尔和 nil
+        if expr == "nil":
+            return None
+        if expr == "true":
+            return True
+        if expr == "false":
+            return False
+
+        # 变量引用
+        return ctx.get(expr)
+
+    def _is_truthy(self, value: Any) -> bool:
+        """真值判断"""
+        if value is None:
+            return False
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        if isinstance(value, str):
+            return len(value) > 0
+        if isinstance(value, (list, dict, tuple)):
+            return len(value) > 0
+        return True
+
+    def _do_jump(self, ctx: VMContext, instr: Instruction) -> PCNext:
+        """执行跳转"""
+        if instr.args:
+            target = instr.args[0]
+            if isinstance(target, int):
+                return PCNext.jump(target)
+            label_pc = ctx.get_label(str(target))
+            if label_pc is not None:
+                return PCNext.jump(label_pc)
+        return PCNext.continue_()
+
+    def _do_jump_if(self, ctx: VMContext, instr: Instruction) -> PCNext:
+        """执行条件跳转"""
+        if len(instr.args) >= 2:
+            cond = self._eval(instr.args[0], ctx)
+            if self._is_truthy(cond):
+                return self._do_jump(ctx, Instruction(OpCode.JUMP, instr.args[1:]))
+        return PCNext.continue_()
+
+    def _do_until(self, ctx: VMContext, instr: Instruction) -> PCNext:
+        """执行 until"""
+        if instr.args:
+            cond = self._eval(instr.args[0], ctx)
+            if self._is_truthy(cond):
+                ctx.set_local("_repeat_active", False)
+                return PCNext.continue_()
+            return PCNext.jump(ctx.pc - 1)
+        return PCNext.continue_()
+
+    def _do_call(self, ctx: VMContext, instr: Instruction) -> Any:
+        """执行函数调用"""
+        if instr.args:
+            func_name = instr.args[0]
+            args = [self._eval(a, ctx) for a in instr.args[1:]]
+            func = ctx.get(func_name)
+            if callable(func):
+                return func(*args)
+            ctx.push(None)
+
+    def register_handler(self, opcode: OpCode, handler: callable) -> None:
+        """注册处理器"""
+        if opcode in self.descriptors:
+            self.descriptors[opcode] = InstructionDescriptor(
+                self.descriptors[opcode].spec,
+                handler,
+                self.descriptors[opcode].generator
+            )
+        else:
+            spec = self.spec_table.get(opcode)
+            if spec:
+                self.descriptors[opcode] = InstructionDescriptor(spec, handler, None)
+
+    def execute(self, instructions: list[Instruction], debug: bool = False) -> VMResult:
+        """
+        表驱动执行
+
+        核心循环完全由表驱动：
+        1. 查表获取规格
+        2. 查表获取描述符
+        3. 执行描述符中的处理器
+        """
+        self.instructions = instructions
+        self.context = VMContext()
+        debug = debug or self.debug
+
+        if debug:
+            print(f"[TableDrivenVM] Starting with {len(instructions)} instructions")
+            print(f"  Categories: {InstructionTable.get_all_categories()}")
+
+        executed = 0
+        pc = 0
+
+        # === 表驱动执行循环 ===
+        while pc < len(self.instructions) and self.context.running:
+            instr = self.instructions[pc]
+            ctx = self.context
+            ctx.pc = pc
+
+            # 1. 查表获取规格
+            spec = self.spec_table.get(instr.op)
+
+            if debug:
+                spec_info = f"[{spec.name}]" if spec else "[unknown]"
+                print(f"  PC={pc}: {spec_info} {instr.args} -> {instr.result}")
+
+            # 2. 严格模式下验证
+            if self.strict_mode and spec:
+                valid, msg = InstructionTable.validate(instr)
+                if not valid:
+                    return VMResult(
+                        success=False,
+                        error=f"Validation failed at PC={pc}: {msg}",
+                        pc=pc,
+                        executed_count=executed,
+                        context=ctx
+                    )
+
+            # 3. 查表获取描述符
+            descriptor = self.descriptors.get(instr.op)
+
+            if descriptor:
+                try:
+                    # 4. 执行处理器
+                    pc_next = descriptor.execute(ctx, instr)
+
+                    # 5. 处理 PC 更新
+                    pc = self._advance_pc(pc, pc_next)
+
+                except Exception as e:
+                    return VMResult(
+                        success=False,
+                        error=f"Execution error at PC={pc}: {e}",
+                        pc=pc,
+                        executed_count=executed,
+                        context=ctx
+                    )
+            else:
+                if debug:
+                    print(f"    No handler for {instr.op.value}")
+                pc += 1
+
+            executed += 1
+
+            # 防止无限循环
+            if executed > self.max_instructions:
+                return VMResult(
+                    success=False,
+                    error="Execution limit exceeded",
+                    pc=pc,
+                    executed_count=executed,
+                    context=ctx
+                )
+
+        if debug:
+            print(f"[TableDrivenVM] Finished: pc={pc}, executed={executed}")
+
+        return VMResult(
+            success=True,
+            return_value=ctx.return_value,
+            pc=pc,
+            executed_count=executed,
+            context=ctx
+        )
+
+    def _advance_pc(self, pc: int, pc_next: PCNext) -> int:
+        """根据 PCNext 更新程序计数器"""
+        if pc_next.action == PCNext.NEXT:
+            return pc + 1
+        elif pc_next.action == PCNext.JUMP:
+            if pc_next.target == 0:
+                return pc + 1
+            elif pc_next.target > 0:
+                return pc_next.target
+            else:
+                return pc + pc_next.target
+        elif pc_next.action == PCNext.BREAK:
+            return len(self.instructions)  # 结束
+        elif pc_next.action == PCNext.HALT:
+            return len(self.instructions)  # 结束
+        return pc + 1
+
+    def execute_from_block(self, block: CodeBlock, debug: bool = False) -> VMResult:
+        """从 CodeBlock 执行"""
+        converter = InstructionConverter()
+        block_instr = converter.convert_block(block)
+        return self.execute(block_instr.instructions, debug=debug)
+
+    def get_spec_info(self) -> str:
+        """获取指令表信息"""
+        lines = ["Instruction Table:"]
+        for category in InstructionTable.get_all_categories():
+            lines.append(f"  [{category}]")
+            for opcode in InstructionTable.get_by_category(category):
+                spec = InstructionTable.get(opcode)
+                if spec:
+                    lines.append(f"    {spec.name}: {spec.description}")
+        return "\n".join(lines)
+
+
+def table_driven_vm_test():
+    """
+    表驱动执行器测试
+
+    展示表驱动模型的优势。
+    """
+    print("=" * 50)
+    print("Table-Driven Executor Test")
+    print("=" * 50)
+
+    # 创建执行器
+    vm = TableDrivenExecutor(debug=False)
+
+    # 显示指令表
+    print("\n[Test 0] Instruction Table Info")
+    print(vm.get_spec_info())
+
+    # 测试 1: 基本执行
+    print("\n[Test 1] Basic execution")
+    instrs = [
+        Instruction(OpCode.INIT, ["a"], None, "10"),
+        Instruction(OpCode.INIT, ["b"], None, "20"),
+        Instruction(OpCode.ASSIGN, ["a"], "a + b"),
+        Instruction(OpCode.RETURN_VAL, ["a"]),
+    ]
+    result = vm.execute(instrs)
+    print(f"  Expected: 30, Got: {result.return_value}, Success: {result.success}")
+
+    # 测试 2: 标签跳转
+    print("\n[Test 2] Label and jump")
+    instrs2 = [
+        Instruction(OpCode.LABEL, ["start"]),
+        Instruction(OpCode.INIT, ["i"], None, "0"),
+        Instruction(OpCode.ASSIGN, ["i"], "i + 1"),
+        Instruction(OpCode.JUMP_IF, ["i < 3", "start"]),
+        Instruction(OpCode.RETURN_VAL, ["i"]),
+    ]
+    result2 = vm.execute(instrs2, debug=True)
+    print(f"  Expected: 3, Got: {result2.return_value}")
+
+    # 测试 3: 条件执行
+    print("\n[Test 3] Conditional execution")
+    instrs3 = [
+        Instruction(OpCode.INIT, ["x"], None, "10"),
+        Instruction(OpCode.JUMP_IF, ["x > 5", 5]),  # 跳过赋值
+        Instruction(OpCode.ASSIGN, ["x"], "100"),
+        Instruction(OpCode.RETURN_VAL, ["x"]),
+    ]
+    result3 = vm.execute(instrs3)
+    print(f"  Expected: 10 (skipped), Got: {result3.return_value}")
+
+    # 测试 4: 恒等变换
+    print("\n[Test 4] Identity transformation")
+    instrs4 = [
+        Instruction(OpCode.INIT, ["y"], None, "42"),
+        Instruction(OpCode.IDENTITY, ["y"]),
+        Instruction(OpCode.RETURN_VAL, ["y"]),
+    ]
+    result4 = vm.execute(instrs4)
+    print(f"  Expected: 42, Got: {result4.return_value}, Success: {result4.success}")
+
+    # 测试 5: 从 Block 执行
+    print("\n[Test 5] Execute from Block")
+    block = CodeBlock(
+        block_id=1,
+        content="local a = 5\nlocal b = 10\nreturn a * b",
+        block_type="statement"
+    )
+    result5 = vm.execute_from_block(block)
+    print(f"  Expected: 50, Got: {result5.return_value}, Success: {result5.success}")
+
+    # 测试 6: 注册自定义处理器
+    print("\n[Test 6] Custom handler registration")
+    vm2 = TableDrivenExecutor()
+
+    def custom_nop_handler(ctx: VMContext, instr: Instruction) -> PCNext:
+        print("    [Custom NOP handler]")
+        return PCNext.continue_()
+
+    vm2.register_handler(OpCode.NOP, custom_nop_handler)
+
+    instrs6 = [
+        Instruction(OpCode.NOP),
+        Instruction(OpCode.RETURN_VAL, ["42"]),
+    ]
+    result6 = vm2.execute(instrs6, debug=True)
+    print(f"  Got: {result6.return_value}")
+
+    print("\n" + "=" * 50)
+    print("Table-Driven VM Test Complete")
+    print("=" * 50)
+
+
+def vm_test():
+    """
+    标准解释器测试
+
+    展示标准 VM 的执行流程。
+    """
+    print("=" * 50)
+    print("Standard Interpreter VM Test")
+    print("=" * 50)
+
+    vm = InstructionVM(debug=False)
+
+    # 测试 1: 简单变量赋值
+    print("\n[Test 1] Variable assignment")
+    instrs = [
+        Instruction(OpCode.INIT, ["a"], None, "10"),
+        Instruction(OpCode.INIT, ["b"], None, "20"),
+        Instruction(OpCode.ASSIGN, ["a"], "a + b"),
+        Instruction(OpCode.RETURN_VAL, ["a"]),
+    ]
+    result = vm.execute(instrs)
+    print(f"  Expected: 30, Got: {result.return_value}, Success: {result.success}")
+
+    # 测试 2: 带调试的执行
+    print("\n[Test 2] Debug execution")
+    instrs2 = [
+        Instruction(OpCode.INIT, ["x"], None, "5"),
+        Instruction(OpCode.INIT, ["y"], None, "10"),
+        Instruction(OpCode.ASSIGN, ["result"], "x * y"),
+        Instruction(OpCode.RETURN_VAL, ["result"]),
+    ]
+    print("  Instructions trace:")
+    result2 = vm.execute(instrs2, debug=True)
+    print(f"  Result: {result2.return_value}")
+
+    # 测试 3: 条件跳转
+    print("\n[Test 3] Conditional jump")
+    instrs3 = [
+        Instruction(OpCode.INIT, ["x"], None, "10"),
+        Instruction(OpCode.JUMP_IF, ["x", "5"]),  # 如果 x 为真，跳到位置 5
+        Instruction(OpCode.ASSIGN, ["x"], "100"),  # 跳过
+        Instruction(OpCode.RETURN_VAL, ["x"]),
+        Instruction(OpCode.ASSIGN, ["x"], "999"),   # 跳转目标
+        Instruction(OpCode.RETURN_VAL, ["x"]),
+    ]
+    result3 = vm.execute(instrs3)
+    print(f"  Expected: 10 (jump taken), Got: {result3.return_value}")
+
+    # 测试 4: 标签和跳转
+    print("\n[Test 4] Label and jump")
+    instrs4 = [
+        Instruction(OpCode.LABEL, ["start"]),
+        Instruction(OpCode.INIT, ["counter"], None, "0"),
+        Instruction(OpCode.ASSIGN, ["counter"], "counter + 1"),
+        Instruction(OpCode.JUMP_IF, ["counter < 3", "start"]),
+        Instruction(OpCode.RETURN_VAL, ["counter"]),
+    ]
+    result4 = vm.execute(instrs4)
+    print(f"  Expected: 3, Got: {result4.return_value}")
+
+    # 测试 5: 从 CodeBlock 执行
+    print("\n[Test 5] Execute from CodeBlock")
+    block = CodeBlock(
+        block_id=1,
+        content="local a = 10\nlocal b = 20\na = a + b\nreturn a",
+        block_type="statement"
+    )
+    result5 = vm.execute_from_block(block)
+    print(f"  Expected: 30, Got: {result5.return_value}, Success: {result5.success}")
+
+    # 测试 6: 恒等变换（不影响结果）
+    print("\n[Test 6] Identity transformation")
+    instrs6 = [
+        Instruction(OpCode.INIT, ["x"], None, "42"),
+        Instruction(OpCode.IDENTITY, ["x"]),
+        Instruction(OpCode.IDENTITY, ["x"]),
+        Instruction(OpCode.RETURN_VAL, ["x"]),
+    ]
+    result6 = vm.execute(instrs6)
+    print(f"  Expected: 42, Got: {result6.return_value}, Success: {result6.success}")
+
+    print("\n" + "=" * 50)
+    print("VM Test Complete")
+    print("=" * 50)
+
+
 # ===== 指令处理器基类和注册系统 =====
 
 
@@ -2118,6 +4183,711 @@ def _register_default_handlers() -> None:
 _register_default_handlers()
 
 
+# ===== 指令表示策略系统 =====
+
+
+class RepresentationStrategy:
+    """
+    指令表示策略基类
+
+    定义同一语义的多种等价格式表示方式。
+    """
+
+    name: str = "base"
+    description: str = ""
+
+    def generate(self, ctx: 'GenerationContext') -> list[Instruction]:
+        """
+        生成指令序列
+
+        Args:
+            ctx: 生成上下文
+
+        Returns:
+            生成的指令列表
+        """
+        raise NotImplementedError
+
+
+class GenerationContext:
+    """
+    指令生成上下文
+
+    包含生成过程中需要的各种信息和工具。
+    """
+
+    def __init__(
+        self,
+        rng: random.Random | None = None,
+        strategy_name: str = "default",
+        block_id: int = 0,
+        metadata: dict | None = None
+    ):
+        self.rng = rng
+        self.strategy_name = strategy_name
+        self.block_id = block_id
+        self.metadata = metadata or {}
+        self._temp_counter = 0
+        self._label_counter = 0
+
+    def new_temp(self, prefix: str = "_t") -> str:
+        """生成临时变量名"""
+        self._temp_counter += 1
+        return f"{prefix}{self._temp_counter}"
+
+    def new_label(self, prefix: str = "L") -> str:
+        """生成标签名"""
+        self._label_counter += 1
+        return f"{prefix}{self._label_counter}"
+
+    def choice(self, options: list) -> Any:
+        """随机选择"""
+        if self.rng:
+            return self.rng.choice(options)
+        return options[0] if options else None
+
+    def probability(self, p: float) -> bool:
+        """按概率返回"""
+        if self.rng:
+            return self.rng.random() < p
+        return p >= 1.0
+
+
+class StrategyRegistry:
+    """
+    策略注册表
+
+    管理所有可用的表示策略。
+    """
+
+    _strategies: dict[str, type[RepresentationStrategy]] = {}
+    _factories: dict[str, Callable] = {}
+
+    @classmethod
+    def register(
+        cls,
+        name: str,
+        strategy_cls: type[RepresentationStrategy],
+        factory: Callable | None = None
+    ) -> None:
+        """注册策略"""
+        cls._strategies[name] = strategy_cls
+        if factory:
+            cls._factories[name] = factory
+        else:
+            cls._factories[name] = lambda rng: strategy_cls()
+
+    @classmethod
+    def get(cls, name: str) -> type[RepresentationStrategy] | None:
+        """获取策略类"""
+        return cls._strategies.get(name)
+
+    @classmethod
+    def create(cls, name: str, rng: random.Random | None = None) -> RepresentationStrategy | None:
+        """创建策略实例"""
+        factory = cls._factories.get(name)
+        if factory:
+            return factory(rng)
+        strategy_cls = cls._strategies.get(name)
+        if strategy_cls:
+            return strategy_cls()
+        return None
+
+    @classmethod
+    def get_all(cls) -> list[str]:
+        """获取所有策略名"""
+        return list(cls._strategies.keys())
+
+    @classmethod
+    def get_descriptions(cls) -> dict[str, str]:
+        """获取所有策略描述"""
+        return {name: cls._strategies[name].description for name in cls._strategies}
+
+
+# ===== 等价表示方式定义 =====
+
+# 赋值表示策略
+class DirectAssignStrategy(RepresentationStrategy):
+    """直接赋值策略: local x = value"""
+    name = "direct"
+    description = "直接赋值，不使用临时变量"
+
+    def generate(self, ctx: GenerationContext) -> list[Instruction]:
+        # 子类实现
+        return []
+
+
+class TempVarAssignStrategy(RepresentationStrategy):
+    """临时变量赋值策略: local _t1 = value; x = _t1"""
+    name = "temp_var"
+    description = "使用临时变量分步赋值"
+
+    def generate(self, ctx: GenerationContext) -> list[Instruction]:
+        return []
+
+
+class StackBasedAssignStrategy(RepresentationStrategy):
+    """栈式赋值策略: push value; x = pop()"""
+    name = "stack_based"
+    description = "使用栈进行赋值"
+
+    def generate(self, ctx: GenerationContext) -> list[Instruction]:
+        return []
+
+
+# 计算表示策略
+class InlineCalcStrategy(RepresentationStrategy):
+    """内联计算策略: x = a + b"""
+    name = "inline"
+    description = "表达式直接内联"
+
+    def generate(self, ctx: GenerationContext) -> list[Instruction]:
+        return []
+
+
+class MultiStepCalcStrategy(RepresentationStrategy):
+    """多步计算策略: _t1 = a + b; _t2 = _t1 * c; x = _t2"""
+    name = "multi_step"
+    description = "分解为多个步骤"
+
+    def generate(self, ctx: GenerationContext) -> list[Instruction]:
+        return []
+
+
+# 跳转表示策略
+class LabelJumpStrategy(RepresentationStrategy):
+    """标签跳转策略: L1: ...; goto L1"""
+    name = "label_jump"
+    description = "使用标签进行跳转"
+
+    def generate(self, ctx: GenerationContext) -> list[Instruction]:
+        return []
+
+
+class OffsetJumpStrategy(RepresentationStrategy):
+    """偏移跳转策略: 使用 PC 偏移量"""
+    name = "offset_jump"
+    description = "使用 PC 偏移量跳转"
+
+    def generate(self, ctx: GenerationContext) -> list[Instruction]:
+        return []
+
+
+# 条件表示策略
+class IfThenEndStrategy(RepresentationStrategy):
+    """标准 if-then-end 策略"""
+    name = "if_then_end"
+    description = "标准 if-then-end 结构"
+
+    def generate(self, ctx: GenerationContext) -> list[Instruction]:
+        return []
+
+
+class SkipOverStrategy(RepresentationStrategy):
+    """跳过策略: 先执行条件，false 时跳过"""
+    name = "skip_over"
+    description = "使用跳过实现条件"
+
+    def generate(self, ctx: GenerationContext) -> list[Instruction]:
+        return []
+
+
+# 循环表示策略
+class WhileDoEndStrategy(RepresentationStrategy):
+    """标准 while-do-end 策略"""
+    name = "while_do_end"
+    description = "标准 while 循环"
+
+    def generate(self, ctx: GenerationContext) -> list[Instruction]:
+        return []
+
+
+class RepeatUntilStrategy(RepresentationStrategy):
+    """repeat-until 策略"""
+    name = "repeat_until"
+    description = "使用 repeat-until 实现循环"
+
+    def generate(self, ctx: GenerationContext) -> list[Instruction]:
+        return []
+
+
+class JumpBasedLoopStrategy(RepresentationStrategy):
+    """跳转实现循环策略"""
+    name = "jump_based_loop"
+    description = "使用跳转实现循环"
+
+    def generate(self, ctx: GenerationContext) -> list[Instruction]:
+        return []
+
+
+# 注册所有策略
+def _register_default_strategies() -> None:
+    """注册默认表示策略"""
+
+    # 赋值策略
+    StrategyRegistry.register("direct", DirectAssignStrategy)
+    StrategyRegistry.register("temp_var", TempVarAssignStrategy)
+    StrategyRegistry.register("stack_based", StackBasedAssignStrategy)
+
+    # 计算策略
+    StrategyRegistry.register("inline", InlineCalcStrategy)
+    StrategyRegistry.register("multi_step", MultiStepCalcStrategy)
+
+    # 跳转策略
+    StrategyRegistry.register("label_jump", LabelJumpStrategy)
+    StrategyRegistry.register("offset_jump", OffsetJumpStrategy)
+
+    # 条件策略
+    StrategyRegistry.register("if_then_end", IfThenEndStrategy)
+    StrategyRegistry.register("skip_over", SkipOverStrategy)
+
+    # 循环策略
+    StrategyRegistry.register("while_do_end", WhileDoEndStrategy)
+    StrategyRegistry.register("repeat_until", RepeatUntilStrategy)
+    StrategyRegistry.register("jump_based_loop", JumpBasedLoopStrategy)
+
+
+_register_default_strategies()
+
+
+class StrategySelector:
+    """
+    策略选择器
+
+    根据配置选择合适的表示策略。
+    """
+
+    def __init__(self, rng: random.Random | None = None):
+        self.rng = rng
+        self._strategy_weights: dict[str, float] = {}
+        self._default_strategy = "direct"
+
+    def set_weights(self, weights: dict[str, float]) -> None:
+        """设置策略权重"""
+        self._strategy_weights = weights
+
+    def set_default(self, strategy: str) -> None:
+        """设置默认策略"""
+        self._default_strategy = strategy
+
+    def select_for_operation(
+        self,
+        operation: str,
+        context: GenerationContext
+    ) -> str:
+        """
+        为操作选择策略
+
+        Args:
+            operation: 操作类型 (assign, calc, jump, condition, loop)
+            context: 生成上下文
+
+        Returns:
+            选择的策略名
+        """
+        # 按操作类型分组策略
+        operation_strategies = {
+            "assign": ["direct", "temp_var", "stack_based"],
+            "calc": ["inline", "multi_step"],
+            "jump": ["label_jump", "offset_jump"],
+            "condition": ["if_then_end", "skip_over"],
+            "loop": ["while_do_end", "repeat_until", "jump_based_loop"],
+        }
+
+        strategies = operation_strategies.get(operation, [self._default_strategy])
+
+        # 使用权重或随机选择
+        if self._strategy_weights:
+            available = {s: self._strategy_weights.get(s, 1.0) for s in strategies}
+            total = sum(available.values())
+            if total > 0 and self.rng:
+                r = self.rng.random() * total
+                cumulative = 0
+                for s, w in available.items():
+                    cumulative += w
+                    if r <= cumulative:
+                        return s
+            return strategies[0]
+
+        if self.rng:
+            return self.rng.choice(strategies)
+        return strategies[0]
+
+
+class InstructionGeneratorWithStrategy:
+    """
+    支持策略的指令生成器
+
+    可以根据策略生成不同表示方式的指令。
+    """
+
+    def __init__(
+        self,
+        rng: random.Random | None = None,
+        strategy_selector: StrategySelector | None = None
+    ):
+        self.rng = rng
+        self.selector = strategy_selector or StrategySelector(rng)
+
+    def generate_assignment(
+        self,
+        target: str,
+        value: str,
+        context: GenerationContext | None = None
+    ) -> list[Instruction]:
+        """生成赋值指令"""
+        if context is None:
+            context = GenerationContext(self.rng)
+
+        strategy = self.selector.select_for_operation("assign", context)
+
+        if strategy == "temp_var":
+            temp = context.new_temp()
+            return [
+                Instruction(OpCode.DECLARE, [temp]),
+                Instruction(OpCode.INIT, [temp], result=value),
+                Instruction(OpCode.ASSIGN, [target], temp),
+            ]
+        elif strategy == "stack_based":
+            return [
+                Instruction(OpCode.TABLE_NEW),  # 模拟 push
+                Instruction(OpCode.INIT, [target], result=value),
+            ]
+        else:  # direct
+            return [Instruction(OpCode.INIT, [target], result=value)]
+
+    def generate_calculation(
+        self,
+        target: str,
+        expr: str,
+        context: GenerationContext | None = None
+    ) -> list[Instruction]:
+        """生成计算指令"""
+        if context is None:
+            context = GenerationContext(self.rng)
+
+        strategy = self.selector.select_for_operation("calc", context)
+
+        if strategy == "multi_step":
+            temp = context.new_temp()
+            return [
+                Instruction(OpCode.DECLARE, [temp]),
+                Instruction(OpCode.INIT, [temp], result=expr),
+                Instruction(OpCode.ASSIGN, [target], temp),
+            ]
+        else:  # inline
+            return [Instruction(OpCode.ASSIGN, [target], result=expr)]
+
+    def generate_jump(
+        self,
+        target: int | str,
+        context: GenerationContext | None = None
+    ) -> list[Instruction]:
+        """生成跳转指令"""
+        if context is None:
+            context = GenerationContext(self.rng)
+
+        strategy = self.selector.select_for_operation("jump", context)
+
+        if strategy == "label_jump":
+            if isinstance(target, str):
+                return [Instruction(OpCode.LABEL, [target])]
+            else:
+                label = context.new_label()
+                return [
+                    Instruction(OpCode.LABEL, [label]),
+                    Instruction(OpCode.JUMP, [label]),
+                ]
+        else:  # offset_jump
+            return [Instruction(OpCode.JUMP, [target])]
+
+    def generate_condition(
+        self,
+        cond: str,
+        true_body: list[Instruction],
+        context: GenerationContext | None = None
+    ) -> list[Instruction]:
+        """生成条件指令"""
+        if context is None:
+            context = GenerationContext(self.rng)
+
+        strategy = self.selector.select_for_operation("condition", context)
+
+        if strategy == "skip_over":
+            else_label = context.new_label()
+            end_label = context.new_label()
+            result = [
+                Instruction(OpCode.JUMP_IF, [f"not ({cond})", else_label]),
+            ]
+            result.extend(true_body)
+            result.append(Instruction(OpCode.JUMP, [end_label]))
+            result.append(Instruction(OpCode.LABEL, [else_label]))
+            result.append(Instruction(OpCode.NOP))
+            result.append(Instruction(OpCode.LABEL, [end_label]))
+            return result
+        else:  # if_then_end
+            result = [
+                Instruction(OpCode.IF, [cond]),
+                Instruction(OpCode.THEN),
+            ]
+            result.extend(true_body)
+            result.append(Instruction(OpCode.END))
+            return result
+
+    def generate_loop(
+        self,
+        cond: str,
+        body: list[Instruction],
+        loop_type: str = "while",
+        context: GenerationContext | None = None
+    ) -> list[Instruction]:
+        """生成循环指令"""
+        if context is None:
+            context = GenerationContext(self.rng)
+
+        strategy = self.selector.select_for_operation("loop", context)
+
+        if strategy == "jump_based_loop":
+            start_label = context.new_label()
+            end_label = context.new_label()
+            result = [
+                Instruction(OpCode.LABEL, [start_label]),
+            ]
+            result.extend(body)
+            result.append(Instruction(OpCode.JUMP_IF, [f"not ({cond})", end_label]))
+            result.append(Instruction(OpCode.JUMP, [start_label]))
+            result.append(Instruction(OpCode.LABEL, [end_label]))
+            return result
+        elif strategy == "repeat_until":
+            result = [
+                Instruction(OpCode.REPEAT),
+            ]
+            result.extend(body)
+            result.append(Instruction(OpCode.UNTIL, [cond]))
+            return result
+        else:  # while_do_end
+            result = [
+                Instruction(OpCode.WHILE, [cond]),
+                Instruction(OpCode.DO),
+            ]
+            result.extend(body)
+            result.append(Instruction(OpCode.END))
+            return result
+
+
+class BlockStrategyApplicator:
+    """
+    Block 策略应用器
+
+    将策略应用到 CodeBlock，生成不同表示的指令。
+    """
+
+    def __init__(
+        self,
+        rng: random.Random | None = None,
+        strategy_name: str = "random"
+    ):
+        self.rng = rng
+        self.strategy_name = strategy_name
+        self.generator = InstructionGeneratorWithStrategy(rng)
+
+    def apply_to_block(self, block: CodeBlock) -> BlockInstructions:
+        """将策略应用到 Block"""
+        context = GenerationContext(
+            rng=self.rng,
+            strategy_name=self.strategy_name,
+            block_id=block.block_id
+        )
+
+        result = BlockInstructions(
+            block_id=block.block_id,
+            block_type=block.block_type,
+        )
+
+        if not block.content:
+            result.add_nop()
+            return result
+
+        lines = block.content.strip().split("\n")
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # 使用策略生成器处理每一行
+            instrs = self._generate_line(line, context)
+            for instr in instrs:
+                result.add(instr)
+
+        if len(result.instructions) == 0:
+            result.add_nop()
+
+        return result
+
+    def _generate_line(self, line: str, context: GenerationContext) -> list[Instruction]:
+        """使用策略生成单行代码的指令"""
+        # 移除注释
+        code_part = line
+        if "--" in line:
+            code_part = line.split("--")[0].strip()
+
+        if not code_part:
+            return [Instruction(OpCode.COMMENT, [line])]
+
+        # 根据代码类型选择生成方式
+        if code_part.startswith("local "):
+            return self._generate_local(code_part, context)
+        elif "=" in code_part and not code_part.startswith("if"):
+            return self._generate_assignment(code_part, context)
+        elif code_part.startswith("if"):
+            return self._generate_if(code_part, context)
+        elif code_part.startswith("while"):
+            return self._generate_while(code_part, context)
+        elif code_part.startswith("return"):
+            return self._generate_return(code_part, context)
+        else:
+            return [Instruction(OpCode.EXPR, [code_part])]
+
+    def _generate_local(self, line: str, ctx: GenerationContext) -> list[Instruction]:
+        """生成 local 声明/赋值"""
+        rest = line[6:].strip()  # 移除 "local "
+        if "=" in rest:
+            parts = rest.split("=", 1)
+            var_name = parts[0].strip()
+            value = parts[1].strip()
+            return self.generator.generate_assignment(var_name, value, ctx)
+        else:
+            return [Instruction(OpCode.DECLARE, [rest])]
+
+    def _generate_assignment(self, line: str, ctx: GenerationContext) -> list[Instruction]:
+        """生成赋值"""
+        parts = line.split("=", 1)
+        target = parts[0].strip()
+        value = parts[1].strip()
+        return self.generator.generate_calculation(target, value, ctx)
+
+    def _generate_if(self, line: str, ctx: GenerationContext) -> list[Instruction]:
+        """生成 if 语句"""
+        # 简单处理，提取条件
+        cond = line[3:].strip()  # 移除 "if "
+        if " then" in cond:
+            cond = cond[:-5].strip()
+
+        # 生成条件块
+        body = [Instruction(OpCode.EXPR, ["-- body"])]  # 简化处理
+        return self.generator.generate_condition(cond, body, ctx)
+
+    def _generate_while(self, line: str, ctx: GenerationContext) -> list[Instruction]:
+        """生成 while 循环"""
+        # 简单处理，提取条件
+        cond = line[6:].strip()  # 移除 "while "
+        if " do" in cond:
+            cond = cond[:-3].strip()
+
+        body = [Instruction(OpCode.EXPR, ["-- body"])]  # 简化处理
+        return self.generator.generate_loop(cond, body, "while", ctx)
+
+    def _generate_return(self, line: str, ctx: GenerationContext) -> list[Instruction]:
+        """生成 return"""
+        rest = line[6:].strip()  # 移除 "return "
+        if rest:
+            return [Instruction(OpCode.RETURN_VAL, [rest])]
+        return [Instruction(OpCode.RETURN)]
+
+
+# 简化测试函数
+def strategy_test():
+    """
+    表示策略测试
+
+    展示不同策略生成的指令差异。
+    """
+    import random
+
+    print("=" * 50)
+    print("Instruction Representation Strategy Test")
+    print("=" * 50)
+
+    rng = random.Random(42)
+    selector = StrategySelector(rng)
+    generator = InstructionGeneratorWithStrategy(rng, selector)
+
+    # 测试赋值策略
+    print("\n[Test 1] Assignment strategies")
+    strategies = ["direct", "temp_var", "stack_based"]
+
+    for strategy in strategies:
+        ctx = GenerationContext(rng, strategy_name=strategy)
+        instrs = generator.generate_assignment("x", "10 + 20", ctx)
+        print(f"\n  [{strategy}]")
+        for instr in instrs:
+            print(f"    {instr}")
+
+    # 测试计算策略
+    print("\n[Test 2] Calculation strategies")
+    calc_strategies = ["inline", "multi_step"]
+
+    for strategy in calc_strategies:
+        ctx = GenerationContext(rng, strategy_name=strategy)
+        instrs = generator.generate_calculation("result", "a + b * c", ctx)
+        print(f"\n  [{strategy}]")
+        for instr in instrs:
+            print(f"    {instr}")
+
+    # 测试跳转策略
+    print("\n[Test 3] Jump strategies")
+    jump_strategies = ["label_jump", "offset_jump"]
+
+    for strategy in jump_strategies:
+        ctx = GenerationContext(rng, strategy_name=strategy)
+        instrs = generator.generate_jump(100, ctx)
+        print(f"\n  [{strategy}]")
+        for instr in instrs:
+            print(f"    {instr}")
+
+    # 测试条件策略
+    print("\n[Test 4] Condition strategies")
+    cond_strategies = ["if_then_end", "skip_over"]
+
+    for strategy in cond_strategies:
+        ctx = GenerationContext(rng, strategy_name=strategy)
+        body = [Instruction(OpCode.ASSIGN, ["x"], result="10")]
+        instrs = generator.generate_condition("x > 5", body, ctx)
+        print(f"\n  [{strategy}]")
+        for instr in instrs:
+            print(f"    {instr}")
+
+    # 测试循环策略
+    print("\n[Test 5] Loop strategies")
+    loop_strategies = ["while_do_end", "repeat_until", "jump_based_loop"]
+
+    for strategy in loop_strategies:
+        ctx = GenerationContext(rng, strategy_name=strategy)
+        body = [Instruction(OpCode.EXPR, ["i = i + 1"])]
+        instrs = generator.generate_loop("i < 10", body, "while", ctx)
+        print(f"\n  [{strategy}]")
+        for instr in instrs:
+            print(f"    {instr}")
+
+    # 测试 Block 策略应用
+    print("\n[Test 6] Block strategy application")
+    block = CodeBlock(
+        block_id=1,
+        content="local x = 10\nlocal y = 20\nx = x + y\nreturn x",
+        block_type="statement"
+    )
+
+    applicator = BlockStrategyApplicator(rng, "random")
+    result = applicator.apply_to_block(block)
+    print("  Generated instructions:")
+    for instr in result.instructions:
+        print(f"    {instr}")
+
+    print("\n" + "=" * 50)
+    print("Strategy Test Complete")
+    print("=" * 50)
+
+
 # ===== 指令变换器 =====
 
 
@@ -2307,6 +5077,394 @@ class InstructionTransformer:
         transformer.add_transform(RemoveNopTransform())
         transformer.add_transform(InsertAuxiliaryTransform(rng, probability))
         return transformer
+
+
+# ===== 扩展的指令表示层 =====
+
+
+# 指令便捷构造函数
+class Instr:
+    """
+    指令便捷构造函数
+
+    提供简洁的指令创建方法。
+    """
+    @staticmethod
+    def nop() -> Instruction:
+        return Instruction(OpCode.NOP)
+
+    @staticmethod
+    def declare(name: str) -> Instruction:
+        return Instruction(OpCode.DECLARE, [name])
+
+    @staticmethod
+    def init(name: str, value: str) -> Instruction:
+        return Instruction(OpCode.INIT, [name], result=value)
+
+    @staticmethod
+    def assign(name: str, value: str) -> Instruction:
+        return Instruction(OpCode.ASSIGN, [name], result=value)
+
+    @staticmethod
+    def call(func: str, *args: str) -> Instruction:
+        return Instruction(OpCode.CALL, [func] + list(args))
+
+    @staticmethod
+    def call_assign(result: str, expr: str) -> Instruction:
+        return Instruction(OpCode.CALL_ASSIGN, [expr], result=result)
+
+    @staticmethod
+    def ret() -> Instruction:
+        return Instruction(OpCode.RETURN)
+
+    @staticmethod
+    def ret_val(expr: str) -> Instruction:
+        return Instruction(OpCode.RETURN_VAL, [expr])
+
+    @staticmethod
+    def if_block(cond: str) -> Instruction:
+        return Instruction(OpCode.IF, [cond])
+
+    @staticmethod
+    def then() -> Instruction:
+        return Instruction(OpCode.THEN)
+
+    @staticmethod
+    def else_block() -> Instruction:
+        return Instruction(OpCode.ELSE)
+
+    @staticmethod
+    def while_block(cond: str) -> Instruction:
+        return Instruction(OpCode.WHILE, [cond])
+
+    @staticmethod
+    def for_block(expr: str) -> Instruction:
+        return Instruction(OpCode.FOR, [expr])
+
+    @staticmethod
+    def do_block() -> Instruction:
+        return Instruction(OpCode.DO)
+
+    @staticmethod
+    def end_block() -> Instruction:
+        return Instruction(OpCode.END)
+
+    @staticmethod
+    def repeat() -> Instruction:
+        return Instruction(OpCode.REPEAT)
+
+    @staticmethod
+    def until(cond: str) -> Instruction:
+        return Instruction(OpCode.UNTIL, [cond])
+
+    @staticmethod
+    def func_def(name: str, *params: str) -> Instruction:
+        return Instruction(OpCode.FUNC_DEF, [name] + list(params))
+
+    @staticmethod
+    def func_end() -> Instruction:
+        return Instruction(OpCode.FUNC_END)
+
+    @staticmethod
+    def expr(code: str) -> Instruction:
+        return Instruction(OpCode.EXPR, [code])
+
+    @staticmethod
+    def error(msg: str) -> Instruction:
+        return Instruction(OpCode.ERROR, [msg])
+
+    @staticmethod
+    def comment(text: str) -> Instruction:
+        return Instruction(OpCode.COMMENT, [text])
+
+    @staticmethod
+    def identity(name: str) -> Instruction:
+        return Instruction(OpCode.IDENTITY, [name])
+
+    @staticmethod
+    def dummy() -> Instruction:
+        return Instruction(OpCode.DUMMY)
+
+
+# Handler 映射系统
+class HandlerMap:
+    """
+    指令 Handler 映射表
+
+    使用字典将 OpCode 映射到处理函数，支持动态注册。
+    """
+    _handlers: dict[OpCode, callable] = {}
+    _generators: dict[OpCode, callable] = {}
+
+    @classmethod
+    def register_handler(cls, opcode: OpCode, handler: callable) -> None:
+        """注册指令处理器"""
+        cls._handlers[opcode] = handler
+
+    @classmethod
+    def register_generator(cls, opcode: OpCode, generator: callable) -> None:
+        """注册代码生成器"""
+        cls._generators[opcode] = generator
+
+    @classmethod
+    def get_handler(cls, opcode: OpCode) -> callable | None:
+        """获取处理器"""
+        return cls._handlers.get(opcode)
+
+    @classmethod
+    def get_generator(cls, opcode: OpCode) -> callable | None:
+        """获取生成器"""
+        return cls._generators.get(opcode)
+
+    @classmethod
+    def handle(cls, opcode: OpCode, instr: Instruction, context: 'SimpleContext') -> dict:
+        """分发处理"""
+        handler = cls.get_handler(opcode)
+        if handler:
+            return handler(instr, context)
+        return {}
+
+    @classmethod
+    def generate(cls, opcode: OpCode, instr: Instruction) -> str:
+        """分发生成"""
+        generator = cls.get_generator(opcode)
+        if generator:
+            return generator(instr)
+        return f"-- unsupported: {opcode.value}"
+
+
+# 注册默认 Generator
+def _register_default_generators() -> None:
+    """注册默认代码生成器"""
+    def gen_nop(i): return "do end"
+    def gen_comment(i): return f"-- {i.args[0] if i.args else ''}"
+    def gen_declare(i): return f"local {i.args[0] if i.args else '_'}"
+    def gen_init(i): return f"local {i.args[0] if i.args else '_'} = {i.result or ''}"
+    def gen_assign(i): return f"{i.args[0] if i.args else '_'} = {i.result or ''}"
+    def gen_call(i): return f"{i.args[0] if i.args else ''}({', '.join(str(a) for a in i.args[1:]) if len(i.args) > 1 else ''})"
+    def gen_call_assign(i): return f"{i.result or '_'} = {i.args[0] if i.args else ''}"
+    def gen_return(i): return "return"
+    def gen_return_val(i): return f"return {i.args[0] if i.args else ''}"
+    def gen_if(i): return f"if {i.args[0] if i.args else 'true'} then"
+    def gen_then(i): return "then"
+    def gen_else(i): return "else"
+    def gen_while(i): return f"while {i.args[0] if i.args else 'true'} do"
+    def gen_for(i): return i.args[0] if i.args else ""
+    def gen_do(i): return "do"
+    def gen_end(i): return "end"
+    def gen_repeat(i): return "repeat"
+    def gen_until(i): return f"until {i.args[0] if i.args else 'false'}"
+    def gen_func_def(i): return f"function {i.args[0] if i.args else 'fn'}({', '.join(str(a) for a in i.args[1:]) if len(i.args) > 1 else ''})"
+    def gen_func_end(i): return "end"
+    def gen_expr(i): return i.args[0] if i.args else ""
+    def gen_error(i): return f"error('{i.args[0] if i.args else ''}')"
+    def gen_identity(i): return f"local {i.args[0] if i.args else '_'} = {i.args[0] if i.args else '_'}"
+    def gen_dummy(i): return "do end"
+    def gen_label(i): return f"-- label: {i.args[0] if i.args else ''}"
+    def gen_table_new(i): return "{}"
+    def gen_break(i): return "break"
+    def gen_continue(i): return "continue"
+    def gen_assert(i): return f"assert({', '.join(str(a) for a in i.args) if i.args else ''})"
+
+    HandlerMap.register_generator(OpCode.NOP, gen_nop)
+    HandlerMap.register_generator(OpCode.COMMENT, gen_comment)
+    HandlerMap.register_generator(OpCode.DECLARE, gen_declare)
+    HandlerMap.register_generator(OpCode.INIT, gen_init)
+    HandlerMap.register_generator(OpCode.ASSIGN, gen_assign)
+    HandlerMap.register_generator(OpCode.CALL, gen_call)
+    HandlerMap.register_generator(OpCode.CALL_ASSIGN, gen_call_assign)
+    HandlerMap.register_generator(OpCode.RETURN, gen_return)
+    HandlerMap.register_generator(OpCode.RETURN_VAL, gen_return_val)
+    HandlerMap.register_generator(OpCode.IF, gen_if)
+    HandlerMap.register_generator(OpCode.THEN, gen_then)
+    HandlerMap.register_generator(OpCode.ELSE, gen_else)
+    HandlerMap.register_generator(OpCode.WHILE, gen_while)
+    HandlerMap.register_generator(OpCode.FOR, gen_for)
+    HandlerMap.register_generator(OpCode.DO, gen_do)
+    HandlerMap.register_generator(OpCode.END, gen_end)
+    HandlerMap.register_generator(OpCode.REPEAT, gen_repeat)
+    HandlerMap.register_generator(OpCode.UNTIL, gen_until)
+    HandlerMap.register_generator(OpCode.FUNC_DEF, gen_func_def)
+    HandlerMap.register_generator(OpCode.FUNC_END, gen_func_end)
+    HandlerMap.register_generator(OpCode.EXPR, gen_expr)
+    HandlerMap.register_generator(OpCode.ERROR, gen_error)
+    HandlerMap.register_generator(OpCode.IDENTITY, gen_identity)
+    HandlerMap.register_generator(OpCode.DUMMY, gen_dummy)
+    HandlerMap.register_generator(OpCode.LABEL, gen_label)
+    HandlerMap.register_generator(OpCode.TABLE_NEW, gen_table_new)
+    HandlerMap.register_generator(OpCode.BREAK, gen_break)
+    HandlerMap.register_generator(OpCode.CONTINUE, gen_continue)
+    HandlerMap.register_generator(OpCode.ASSERT, gen_assert)
+
+
+_register_default_generators()
+
+
+# 重构的 InstructionGenerator
+class InstructionGeneratorV2:
+    """
+    改进的指令生成器
+
+    使用 HandlerMap 进行代码生成，便于扩展。
+    """
+
+    def __init__(self, obfuscate_names: bool = False):
+        self.obfuscate_names = obfuscate_names
+
+    def generate_instruction(self, instr: Instruction) -> str:
+        """生成单条指令"""
+        return HandlerMap.generate(instr.op, instr)
+
+    def generate_block(self, block_instr: 'BlockInstructions') -> str:
+        """生成整个 block 的代码"""
+        lines = []
+        for instr in block_instr.instructions:
+            code = self.generate_instruction(instr)
+            if code:
+                lines.append(code)
+        return "\n".join(lines)
+
+    def generate_sequence(self, instructions: list[Instruction]) -> str:
+        """生成指令序列代码"""
+        lines = []
+        for instr in instructions:
+            code = self.generate_instruction(instr)
+            if code:
+                lines.append(code)
+        return "\n".join(lines)
+
+    def generate_function(self, instructions: list[Instruction], func_name: str) -> str:
+        """生成 Lua 函数"""
+        body = self.generate_sequence(instructions)
+        return f"local function {func_name}()\n    {body}\nend"
+
+
+# 扩展的指令变换
+class InsertAuxiliaryInstrTransform(InstructionTransform):
+    """
+    插入辅助指令变换（基于 Instr 类）
+
+    在指令序列中插入恒等变换或哑操作。
+    """
+    name = "insert_auxiliary_instr"
+
+    def __init__(self, rng: random.Random | None = None, probability: float = 0.2):
+        self.rng = rng
+        self.probability = probability
+        self._counter = 0
+
+    def transform(self, instructions: list[Instruction]) -> list[Instruction]:
+        result = []
+        for instr in instructions:
+            result.append(instr)
+            if self.rng and self.rng.random() < self.probability:
+                aux = self._create_auxiliary()
+                if aux:
+                    result.append(aux)
+        return result
+
+    def _create_auxiliary(self) -> Instruction | None:
+        """创建辅助指令"""
+        self._counter += 1
+        if not self.rng:
+            return Instr.nop()
+
+        aux_types = [OpCode.IDENTITY, OpCode.DUMMY, OpCode.NOP]
+        chosen = self.rng.choice(aux_types)
+
+        if chosen == OpCode.IDENTITY:
+            return Instr.identity(f"_t{self._counter}")
+        elif chosen == OpCode.DUMMY:
+            return Instr.dummy()
+        return Instr.nop()
+
+
+class InstructionSequenceBuilder:
+    """
+    指令序列构建器
+
+    提供链式 API 来构建指令序列。
+    """
+
+    def __init__(self):
+        self._instructions: list[Instruction] = []
+
+    def nop(self) -> 'InstructionSequenceBuilder':
+        self._instructions.append(Instr.nop())
+        return self
+
+    def declare(self, name: str) -> 'InstructionSequenceBuilder':
+        self._instructions.append(Instr.declare(name))
+        return self
+
+    def init(self, name: str, value: str) -> 'InstructionSequenceBuilder':
+        self._instructions.append(Instr.init(name, value))
+        return self
+
+    def assign(self, name: str, value: str) -> 'InstructionSequenceBuilder':
+        self._instructions.append(Instr.assign(name, value))
+        return self
+
+    def call(self, func: str, *args: str) -> 'InstructionSequenceBuilder':
+        self._instructions.append(Instr.call(func, *args))
+        return self
+
+    def ret(self) -> 'InstructionSequenceBuilder':
+        self._instructions.append(Instr.ret())
+        return self
+
+    def ret_val(self, expr: str) -> 'InstructionSequenceBuilder':
+        self._instructions.append(Instr.ret_val(expr))
+        return self
+
+    def if_block(self, cond: str) -> 'InstructionSequenceBuilder':
+        self._instructions.append(Instr.if_block(cond))
+        return self
+
+    def then(self) -> 'InstructionSequenceBuilder':
+        self._instructions.append(Instr.then())
+        return self
+
+    def else_block(self) -> 'InstructionSequenceBuilder':
+        self._instructions.append(Instr.else_block())
+        return self
+
+    def end(self) -> 'InstructionSequenceBuilder':
+        self._instructions.append(Instr.end_block())
+        return self
+
+    def while_block(self, cond: str) -> 'InstructionSequenceBuilder':
+        self._instructions.append(Instr.while_block(cond))
+        return self
+
+    def do(self) -> 'InstructionSequenceBuilder':
+        self._instructions.append(Instr.do_block())
+        return self
+
+    def func_def(self, name: str, *params: str) -> 'InstructionSequenceBuilder':
+        self._instructions.append(Instr.func_def(name, *params))
+        return self
+
+    def func_end(self) -> 'InstructionSequenceBuilder':
+        self._instructions.append(Instr.func_end())
+        return self
+
+    def expr(self, code: str) -> 'InstructionSequenceBuilder':
+        self._instructions.append(Instr.expr(code))
+        return self
+
+    def add(self, instr: Instruction) -> 'InstructionSequenceBuilder':
+        self._instructions.append(instr)
+        return self
+
+    def build(self) -> list[Instruction]:
+        """返回构建的指令列表"""
+        return self._instructions.copy()
+
+    def generate(self) -> str:
+        """生成 Lua 代码"""
+        gen = InstructionGeneratorV2()
+        return gen.generate_sequence(self._instructions)
 
 
 class BlockTypeLegacy(Enum):
@@ -3830,46 +6988,8 @@ class Tokenizer:
 
 
 def transform(source: str, watermark: str) -> str:
-    source = strip_leading_bom(source)
-    random.seed(int(time.time()))
-    rng = create_time_seeded_random()
-    profile = ProtectionProfile(rng, watermark)
-
-    randomize_algorithms(profile, rng)
-    shuffle_tables(profile, rng)
-
-    # 使用 Pipeline 架构
-    program_wrapper, constant_pool_code, dispatcher_code, _ = build_block_program_pipelined(
-        source,
-        profile,
-        rng,
-        randomize_order=False,
-        execution_mode="sequential",
-        use_constant_pool=True,
-        use_auxiliary_paths=False,
-        use_pipeline=True
-    )
-
-    api_plan = apply_api_indirection(tokenize(source), profile, rng)
-
-    return (
-        "--[[\n"
-        + "Lua Protector Watermark: "
-        + sanitize_comment(watermark)
-        + "\nGenerated by Python transformer\n"
-        + "Protection profile: pooled literals + randomized runtime + lexer-aware minification\n"
-        + "Multi-stage pipeline architecture\n"
-        + "Features: constant pool + block structure + instruction layer + auxiliary paths\n"
-        + "]]\n"
-        + build_runtime_prelude(profile)
-        + api_plan.prelude
-        + "\n"
-        + constant_pool_code
-        + program_wrapper
-        + "\n"
-        + dispatcher_code
-        + "\n"
-    )
+    """主入口函数，使用多阶段 Pipeline 架构"""
+    return transform_v2(source, watermark)
 
 def indent_lua(code: str, spaces: int) -> str:
     pad = " " * spaces
@@ -3884,6 +7004,279 @@ def tokenize(source: str) -> list[Token]:
     while tokenizer.has_more():
         tokens.append(tokenizer.next_token())
     return tokens
+
+
+# ===== 多阶段 Pipeline 代码生成架构 =====
+
+
+@dataclass
+class PipelineState:
+    """
+    Pipeline 状态容器
+
+    保存各阶段之间的数据流，确保类型安全和可追踪。
+    """
+    # 阶段 1: Tokenize 结果
+    source: str = ""
+    tokens: list[Token] = None
+
+    # 阶段 2: Block 构建结果
+    blocks: list[CodeBlock] = None
+    program: BlockProgram = None
+    block_map: dict[int, CodeBlock] = None
+
+    # 阶段 3: 指令转换结果
+    instructions: dict[int, BlockInstructions] = None
+    instruction_layer: InstructionLayer = None
+
+    # 阶段 4: Emit 结果
+    emitted_code: str = ""
+
+    # 元数据
+    metadata: dict = None
+
+    def __post_init__(self):
+        self.tokens = self.tokens or []
+        self.blocks = self.blocks or []
+        self.block_map = self.block_map or {}
+        self.instructions = self.instructions or {}
+        self.metadata = self.metadata or {}
+
+
+def build_blocks(
+    source: str,
+    profile: ProtectionProfile,
+    rng: random.Random,
+) -> PipelineState:
+    """
+    阶段 1: 构建 Block 结构
+
+    输入: source 代码字符串
+    输出: PipelineState，包含 tokens 和 blocks
+
+    职责:
+    - 分词 (tokenize)
+    - Token 重写 (rewrite)
+    - 拆分为 blocks
+    - 依赖分析和链接
+    - 构建 BlockProgram
+    """
+    state = PipelineState(source=source)
+
+    # 分词
+    tokenizer = Tokenizer(source)
+    state.tokens = []
+    while tokenizer.has_more():
+        state.tokens.append(tokenizer.next_token())
+
+    # Token 重写
+    rewrite_tokens(state.tokens, profile, rng)
+
+    # 拆分为 blocks
+    state.blocks = split_into_blocks(state.tokens, rng)
+
+    # 依赖分析
+    state.blocks = analyze_block_dependencies(state.blocks)
+
+    # 块链接
+    state.blocks = link_blocks_sequentially(state.blocks)
+
+    # 记录原始顺序
+    for block in state.blocks:
+        block.metadata["original_order"] = block.block_id
+
+    # 构建 block_map
+    state.block_map = {b.block_id: b for b in state.blocks}
+
+    # 构建 BlockProgram
+    state.program = BlockProgram(
+        blocks=state.blocks,
+        execution_order=list(range(1, len(state.blocks) + 1)),
+        block_map=state.block_map,
+        entry_block_id=1 if state.blocks else None,
+    )
+
+    return state
+
+
+def blocks_to_instructions(
+    state: PipelineState,
+    profile: ProtectionProfile,
+    rng: random.Random,
+) -> PipelineState:
+    """
+    阶段 2: 将 Blocks 转换为指令序列
+
+    输入: PipelineState (包含 blocks)
+    输出: PipelineState (包含 instructions)
+
+    职责:
+    - 应用常量池（可选）
+    - 应用 Block 扩展（可选）
+    - 将每个 Block 转换为指令列表
+    - 保存到 state.instructions
+    """
+    # 应用常量池
+    if profile.constant_pool_enabled:
+        state.blocks, pool, _ = apply_constant_pool_stage(
+            state.blocks, state.tokens, rng, use_pool=True
+        )
+        if pool:
+            state.metadata["constant_pool"] = pool
+
+    # 应用 Block 结构扩展
+    state.blocks = apply_block_structure_extension(state.blocks, rng)
+
+    # 转换 blocks 为指令
+    state.instruction_layer = InstructionLayer(rng)
+    state.instructions = state.instruction_layer.process_blocks(state.blocks)
+
+    return state
+
+
+def emit_lua_from_instructions(
+    state: PipelineState,
+    profile: ProtectionProfile,
+    rng: random.Random,
+) -> PipelineState:
+    """
+    阶段 3: 从指令生成 Lua 代码
+
+    输入: PipelineState (包含 instructions)
+    输出: PipelineState (包含 emitted_code)
+
+    职责:
+    - 为每个 block 生成 Lua 函数
+    - 生成 program 表结构
+    - 生成 dispatcher 代码
+    - 组装最终代码字符串
+    """
+    generator = BlockGenerator(profile, rng)
+
+    # 生成 program 表
+    program_lines: list[str] = []
+    program_lines.append("local program = {")
+
+    for idx, bid in enumerate(state.program.execution_order):
+        block = state.program.get_block(bid)
+        if block:
+            next_id = block.next_id
+            func_def = generator.generate_function(block, idx + 1, next_id)
+
+            # 生成分支表
+            branches_repr = "nil"
+            if block.has_branches():
+                branches_repr = "{"
+                branch_parts = []
+                for cond, target in block.branches.items():
+                    t = target if target is not None else "nil"
+                    branch_parts.append(f"{cond}={t}")
+                branches_repr += ", ".join(branch_parts) + "}"
+
+            # 生成辅助路径
+            aux_paths_repr = "nil"
+            if block.has_auxiliary_paths():
+                aux_paths_repr = "{"
+                path_parts = []
+                for aux_path in block.auxiliary_paths:
+                    target = aux_path.get("target", "nil")
+                    path_parts.append(
+                        f"{{id={aux_path['path_id']},type='{aux_path['path_type']}',target={target}}}"
+                    )
+                aux_paths_repr += ", ".join(path_parts) + "}"
+
+            program_lines.append(f"    [{idx + 1}] = {{")
+            program_lines.append(f"        fn = function()")
+            for fn_line in func_def.split("\n"):
+                if "local function" in fn_line:
+                    continue
+                if fn_line.strip():
+                    program_lines.append("            " + fn_line.strip())
+            program_lines.append(f"        end,")
+            program_lines.append(f"        type = '{block.block_type}',")
+            program_lines.append(f"        next_id = {next_id if next_id is not None else 'nil'},")
+            program_lines.append(f"        branches = {branches_repr},")
+            program_lines.append(f"        auxiliary_paths = {aux_paths_repr},")
+            program_lines.append(f"    }},")
+
+    program_lines.append("}")
+    state.emitted_code = "\n".join(program_lines)
+
+    return state
+
+
+def execute_pipeline(
+    source: str,
+    profile: ProtectionProfile,
+    rng: random.Random,
+) -> PipelineState:
+    """
+    执行完整 Pipeline
+
+    按顺序执行所有阶段，返回最终状态。
+    """
+    # 阶段 1: 构建 blocks
+    state = build_blocks(source, profile, rng)
+
+    # 阶段 2: 转换为指令
+    state = blocks_to_instructions(state, profile, rng)
+
+    # 阶段 3: 发射 Lua 代码
+    state = emit_lua_from_instructions(state, profile, rng)
+
+    return state
+
+
+def transform_v2(source: str, watermark: str) -> str:
+    """
+    新版本 transform 函数
+
+    使用清晰的多阶段 Pipeline 架构。
+    """
+    source = strip_leading_bom(source)
+    random.seed(int(time.time()))
+    rng = create_time_seeded_random()
+    profile = ProtectionProfile(rng, watermark)
+
+    randomize_algorithms(profile, rng)
+    shuffle_tables(profile, rng)
+
+    # 执行 Pipeline
+    state = execute_pipeline(source, profile, rng)
+
+    # 获取生成结果
+    program_wrapper = state.emitted_code
+    constant_pool_code = ""
+
+    if "constant_pool" in state.metadata:
+        pool = state.metadata["constant_pool"]
+        constant_pool_code = pool.generate_pool_table() + "\n"
+
+    # API 前导码
+    api_plan = apply_api_indirection(state.tokens, profile, rng)
+
+    # 生成 dispatcher
+    dispatcher = ExecutionDispatcher(profile, rng)
+    dispatcher_code = dispatcher.generate_dispatcher(state.program, mode="sequential")
+
+    # 组装最终代码
+    return (
+        "--[[\n"
+        + "Lua Protector Watermark: "
+        + sanitize_comment(watermark)
+        + "\nGenerated by Python transformer\n"
+        + "Pipeline architecture: tokenize -> blocks -> instructions -> emit\n"
+        + "Features: constant pool + block structure + instruction layer + dispatcher\n"
+        + "]]\n"
+        + build_runtime_prelude(profile)
+        + api_plan.prelude
+        + "\n"
+        + constant_pool_code
+        + program_wrapper
+        + "\n"
+        + dispatcher_code
+        + "\n"
+    )
 
 
 # ===== 多阶段代码生成架构：代码块拆分 =====
@@ -15877,6 +19270,2223 @@ def demo_dispatch_architectures(program: BlockProgram, rng: random.Random) -> di
     return results
 
 
+# ===== 指令到 Lua Table 的序列化 =====
 
 
+class InstructionSerializer:
+    """
+    指令序列化器
+
+    将 Instruction 列表转换为 Lua table 字符串，
+    支持跨语言验证和调试。
+    """
+
+    # Opcode 到数字 ID 的映射
+    OPCODE_TO_ID: dict[str, int] = {
+        "nop": 0,
+        "declare": 1,
+        "init": 2,
+        "assign": 3,
+        "call": 4,
+        "call_assign": 5,
+        "return": 6,
+        "return_val": 7,
+        "jump": 8,
+        "jump_if": 9,
+        "do": 10,
+        "end": 11,
+        "if": 12,
+        "then": 13,
+        "else": 14,
+        "elseif": 15,
+        "while": 16,
+        "for": 17,
+        "repeat": 18,
+        "until": 19,
+        "break": 20,
+        "continue": 21,
+        "func_def": 22,
+        "func_end": 23,
+        "expr": 24,
+        "error": 25,
+        "table_new": 26,
+        "table_set": 27,
+        "table_get": 28,
+        "label": 29,
+        "identity": 30,
+        "dummy": 31,
+        "comment": 32,
+        "assert": 33,
+    }
+
+    def __init__(self, compact: bool = True, include_metadata: bool = False):
+        """
+        Args:
+            compact: 是否使用紧凑格式（数字 opcode）
+            include_metadata: 是否包含元数据
+        """
+        self.compact = compact
+        self.include_metadata = include_metadata
+
+    def opcode_to_id(self, opcode: OpCode) -> int:
+        """将 OpCode 转换为数字 ID"""
+        return self.OPCODE_TO_ID.get(opcode.value, 99)
+
+    def serialize_value(self, value: Any) -> str:
+        """
+        序列化单个值
+
+        支持: int, float, str, bool, None, list
+        """
+        if value is None:
+            return "nil"
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, int):
+            return str(value)
+        if isinstance(value, float):
+            # Lua 兼容的浮点数格式
+            if value == float('inf'):
+                return "math.huge"
+            if value == float('-inf'):
+                return "-math.huge"
+            return str(value)
+        if isinstance(value, str):
+            # 简单标识符直接使用
+            if self._is_simple_identifier(value):
+                return value
+            # 否则转义为 Lua 字符串
+            return self._escape_string(value)
+        if isinstance(value, list):
+            # 嵌套数组
+            items = [self.serialize_value(v) for v in value]
+            return "{" + ", ".join(items) + "}"
+        # fallback
+        return f'"{value}"'
+
+    def _is_simple_identifier(self, s: str) -> bool:
+        """检查是否为简单的 Lua 标识符"""
+        if not s:
+            return False
+        if s[0].isdigit():
+            return False
+        # 允许字母、数字、下划线，不含空格和特殊字符
+        import re
+        return bool(re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', s))
+
+    def _escape_string(self, s: str) -> str:
+        """转义字符串为 Lua 格式"""
+        # 简单转义
+        s = s.replace('\\', '\\\\')
+        s = s.replace('"', '\\"')
+        s = s.replace('\n', '\\n')
+        s = s.replace('\r', '\\r')
+        s = s.replace('\t', '\\t')
+        return f'"{s}"'
+
+    def serialize_instruction(self, instr: Instruction) -> str:
+        """
+        序列化单条指令
+
+        格式: {op_id, arg1, arg2, ..., [result=]}
+        """
+        if self.compact:
+            # 紧凑格式: {op_id, arg1, arg2, ...}
+            op_id = self.opcode_to_id(instr.op)
+            items = [str(op_id)]
+            for arg in instr.args:
+                items.append(self.serialize_value(arg))
+            if instr.result:
+                items.append(self.serialize_value(instr.result))
+            return "{" + ", ".join(items) + "}"
+        else:
+            # 带名称格式: {op = "name", args = {...}, result = x}
+            op_name = f'"{instr.op.value}"'
+            args_str = "{" + ", ".join(self.serialize_value(a) for a in instr.args) + "}"
+            result_str = f", result = {self.serialize_value(instr.result)}" if instr.result else ""
+            meta_str = ""
+            if self.include_metadata and instr.metadata:
+                meta_items = [f'"{k}" = {self.serialize_value(v)}' for k, v in instr.metadata.items()]
+                meta_str = ", metadata = {" + ", ".join(meta_items) + "}"
+            return "{" + op_name + ", args = " + args_str + result_str + meta_str + "}"
+
+    def serialize(
+        self,
+        instructions: list[Instruction],
+        var_name: str = "code"
+    ) -> str:
+        """
+        序列化指令列表为 Lua table 字符串
+
+        Args:
+            instructions: 指令列表
+            var_name: Lua 变量名
+
+        Returns:
+            Lua table 代码字符串
+        """
+        lines = [f"local {var_name} = {{"] if var_name else ["{"]
+
+        for i, instr in enumerate(instructions):
+            # 添加可选的行号注释
+            if self.include_metadata and instr.metadata:
+                line_no = instr.metadata.get("line")
+                comment = f"  -- line {line_no}" if line_no else ""
+            else:
+                comment = ""
+            lines.append(f"    {self.serialize_instruction(instr)},{comment}")
+
+        lines.append("}")
+        return "\n".join(lines)
+
+    def serialize_with_meta(
+        self,
+        instructions: list[Instruction],
+        var_name: str = "code"
+    ) -> str:
+        """序列化并包含额外元数据"""
+        self.include_metadata = True
+        return self.serialize(instructions, var_name)
+
+
+def instructions_to_lua_table(
+    instructions: list[Instruction],
+    var_name: str = "code",
+    compact: bool = True,
+    include_opcode_map: bool = False
+) -> str:
+    """
+    将指令列表转换为 Lua table 字符串
+
+    Args:
+        instructions: 指令列表
+        var_name: Lua 变量名
+        compact: 是否使用紧凑格式
+        include_opcode_map: 是否包含 opcode 映射表
+
+    Returns:
+        Lua table 代码字符串
+
+    Example output:
+        local code = {
+            {2, "x", 10},      -- INIT: local x = 10
+            {3, "x", "x+1"},   -- ASSIGN: x = x + 1
+            {7, "x"},          -- RETURN_VAL: return x
+        }
+    """
+    serializer = InstructionSerializer(compact=compact, include_metadata=False)
+    lua_code = serializer.serialize(instructions, var_name)
+
+    if include_opcode_map:
+        meta_lines = [lua_code, ""]
+        meta_lines.append("local _opcodes = {")
+        for name, id_val in InstructionSerializer.OPCODE_TO_ID.items():
+            meta_lines.append(f'    ["{name}"] = {id_val},')
+        meta_lines.append("}")
+        return "\n".join(meta_lines)
+
+    return lua_code
+
+
+def instructions_to_lua_snippet(
+    instructions: list[Instruction],
+    var_name: str = "code"
+) -> str:
+    """
+    将指令列表转换为 Lua snippet（不包含 local 声明）
+
+    Args:
+        instructions: 指令列表
+        var_name: 变量名（用于生成 _code = {...} 格式）
+
+    Returns:
+        Lua snippet 字符串
+    """
+    serializer = InstructionSerializer(compact=True)
+    return serializer.serialize(instructions, var_name)
+
+
+class LuaTableEmitter:
+    """
+    Lua Table 发射器
+
+    在代码生成流程中集成指令序列化，
+    支持将序列化结果嵌入到最终 Lua 代码中。
+    """
+
+    def __init__(
+        self,
+        serializer: InstructionSerializer | None = None,
+        embed_in_code: bool = True
+    ):
+        self.serializer = serializer or InstructionSerializer()
+        self.embed_in_code = embed_in_code
+        self._serialized_cache: dict[int, str] = {}
+
+    def emit_instruction_table(
+        self,
+        instructions: list[Instruction],
+        var_name: str = "_instr_table"
+    ) -> str:
+        """
+        发射指令表
+
+        Returns:
+            Lua table 代码块
+        """
+        return self.serializer.serialize(instructions, var_name)
+
+    def emit_with_loader(
+        self,
+        instructions: list[Instruction],
+        func_name: str = "_load_instructions"
+    ) -> str:
+        """
+        发射带加载函数的指令表
+
+        Returns:
+            包含加载函数的完整 Lua 代码块
+        """
+        lines = []
+        lines.append(self.emit_instruction_table(instructions))
+        lines.append("")
+        lines.append(f"local function {func_name}()")
+        lines.append(f"    return _instr_table")
+        lines.append("end")
+        return "\n".join(lines)
+
+    def emit_debug_info(
+        self,
+        instructions: list[Instruction]
+    ) -> str:
+        """
+        发射带调试信息的指令表
+
+        包含 opcode 映射和行号信息
+        """
+        self.serializer.include_metadata = True
+        lines = []
+        lines.append("-- Instruction Table (Debug Mode)")
+        lines.append(self.serializer.serialize(instructions, "_debug_code"))
+        lines.append("")
+        lines.append("local _opcodes = {")
+        for name, id_val in InstructionSerializer.OPCODE_TO_ID.items():
+            lines.append(f'    ["{name}"] = {id_val},')
+        lines.append("}")
+        lines.append("")
+        lines.append("local function _decode(instr)")
+        lines.append("    local op_id = instr[1]")
+        lines.append("    for name, id in pairs(_opcodes) do")
+        lines.append("        if id == op_id then")
+        lines.append('            return name, instr[2], instr[3], instr[4]')
+        lines.append("        end")
+        lines.append("    end")
+        lines.append('    return "unknown"')
+        lines.append("end")
+        self.serializer.include_metadata = False
+        return "\n".join(lines)
+
+    def inject_into_template(
+        self,
+        instructions: list[Instruction],
+        template: str,
+        marker: str = "-- INSTRUCTION_TABLE"
+    ) -> str:
+        """
+        将指令表注入到代码模板中
+
+        Args:
+            instructions: 指令列表
+            template: 代码模板字符串
+            marker: 注入标记
+
+        Returns:
+            替换后的模板代码
+        """
+        table_code = self.emit_instruction_table(instructions)
+        if marker in template:
+            return template.replace(marker, table_code)
+        # 如果找不到 marker，追加到开头
+        return table_code + "\n\n" + template
+
+
+def create_table_emitter(
+    compact: bool = True,
+    include_debug: bool = False
+) -> LuaTableEmitter:
+    """创建 Lua Table 发射器"""
+    serializer = InstructionSerializer(
+        compact=compact,
+        include_metadata=include_debug
+    )
+    return LuaTableEmitter(serializer=serializer)
+
+
+# 便捷函数
+def emit_lua_table(
+    instructions: list[Instruction],
+    var_name: str = "code",
+    compact: bool = True
+) -> str:
+    """便捷函数：发射 Lua table"""
+    serializer = InstructionSerializer(compact=compact)
+    return serializer.serialize(instructions, var_name)
+
+
+def emit_lua_table_with_map(
+    instructions: list[Instruction],
+    var_name: str = "code"
+) -> str:
+    """便捷函数：发射带 opcode 映射的 Lua table"""
+    return instructions_to_lua_table(
+        instructions,
+        var_name=var_name,
+        compact=True,
+        include_opcode_map=True
+    )
+
+
+# 示例用法
+def demo_instruction_serialization():
+    """演示指令序列化"""
+    print("=" * 50)
+    print("Instruction Serialization Demo")
+    print("=" * 50)
+
+    # 创建示例指令
+    instructions = [
+        Instruction(OpCode.INIT, ["x"], None, "10"),
+        Instruction(OpCode.INIT, ["y"], None, "20"),
+        Instruction(OpCode.ASSIGN, ["sum"], None, "x + y"),
+        Instruction(OpCode.RETURN_VAL, ["sum"]),
+    ]
+
+    print("\n[1] Compact format:")
+    print(instructions_to_lua_table(instructions))
+
+    print("\n[2] With opcode map:")
+    print(instructions_to_lua_table(instructions, include_opcode_map=True))
+
+    print("\n[3] Using LuaTableEmitter:")
+    emitter = create_table_emitter(compact=True, include_debug=True)
+    print(emitter.emit_debug_info(instructions))
+
+    # 测试 ControlFlowIR 序列化
+    print("\n[4] Testing ControlFlowIR serialization:")
+    from dataclasses import dataclass, field
+
+    @dataclass
+    class SimpleIR:
+        blocks: dict[int, list[Instruction]] = field(default_factory=dict)
+
+    ir = SimpleIR()
+    ir.blocks[0] = [
+        Instruction(OpCode.DECLARE, ["i"]),
+        Instruction(OpCode.INIT, ["i"], None, "0"),
+    ]
+    ir.blocks[1] = [
+        Instruction(OpCode.ASSIGN, ["i"], None, "i + 1"),
+    ]
+
+    all_instrs = []
+    for block_id in sorted(ir.blocks.keys()):
+        all_instrs.extend(ir.blocks[block_id])
+
+    print(instructions_to_lua_table(all_instrs, var_name="_ir_code"))
+
+    print("\n" + "=" * 50)
+    print("Demo Complete")
+    print("=" * 50)
+
+
+if __name__ == "__main__":
+    demo_instruction_serialization()
+
+
+# ===== Lua 指令解释器生成器 =====
+
+
+class LuaInterpreterGenerator:
+    """
+    Lua 指令解释器生成器
+
+    生成可以在 Lua 端执行的指令解释器代码，
+    用于验证 instruction 序列的执行逻辑。
+    """
+
+    def __init__(
+        self,
+        include_debug: bool = False,
+        pc_starts_at: int = 1  # Lua 数组从 1 开始
+    ):
+        self.include_debug = include_debug
+        self.pc_starts_at = pc_starts_at
+        self._opcodes = InstructionSerializer.OPCODE_TO_ID
+
+    def generate_context_table(self, var_name: str = "state") -> str:
+        """
+        生成执行上下文表
+
+        用于存储局部变量、全局变量、返回值等
+        """
+        lines = []
+        lines.append(f"local {var_name} = {{")
+        lines.append("    -- 执行上下文")
+        lines.append("    locals = {},     -- 局部变量")
+        lines.append("    globals = {},    -- 全局变量")
+        lines.append("    stack = {},      -- 值栈（用于函数调用）")
+        lines.append("    pc = 1,         -- 程序计数器")
+        lines.append("    halted = false,  -- 执行结束标志")
+        lines.append("    return_value = nil,")
+        lines.append("}")
+        lines.append("")
+        lines.append(f"local function {var_name}_get(varname)")
+        lines.append(f"    if {var_name}.locals[varname] ~= nil then")
+        lines.append(f"        return {var_name}.locals[varname]")
+        lines.append("    end")
+        lines.append(f"    if {var_name}.globals[varname] ~= nil then")
+        lines.append(f"        return {var_name}.globals[varname]")
+        lines.append("    end")
+        lines.append("    return nil")
+        lines.append("end")
+        lines.append("")
+        lines.append(f"local function {var_name}_set(varname, value)")
+        lines.append(f"    {var_name}.locals[varname] = value")
+        lines.append("end")
+        lines.append("")
+        lines.append(f"local function {var_name}_push(value)")
+        lines.append(f"    table.insert({var_name}.stack, value)")
+        lines.append("end")
+        lines.append("")
+        lines.append(f"local function {var_name}_pop()")
+        lines.append(f"    return table.remove({var_name}.stack)")
+        lines.append("end")
+        return "\n".join(lines)
+
+    def _generate_value_evaluation(self, value: Any) -> str:
+        """生成值评估代码"""
+        if value is None:
+            return "nil"
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (int, float)):
+            return str(value)
+        if isinstance(value, str):
+            # 检查是否为简单标识符
+            if value.replace("_", "").replace(" ", "").isalnum():
+                # 简单标识符或表达式 - 直接使用
+                return value
+            # 字符串字面量
+            escaped = value.replace('\\', '\\\\').replace('"', '\\"')
+            return f'"{escaped}"'
+        return f'"{value}"'
+
+    def generate_handlers(self) -> str:
+        """
+        生成指令处理器表
+
+        每个 opcode 对应一个 handler 函数
+        """
+        lines = []
+        lines.append("local handlers = {")
+        lines.append("    -- opcode: 0 (nop) - 空操作")
+        lines.append("    [0] = function(instr, state)")
+        lines.append("        return state.pc + 1")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- opcode: 1 (declare) - 声明变量")
+        lines.append("    [1] = function(instr, state)")
+        lines.append("        local varname = instr[2]")
+        lines.append("        state.locals[varname] = nil")
+        lines.append("        return state.pc + 1")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- opcode: 2 (init) - 初始化变量")
+        lines.append("    [2] = function(instr, state)")
+        lines.append("        local varname = instr[2]")
+        lines.append("        local value = instr[3]")
+        lines.append("        if type(value) == 'string' and value:match('^[a-zA-Z_]') then")
+        lines.append("            value = state_get(value) or 0")
+        lines.append("        end")
+        lines.append("        state_set(varname, value)")
+        lines.append("        return state.pc + 1")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- opcode: 3 (assign) - 赋值")
+        lines.append("    [3] = function(instr, state)")
+        lines.append("        local varname = instr[2]")
+        lines.append("        local expr = instr[3]")
+        lines.append("        -- 简单表达式求值")
+        lines.append("        if type(expr) == 'string' then")
+        lines.append("            -- 检查是否为简单变量引用")
+        lines.append("            local var_value = state_get(expr)")
+        lines.append("            if var_value ~= nil then")
+        lines.append("                state_set(varname, var_value)")
+        lines.append("            else")
+        lines.append("                -- 尝试算术表达式")
+        lines.append("                local x = expr:match('^(%w+)%s*%+')")
+        lines.append("                if x then")
+        lines.append("                    local rest = expr:match('^%w+%s*%+(.+)$')")
+        lines.append("                    if rest then")
+        lines.append("                        local v1 = state_get(x) or 0")
+        lines.append("                        state_set(varname, v1 + tonumber(rest))")
+        lines.append("                    end")
+        lines.append("                else")
+        lines.append("                    state_set(varname, tonumber(expr) or expr)")
+        lines.append("                end")
+        lines.append("            end")
+        lines.append("        else")
+        lines.append("            state_set(varname, expr)")
+        lines.append("        end")
+        lines.append("        return state.pc + 1")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- opcode: 4 (call) - 函数调用")
+        lines.append("    [4] = function(instr, state)")
+        lines.append("        local funcname = instr[2]")
+        lines.append("        local func = state_get(funcname)")
+        lines.append("        if type(func) == 'function' then")
+        lines.append("            local args = {}")
+        lines.append("            for i = 4, #instr do")
+        lines.append("                table.insert(args, instr[i])")
+        lines.append("            end")
+        lines.append("            local ok, result = pcall(func, unpack(args))")
+        lines.append("            if ok then state_push(result) end")
+        lines.append("        end")
+        lines.append("        return state.pc + 1")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- opcode: 5 (call_assign) - 调用赋值")
+        lines.append("    [5] = function(instr, state)")
+        lines.append("        local varname = instr[2]")
+        lines.append("        local result = state_pop()")
+        lines.append("        state_set(varname, result)")
+        lines.append("        return state.pc + 1")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- opcode: 6 (return) - 返回空")
+        lines.append("    [6] = function(instr, state)")
+        lines.append("        state.halted = true")
+        lines.append("        return nil")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- opcode: 7 (return_val) - 返回值")
+        lines.append("    [7] = function(instr, state)")
+        lines.append("        local val = instr[2]")
+        lines.append("        if type(val) == 'string' then")
+        lines.append("            val = state_get(val) or val")
+        lines.append("        end")
+        lines.append("        state.return_value = val")
+        lines.append("        state.halted = true")
+        lines.append("        return nil")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- opcode: 8 (jump) - 无条件跳转")
+        lines.append("    [8] = function(instr, state)")
+        lines.append("        local target = instr[2]")
+        lines.append("        if type(target) == 'number' then")
+        lines.append("            return target")
+        lines.append("        end")
+        lines.append("        return state.pc + 1")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- opcode: 9 (jump_if) - 条件跳转")
+        lines.append("    [9] = function(instr, state)")
+        lines.append("        local cond_expr = instr[2]")
+        lines.append("        local target = instr[3]")
+        lines.append("        -- 简单条件判断")
+        lines.append("        local cond_value = cond_expr")
+        lines.append("        if type(cond_expr) == 'string' then")
+        lines.append("            cond_value = state_get(cond_expr)")
+        lines.append("            if cond_value == nil then")
+        lines.append("                -- 尝试解析表达式")
+        lines.append("                local var, op, num = cond_expr:match('^(%w+)%s*(<[%=]?)%s*(%d+)$')")
+        lines.append("                if var and op then")
+        lines.append("                    local v = state_get(var) or 0")
+        lines.append("                    local n = tonumber(num)")
+        lines.append("                    if op == '<' then cond_value = v < n")
+        lines.append("                    elseif op == '<=' then cond_value = v <= n")
+        lines.append("                    elseif op == '=' then cond_value = v == n")
+        lines.append("                    end")
+        lines.append("                end")
+        lines.append("            end")
+        lines.append("        end")
+        lines.append("        if cond_value then")
+        lines.append("            return target")
+        lines.append("        end")
+        lines.append("        return state.pc + 1")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- opcode: 16 (while) - while 循环开始")
+        lines.append("    [16] = function(instr, state)")
+        lines.append("        return state.pc + 1")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- opcode: 19 (until) - until 条件")
+        lines.append("    [19] = function(instr, state)")
+        lines.append("        local cond_expr = instr[2]")
+        lines.append("        local cond_value = state_get(cond_expr)")
+        lines.append("        if cond_value then")
+        lines.append("            return state.pc + 1  -- 条件为真，退出循环")
+        lines.append("        end")
+        lines.append("        return instr[3] or (state.pc - 1)  -- 条件为假，跳回")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- opcode: 20 (break) - 跳出循环")
+        lines.append("    [20] = function(instr, state)")
+        lines.append("        return instr[2] or nil  -- 跳到指定位置")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- opcode: 24 (expr) - 表达式语句")
+        lines.append("    [24] = function(instr, state)")
+        lines.append("        -- 执行表达式，丢弃结果")
+        lines.append("        return state.pc + 1")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- opcode: 26 (table_new) - 创建表")
+        lines.append("    [26] = function(instr, state)")
+        lines.append("        state_push({})")
+        lines.append("        return state.pc + 1")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- opcode: 27 (table_set) - 设置表元素")
+        lines.append("    [27] = function(instr, state)")
+        lines.append("        local key = instr[2]")
+        lines.append("        local value = instr[3]")
+        lines.append("        local tbl = state_pop()")
+        lines.append("        if tbl and type(tbl) == 'table' then")
+        lines.append("            tbl[key] = value")
+        lines.append("        end")
+        lines.append("        state_push(tbl)")
+        lines.append("        return state.pc + 1")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- opcode: 29 (label) - 标签")
+        lines.append("    [29] = function(instr, state)")
+        lines.append("        return state.pc + 1")
+        lines.append("    end,")
+        lines.append("")
+        lines.append("    -- 默认处理器")
+        lines.append("    default = function(instr, state)")
+        lines.append("        if _DEBUG then")
+        lines.append("            print('Unknown opcode: ' .. tostring(instr[1]))")
+        lines.append("        end")
+        lines.append("        return state.pc + 1")
+        lines.append("    end,")
+        lines.append("}")
+        return "\n".join(lines)
+
+    def generate_executor(
+        self,
+        code_var: str = "code",
+        state_var: str = "state",
+        result_var: str = "_result"
+    ) -> str:
+        """
+        生成执行器主循环
+
+        核心执行逻辑：
+        1. 从 code[pc] 读取指令
+        2. 根据 opcode 分发到 handler
+        3. handler 返回下一个 pc
+        """
+        lines = []
+        lines.append("local function execute()")
+        lines.append("    local pc = " + str(self.pc_starts_at))
+        lines.append(f"    local {state_var}_pc_backup = 0")
+        lines.append("")
+        lines.append("    while pc do")
+        lines.append(f"        {state_var}_pc_backup = pc")
+        lines.append(f"        local instr = {code_var}[pc]")
+        lines.append("")
+        lines.append("        if not instr then")
+        lines.append("            break  -- 无效指令")
+        lines.append("        end")
+        lines.append("")
+        lines.append("        local op = instr[1]")
+        lines.append("        local handler = handlers[op] or handlers.default")
+        lines.append(f"        state.pc = pc")
+        lines.append(f"        pc = handler(instr, {state_var})")
+        lines.append("")
+        lines.append(f"        if {state_var}.halted then")
+        lines.append("            break")
+        lines.append("        end")
+        lines.append("")
+        lines.append("        -- 安全检查，防止无限循环")
+        lines.append("        if pc == " + str(self.pc_starts_at) + " then")
+        lines.append("            break  -- 回到开头，可能有问题")
+        lines.append("        end")
+        lines.append("    end")
+        lines.append("")
+        lines.append(f"    return {state_var}.return_value")
+        lines.append("end")
+        lines.append("")
+        lines.append(f"local {result_var} = execute()")
+        lines.append(f'if _DEBUG then print("Result: " .. tostring({result_var})) end')
+        return "\n".join(lines)
+
+    def generate_debug_info(self) -> str:
+        """生成调试信息函数"""
+        lines = []
+        lines.append("-- 调试函数")
+        lines.append("local function dump_state(state)")
+        lines.append("    print('--- State ---')")
+        lines.append("    print('PC: ' .. tostring(state.pc))")
+        lines.append("    print('Locals:')")
+        lines.append("    for k, v in pairs(state.locals) do")
+        lines.append("        print('  ' .. k .. ' = ' .. tostring(v))")
+        lines.append("    end")
+        lines.append("    print('Stack: ' .. #state.stack .. ' items')")
+        lines.append("end")
+        lines.append("")
+        lines.append("local function dump_instr(instr)")
+        lines.append("    local op_names = {")
+        for name, id_val in sorted(self._opcodes.items(), key=lambda x: x[1]):
+            lines.append(f'        [{id_val}] = "{name}",')
+        lines.append("    }")
+        lines.append("    local op_name = op_names[instr[1]] or 'unknown'")
+        lines.append("    local args = {}")
+        lines.append("    for i = 2, #instr do")
+        lines.append("        table.insert(args, tostring(instr[i]))")
+        lines.append("    end")
+        lines.append('    return string.format("[%s] %s", op_name, table.concat(args, ", "))')
+        lines.append("end")
+        lines.append("")
+        lines.append("local function step_execute(code, state)")
+        lines.append("    local pc = 1")
+        lines.append("    while pc and not state.halted do")
+        lines.append("        local instr = code[pc]")
+        lines.append("        print('PC=' .. pc .. ': ' .. dump_instr(instr))")
+        lines.append("        local op = instr[1]")
+        lines.append("        local handler = handlers[op] or handlers.default")
+        lines.append("        state.pc = pc")
+        lines.append("        pc = handler(instr, state)")
+        lines.append("        dump_state(state)")
+        lines.append("        print('---')")
+        lines.append("    end")
+        lines.append("    return state.return_value")
+        lines.append("end")
+        return "\n".join(lines)
+
+    def generate(
+        self,
+        instructions: list[Instruction] | None = None,
+        include_code: bool = True,
+        include_debug: bool = False
+    ) -> str:
+        """
+        生成完整的 Lua 解释器代码
+
+        Args:
+            instructions: 指令列表（可选）
+            include_code: 是否包含指令数据表
+            include_debug: 是否包含调试信息
+
+        Returns:
+            完整的 Lua 代码字符串
+        """
+        lines = []
+
+        # Header
+        lines.append("-- =========================================")
+        lines.append("-- Lua Instruction Interpreter")
+        lines.append("-- Generated by lua_obfuscator")
+        lines.append("-- =========================================")
+        lines.append("")
+
+        # 调试开关
+        lines.append("local _DEBUG = false")
+        lines.append("")
+
+        # 快捷函数别名
+        lines.append("local state_get = state_get")
+        lines.append("local state_set = state_set")
+        lines.append("local state_push = state_push")
+        lines.append("local state_pop = state_pop")
+        lines.append("")
+
+        # 处理器表
+        lines.append("-- Instruction Handlers")
+        lines.append(self.generate_handlers())
+        lines.append("")
+
+        # 调试函数
+        if include_debug:
+            lines.append(self.generate_debug_info())
+            lines.append("")
+
+        # 指令数据
+        if include_code and instructions:
+            serializer = InstructionSerializer(compact=True)
+            lines.append("-- Instruction Code")
+            lines.append(serializer.serialize(instructions, "code"))
+            lines.append("")
+
+            # 执行上下文
+            lines.append(self.generate_context_table("state"))
+            lines.append("")
+
+            # 执行器
+            lines.append("-- Executor")
+            lines.append(self.generate_executor("code", "state", "_result"))
+        else:
+            # 仅生成骨架
+            lines.append("-- Instruction Code (placeholder)")
+            lines.append("-- local code = {...}")
+            lines.append("")
+            lines.append("-- Execution Context")
+            lines.append(self.generate_context_table("state"))
+            lines.append("")
+            lines.append("-- Executor (placeholder)")
+            lines.append("-- execute()")
+
+        return "\n".join(lines)
+
+
+def generate_lua_interpreter(
+    instructions: list[Instruction] | None = None,
+    include_code: bool = True,
+    include_debug: bool = False
+) -> str:
+    """
+    便捷函数：生成 Lua 解释器代码
+
+    Args:
+        instructions: 指令列表
+        include_code: 是否包含指令数据
+        include_debug: 是否包含调试信息
+
+    Returns:
+        Lua 代码字符串
+    """
+    generator = LuaInterpreterGenerator(include_debug=include_debug)
+    return generator.generate(instructions, include_code=include_code)
+
+
+class LuaInterpreterEmitter:
+    """
+    Lua 解释器发射器
+
+    用于在代码生成流程中集成 Lua 解释器
+    """
+
+    def __init__(
+        self,
+        generator: LuaInterpreterGenerator | None = None
+    ):
+        self.generator = generator or LuaInterpreterGenerator()
+
+    def emit_interpreter(
+        self,
+        instructions: list[Instruction],
+        standalone: bool = True
+    ) -> str:
+        """发射解释器代码"""
+        return self.generator.generate(
+            instructions=instructions,
+            include_code=standalone,
+            include_debug=True
+        )
+
+    def emit_inline_interpreter(
+        self,
+        instructions: list[Instruction],
+        template: str,
+        marker: str = "-- INTERPRETER"
+    ) -> str:
+        """将解释器注入到模板中"""
+        interp_code = self.emit_interpreter(instructions, standalone=False)
+        if marker in template:
+            return template.replace(marker, interp_code)
+        return interp_code + "\n\n" + template
+
+    def emit_with_validation(
+        self,
+        instructions: list[Instruction]
+    ) -> str:
+        """发射带验证逻辑的解释器"""
+        interp = self.generator.generate(instructions, include_code=True)
+        validation = """
+-- Validation: Compare with expected result
+local _EXPECTED = nil  -- Set expected value here
+if _EXPECTED and _result ~= _EXPECTED then
+    error(string.format("Validation failed: expected %s, got %s",
+        tostring(_EXPECTED), tostring(_result)))
+end
+"""
+        return interp + "\n" + validation
+
+
+def demo_lua_interpreter():
+    """演示 Lua 解释器生成"""
+    print("=" * 60)
+    print("Lua Interpreter Generation Demo")
+    print("=" * 60)
+
+    # 示例指令序列
+    instructions = [
+        Instruction(OpCode.INIT, ["x"], None, "10"),
+        Instruction(OpCode.INIT, ["y"], None, "20"),
+        Instruction(OpCode.INIT, ["sum"], None, "0"),
+        Instruction(OpCode.ASSIGN, ["sum"], None, "x + y"),
+        Instruction(OpCode.RETURN_VAL, ["sum"]),
+    ]
+
+    print("\n[1] Generated Lua Interpreter (standalone):")
+    print("-" * 40)
+    lua_code = generate_lua_interpreter(instructions, include_debug=True)
+    print(lua_code)
+
+    print("\n" + "=" * 60)
+    print("Demo Complete")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    demo_lua_interpreter()
+
+
+# ===== Python Handler 到 Lua Handler 的转换 =====
+
+
+class LuaHandlerGenerator:
+    """
+    Lua Handler 生成器
+
+    将 Python 指令处理器转换为 Lua 函数，
+    实现跨语言执行逻辑迁移。
+    """
+
+    # Opcode 到 Lua handler 模板的映射
+    HANDLER_TEMPLATES: dict[int, dict[str, str]] = {
+        # opcode: (description, arg_pattern, lua_code_template)
+        0: {  # nop
+            "desc": "空操作",
+            "template": """
+    [0] = function(instr, state, pc)
+        return pc + 1
+    end"""
+        },
+        1: {  # declare
+            "desc": "声明变量",
+            "template": """
+    [1] = function(instr, state, pc)
+        local varname = instr[2]
+        state.locals[varname] = nil
+        return pc + 1
+    end"""
+        },
+        2: {  # init
+            "desc": "初始化变量",
+            "template": """
+    [2] = function(instr, state, pc)
+        local varname = instr[2]
+        local value = instr[3]
+        if type(value) == 'string' and value:match('^[a-zA-Z_]') then
+            value = _get(state, value)
+        end
+        _set(state, varname, value)
+        return pc + 1
+    end"""
+        },
+        3: {  # assign
+            "desc": "赋值",
+            "template": """
+    [3] = function(instr, state, pc)
+        local varname = instr[2]
+        local expr = instr[3]
+        local value = _eval_expr(state, expr)
+        _set(state, varname, value)
+        return pc + 1
+    end"""
+        },
+        4: {  # call
+            "desc": "函数调用",
+            "template": """
+    [4] = function(instr, state, pc)
+        local funcname = instr[2]
+        local func = _get(state, funcname)
+        if type(func) == 'function' then
+            local args = {}
+            for i = 4, #instr do
+                table.insert(args, _eval_literal(instr[i]))
+            end
+            local ok, result = pcall(func, unpack(args))
+            if ok then _push(state, result) end
+        end
+        return pc + 1
+    end"""
+        },
+        5: {  # call_assign
+            "desc": "调用赋值",
+            "template": """
+    [5] = function(instr, state, pc)
+        local varname = instr[2]
+        local result = _pop(state)
+        _set(state, varname, result)
+        return pc + 1
+    end"""
+        },
+        6: {  # return
+            "desc": "返回空",
+            "template": """
+    [6] = function(instr, state, pc)
+        state.halted = true
+        return nil
+    end"""
+        },
+        7: {  # return_val
+            "desc": "返回值",
+            "template": """
+    [7] = function(instr, state, pc)
+        local val = instr[2]
+        val = _eval_literal(val)
+        state.return_value = val
+        state.halted = true
+        return nil
+    end"""
+        },
+        8: {  # jump
+            "desc": "无条件跳转",
+            "template": """
+    [8] = function(instr, state, pc)
+        local target = instr[2]
+        if type(target) == 'number' then
+            return target
+        end
+        return pc + 1
+    end"""
+        },
+        9: {  # jump_if
+            "desc": "条件跳转",
+            "template": """
+    [9] = function(instr, state, pc)
+        local cond_expr = instr[2]
+        local target = instr[3]
+        local cond_value = _eval_condition(state, cond_expr)
+        if cond_value then
+            return target
+        end
+        return pc + 1
+    end"""
+        },
+        10: {  # do
+            "desc": "代码块开始",
+            "template": """
+    [10] = function(instr, state, pc)
+        return pc + 1
+    end"""
+        },
+        11: {  # end
+            "desc": "代码块结束",
+            "template": """
+    [11] = function(instr, state, pc)
+        return pc + 1
+    end"""
+        },
+        12: {  # if
+            "desc": "if 条件",
+            "template": """
+    [12] = function(instr, state, pc)
+        local cond = _eval_condition(state, instr[2])
+        _set(state, '_cond', cond)
+        return pc + 1
+    end"""
+        },
+        16: {  # while
+            "desc": "while 循环",
+            "template": """
+    [16] = function(instr, state, pc)
+        local cond = _eval_condition(state, instr[2])
+        _set(state, '_loop_cond', cond)
+        return pc + 1
+    end"""
+        },
+        17: {  # for
+            "desc": "for 循环",
+            "template": """
+    [17] = function(instr, state, pc)
+        -- for 循环初始化
+        return pc + 1
+    end"""
+        },
+        18: {  # repeat
+            "desc": "repeat 开始",
+            "template": """
+    [18] = function(instr, state, pc)
+        _set(state, '_repeat_active', true)
+        return pc + 1
+    end"""
+        },
+        19: {  # until
+            "desc": "until 条件",
+            "template": """
+    [19] = function(instr, state, pc)
+        local cond = _eval_condition(state, instr[2])
+        if cond then
+            _set(state, '_repeat_active', false)
+            return pc + 1
+        end
+        return instr[3] or (pc - 1)
+    end"""
+        },
+        20: {  # break
+            "desc": "跳出循环",
+            "template": """
+    [20] = function(instr, state, pc)
+        return instr[2] or nil
+    end"""
+        },
+        21: {  # continue
+            "desc": "继续循环",
+            "template": """
+    [21] = function(instr, state, pc)
+        return instr[2] or (pc - 1)
+    end"""
+        },
+        24: {  # expr
+            "desc": "表达式语句",
+            "template": """
+    [24] = function(instr, state, pc)
+        local expr = instr[2]
+        _eval_expr(state, expr)
+        return pc + 1
+    end"""
+        },
+        26: {  # table_new
+            "desc": "创建表",
+            "template": """
+    [26] = function(instr, state, pc)
+        _push(state, {})
+        return pc + 1
+    end"""
+        },
+        27: {  # table_set
+            "desc": "设置表元素",
+            "template": """
+    [27] = function(instr, state, pc)
+        local key = instr[2]
+        local value = _eval_literal(instr[3])
+        local tbl = _pop(state)
+        if tbl and type(tbl) == 'table' then
+            tbl[key] = value
+        end
+        _push(state, tbl)
+        return pc + 1
+    end"""
+        },
+        29: {  # label
+            "desc": "标签",
+            "template": """
+    [29] = function(instr, state, pc)
+        if instr[2] then
+            _set(state, '_labels', instr[2])
+        end
+        return pc + 1
+    end"""
+        },
+    }
+
+    def __init__(self, include_comments: bool = True):
+        self.include_comments = include_comments
+
+    def generate_utility_functions(self) -> str:
+        """
+        生成辅助函数
+
+        这些函数被各个 handler 调用
+        """
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Utility Functions for Handlers")
+        lines.append("-- =========================================")
+        lines.append("")
+
+        # 变量获取
+        lines.append("local function _get(state, varname)")
+        lines.append("    if state.locals[varname] ~= nil then")
+        lines.append("        return state.locals[varname]")
+        lines.append("    end")
+        lines.append("    if state.globals[varname] ~= nil then")
+        lines.append("        return state.globals[varname]")
+        lines.append("    end")
+        lines.append("    return nil")
+        lines.append("end")
+        lines.append("")
+
+        # 变量设置
+        lines.append("local function _set(state, varname, value)")
+        lines.append("    state.locals[varname] = value")
+        lines.append("end")
+        lines.append("")
+
+        # 栈操作
+        lines.append("local function _push(state, value)")
+        lines.append("    table.insert(state.stack, value)")
+        lines.append("end")
+        lines.append("")
+        lines.append("local function _pop(state)")
+        lines.append("    return table.remove(state.stack)")
+        lines.append("end")
+        lines.append("")
+
+        # 字面量求值
+        lines.append("local function _eval_literal(val)")
+        lines.append("    if val == nil then return nil end")
+        lines.append("    if val == true then return true end")
+        lines.append("    if val == false then return false end")
+        lines.append("    if type(val) == 'number' then return val end")
+        lines.append("    if type(val) == 'string' then")
+        lines.append("        local n = tonumber(val)")
+        lines.append("        if n then return n end")
+        lines.append("    end")
+        lines.append("    return val")
+        lines.append("end")
+        lines.append("")
+
+        # 表达式求值
+        lines.append("local function _eval_expr(state, expr)")
+        lines.append("    if expr == nil then return nil end")
+        lines.append("    -- 数字直接返回")
+        lines.append("    if type(expr) == 'number' then return expr end")
+        lines.append("    -- 字符串表达式")
+        lines.append("    if type(expr) == 'string' then")
+        lines.append("        -- 检查是否为简单变量引用")
+        lines.append("        local var_value = _get(state, expr)")
+        lines.append("        if var_value ~= nil then return var_value end")
+        lines.append("")
+        lines.append("        -- 解析二元表达式: var op value")
+        lines.append("        local var, op, right = expr:match('^(%w+)%s*([%+%-%*%/])%s*(.+)$')")
+        lines.append("        if var and op then")
+        lines.append("            local left_val = _get(state, var) or 0")
+        lines.append("            local right_val = tonumber(right) or _get(state, right) or 0")
+        lines.append("            if op == '+' then return left_val + right_val end")
+        lines.append("            if op == '-' then return left_val - right_val end")
+        lines.append("            if op == '*' then return left_val * right_val end")
+        lines.append("            if op == '/' then return left_val / right_val end")
+        lines.append("        end")
+        lines.append("")
+        lines.append("        -- 解析简单赋值表达式: var = value")
+        lines.append("        local target, src = expr:match('^(%w+)%s*=%s*(.+)$')")
+        lines.append("        if target and src then")
+        lines.append("            return _eval_expr(state, src)")
+        lines.append("        end")
+        lines.append("")
+        lines.append("        -- 尝试作为数字")
+        lines.append("        local n = tonumber(expr)")
+        lines.append("        if n then return n end")
+        lines.append("    end")
+        lines.append("    return expr")
+        lines.append("end")
+        lines.append("")
+
+        # 条件求值
+        lines.append("local function _eval_condition(state, cond)")
+        lines.append("    if cond == nil then return false end")
+        lines.append("    if cond == true then return true end")
+        lines.append("    if cond == false then return false end")
+        lines.append("")
+        lines.append("    if type(cond) == 'string' then")
+        lines.append("        -- 检查是否为真值变量")
+        lines.append("        local val = _get(state, cond)")
+        lines.append("        if val ~= nil then return _is_truthy(val) end")
+        lines.append("")
+        lines.append("        -- 解析比较表达式")
+        lines.append("        -- 格式: var op value")
+        lines.append("        local var, op, num = cond:match('^(%w+)%s*(<[=<>]?)%s*(%d+)$')")
+        lines.append("        if var and op then")
+        lines.append("            local v = _get(state, var) or 0")
+        lines.append("            local n = tonumber(num)")
+        lines.append("            if op == '<' then return v < n")
+        lines.append("            elseif op == '<=' then return v <= n")
+        lines.append("            elseif op == '>' then return v > n")
+        lines.append("            elseif op == '>=' then return v >= n")
+        lines.append("            elseif op == '==' or op == '=' then return v == n")
+        lines.append("            end")
+        lines.append("        end")
+        lines.append("")
+        lines.append("        -- 解析变量比较")
+        lines.append("        local left, op, right = cond:match('^(%w+)%s*(<[=<>]?)%s*(%w+)$')")
+        lines.append("        if left and op and right then")
+        lines.append("            local l = _get(state, left) or 0")
+        lines.append("            local r = _get(state, right) or 0")
+        lines.append("            if op == '<' then return l < r")
+        lines.append("            elseif op == '<=' then return l <= r")
+        lines.append("            elseif op == '>' then return l > r")
+        lines.append("            elseif op == '>=' then return l >= r")
+        lines.append("            elseif op == '==' or op == '=' then return l == r")
+        lines.append("            elseif op == '~=' then return l ~= r")
+        lines.append("            end")
+        lines.append("        end")
+        lines.append("    end")
+        lines.append("")
+        lines.append("    return _is_truthy(cond)")
+        lines.append("end")
+        lines.append("")
+
+        # 真值判断
+        lines.append("local function _is_truthy(val)")
+        lines.append("    if val == nil then return false end")
+        lines.append("    if val == false then return false end")
+        lines.append("    return true")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def generate_handler(
+        self,
+        opcode: int,
+        template: dict[str, str]
+    ) -> str:
+        """生成单个 handler"""
+        lines = []
+        if self.include_comments:
+            lines.append(f"    -- opcode: {opcode} ({template['desc']})")
+        lines.append(f"    {template['template'].strip()}")
+        return "\n".join(lines)
+
+    def generate_all_handlers(self) -> str:
+        """生成所有 handler 表"""
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Instruction Handlers")
+        lines.append("-- =========================================")
+        lines.append("")
+        lines.append("local handlers = {")
+
+        for opcode in sorted(self.HANDLER_TEMPLATES.keys()):
+            template = self.HANDLER_TEMPLATES[opcode]
+            lines.append(self.generate_handler(opcode, template))
+
+        # 默认处理器
+        lines.append("")
+        lines.append("    -- Default handler for unknown opcodes")
+        lines.append("    default = function(instr, state, pc)")
+        lines.append("        if _DEBUG then")
+        lines.append("            print('Unknown opcode: ' .. tostring(instr[1]))")
+        lines.append("        end")
+        lines.append("        return pc + 1")
+        lines.append("    end,")
+
+        lines.append("}")
+        return "\n".join(lines)
+
+    def generate_handler_dispatcher(self) -> str:
+        """生成 handler 分发器"""
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Handler Dispatcher")
+        lines.append("-- =========================================")
+        lines.append("")
+        lines.append("local function dispatch(instr, state, pc)")
+        lines.append("    local op = instr[1]")
+        lines.append("    local handler = handlers[op] or handlers.default")
+        lines.append("    return handler(instr, state, pc)")
+        lines.append("end")
+        return "\n".join(lines)
+
+    def generate_complete_handlers(self) -> str:
+        """生成完整的 handler 模块"""
+        lines = []
+        lines.append(self.generate_utility_functions())
+        lines.append("")
+        lines.append(self.generate_all_handlers())
+        lines.append("")
+        lines.append(self.generate_handler_dispatcher())
+        return lines
+
+    def generate(
+        self,
+        include_utility: bool = True,
+        include_dispatcher: bool = True
+    ) -> str:
+        """生成完整的 handler 代码"""
+        parts = []
+        if include_utility:
+            parts.append(self.generate_utility_functions())
+        parts.append(self.generate_all_handlers())
+        if include_dispatcher:
+            parts.append(self.generate_handler_dispatcher())
+        return "\n\n".join(parts)
+
+
+class HandlerMappingBuilder:
+    """
+    Handler 映射构建器
+
+    从 Python 指令处理函数映射到 Lua handler
+    """
+
+    def __init__(self):
+        self._mappings: dict[int, str] = {}
+
+    def add_mapping(self, opcode: int, lua_handler: str) -> 'HandlerMappingBuilder':
+        """添加 opcode 到 Lua handler 的映射"""
+        self._mappings[opcode] = lua_handler
+        return self
+
+    def add_from_template(
+        self,
+        opcode: int,
+        description: str,
+        arg_extract: str,
+        body: str,
+        next_pc: str = "pc + 1"
+    ) -> 'HandlerMappingBuilder':
+        """
+        从模板添加映射
+
+        Args:
+            opcode: 操作码
+            description: 描述
+            arg_extract: 参数提取代码
+            body: handler 主体
+            next_pc: 下一 PC 表达式
+        """
+        handler = f"""
+    [{opcode}] = function(instr, state, pc)
+        {arg_extract}
+        {body}
+        return {next_pc}
+    end"""
+        self._mappings[opcode] = handler
+        return self
+
+    def build(self) -> str:
+        """构建完整的 handler 表"""
+        lines = ["local handlers = {"]
+        for opcode in sorted(self._mappings.keys()):
+            lines.append(f"    -- opcode: {opcode}")
+            lines.append(f"    {self._mappings[opcode].strip()}")
+        lines.append("}")
+        return "\n".join(lines)
+
+
+def generate_lua_handlers() -> str:
+    """
+    便捷函数：生成 Lua handlers
+
+    Returns:
+        Lua handler 代码字符串
+    """
+    generator = LuaHandlerGenerator()
+    return generator.generate()
+
+
+class InterpreterCodeGenerator:
+    """
+    完整解释器代码生成器
+
+    整合 instruction table 和 handler 生成
+    """
+
+    def __init__(
+        self,
+        handler_generator: LuaHandlerGenerator | None = None,
+        serializer: InstructionSerializer | None = None
+    ):
+        self.handler_generator = handler_generator or LuaHandlerGenerator()
+        self.serializer = serializer or InstructionSerializer(compact=True)
+
+    def generate(
+        self,
+        instructions: list[Instruction] | None = None,
+        state_var: str = "state",
+        code_var: str = "code",
+        result_var: str = "_result",
+        include_debug: bool = False
+    ) -> str:
+        """
+        生成完整的解释器代码
+
+        Args:
+            instructions: 指令列表
+            state_var: 状态变量名
+            code_var: 代码变量名
+            result_var: 结果变量名
+            include_debug: 是否包含调试信息
+
+        Returns:
+            完整的 Lua 代码
+        """
+        lines = []
+
+        # Header
+        lines.append("-- =========================================")
+        lines.append("-- Lua Instruction Interpreter")
+        lines.append("-- Generated by lua_obfuscator")
+        lines.append("-- =========================================")
+        lines.append("")
+        lines.append("local _DEBUG = " + ("true" if include_debug else "false"))
+        lines.append("")
+
+        # Instruction Code (如果提供)
+        if instructions:
+            lines.append("-- =========================================")
+            lines.append("-- Instruction Code")
+            lines.append("-- =========================================")
+            lines.append(self.serializer.serialize(instructions, code_var))
+            lines.append("")
+
+        # Handlers
+        lines.append(self.handler_generator.generate())
+        lines.append("")
+
+        # Execution State
+        lines.append("-- =========================================")
+        lines.append("-- Execution State")
+        lines.append("-- =========================================")
+        lines.append(f"local {state_var} = {{")
+        lines.append("    locals = {},")
+        lines.append("    globals = {},")
+        lines.append("    stack = {},")
+        lines.append("    pc = 1,")
+        lines.append("    halted = false,")
+        lines.append("    return_value = nil,")
+        lines.append("}")
+        lines.append("")
+
+        # Executor Loop
+        lines.append("-- =========================================")
+        lines.append("-- Executor Loop")
+        lines.append("-- =========================================")
+        lines.append(f"local function execute({code_var}, {state_var})")
+        lines.append(f"    local {state_var}_pc = 1")
+        lines.append(f"    while {state_var}_pc and not {state_var}.halted do")
+        lines.append(f"        local instr = {code_var}[{state_var}_pc]")
+        lines.append("        if not instr then break end")
+        lines.append(f"        {state_var}_pc = dispatch(instr, {state_var}, {state_var}_pc)")
+        lines.append("        -- 安全检查")
+        lines.append("        if not {state_var}_pc then break end")
+        lines.append(f"        if {state_var}_pc < 1 or {state_var}_pc > #{code_var} + 1 then")
+        lines.append("            break")
+        lines.append("        end")
+        lines.append("    end")
+        lines.append(f"    return {state_var}.return_value")
+        lines.append("end")
+        lines.append("")
+
+        # Run
+        if instructions:
+            lines.append(f"local {result_var} = execute({code_var}, {state_var})")
+            lines.append(f'if _DEBUG then print("Result: " .. tostring({result_var})) end')
+
+        return "\n".join(lines)
+
+
+def generate_interpreter_code(
+    instructions: list[Instruction] | None = None,
+    include_debug: bool = False
+) -> str:
+    """
+    便捷函数：生成完整解释器代码
+
+    Args:
+        instructions: 指令列表
+        include_debug: 是否包含调试
+
+    Returns:
+        Lua 代码字符串
+    """
+    generator = InterpreterCodeGenerator()
+    return generator.generate(instructions, include_debug=include_debug)
+
+
+def demo_handler_generation():
+    """演示 handler 生成"""
+    print("=" * 60)
+    print("Lua Handler Generation Demo")
+    print("=" * 60)
+
+    print("\n[1] Generated Utility Functions:")
+    print("-" * 40)
+    gen = LuaHandlerGenerator()
+    print(gen.generate_utility_functions())
+
+    print("\n[2] Generated All Handlers:")
+    print("-" * 40)
+    print(gen.generate_all_handlers())
+
+    print("\n[3] Complete Interpreter:")
+    print("-" * 40)
+    instructions = [
+        Instruction(OpCode.INIT, ["x"], None, "10"),
+        Instruction(OpCode.INIT, ["y"], None, "20"),
+        Instruction(OpCode.ASSIGN, ["sum"], None, "x + y"),
+        Instruction(OpCode.RETURN_VAL, ["sum"]),
+    ]
+    full_gen = InterpreterCodeGenerator()
+    print(full_gen.generate(instructions, include_debug=True))
+
+    print("\n" + "=" * 60)
+    print("Demo Complete")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    demo_handler_generation()
+
+
+# ===== 完整 Lua 程序发射器：整合 IR 和执行逻辑 =====
+
+
+class LuaProgramEmitter:
+    """
+    完整的 Lua 程序发射器
+
+    将 instruction 数据、handler 定义、执行器逻辑整合为一个
+    完整、可独立运行的 Lua 程序。
+
+    输出结构:
+    1. instruction 数据表 (local code = {...})
+    2. 执行上下文 (local state = {})
+    3. handler table (op -> function)
+    4. 执行循环 (pc + dispatch)
+    """
+
+    def __init__(
+        self,
+        serializer: InstructionSerializer | None = None,
+        handler_generator: LuaHandlerGenerator | None = None,
+        include_comments: bool = True,
+        include_debug: bool = False,
+    ):
+        self.serializer = serializer or InstructionSerializer(compact=True)
+        self.handler_generator = handler_generator or LuaHandlerGenerator(include_comments=include_comments)
+        self.include_comments = include_comments
+        self.include_debug = include_debug
+
+    # ===== Part 1: Instruction Table 生成 =====
+
+    def emit_instruction_table(
+        self,
+        instructions: list[Instruction],
+        var_name: str = "code"
+    ) -> str:
+        """
+        生成 instruction 数据表
+
+        Args:
+            instructions: 指令列表
+            var_name: 变量名
+
+        Returns:
+            Lua 代码字符串
+        """
+        if not instructions:
+            return f"local {var_name} = {{}}"
+
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Instruction Table")
+        lines.append("-- =========================================")
+
+        serialized = self.serializer.serialize(instructions, var_name)
+        lines.append(serialized)
+
+        return "\n".join(lines)
+
+    def emit_instruction_table_from_dict(
+        self,
+        instruction_dict: dict[int, BlockInstructions],
+        var_name: str = "code"
+    ) -> str:
+        """
+        从 BlockInstructions 字典生成 instruction 表
+
+        Args:
+            instruction_dict: block_id -> BlockInstructions 映射
+            var_name: 变量名
+
+        Returns:
+            Lua 代码字符串
+        """
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Instruction Table (from BlockInstructions)")
+        lines.append("-- =========================================")
+        lines.append(f"local {var_name} = {{}}")
+
+        idx = 1
+        for bid in sorted(instruction_dict.keys()):
+            block_instr = instruction_dict[bid]
+            if not block_instr.instructions:
+                continue
+
+            lines.append(f"-- Block {bid} ({block_instr.block_type})")
+            for instr in block_instr.instructions:
+                serialized = self.serializer.serialize_single(instr, f"{var_name}[{idx}]")
+                lines.append(serialized)
+                idx += 1
+
+        return "\n".join(lines)
+
+    # ===== Part 2: Execution State 生成 =====
+
+    def emit_execution_state(self, var_name: str = "state") -> str:
+        """
+        生成执行上下文
+
+        Args:
+            var_name: 状态变量名
+
+        Returns:
+            Lua 代码字符串
+        """
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Execution State")
+        lines.append("-- =========================================")
+        lines.append(f"local {var_name} = {{")
+        lines.append("    locals = {},")
+        lines.append("    globals = {},")
+        lines.append("    stack = {},")
+        lines.append("    pc = 1,")
+        lines.append("    halted = false,")
+        lines.append("    return_value = nil,")
+        lines.append("}")
+
+        return "\n".join(lines)
+
+    # ===== Part 3: Handler Table 生成 =====
+
+    def emit_handler_table(self) -> str:
+        """
+        生成 handler table
+
+        Returns:
+            Lua 代码字符串
+        """
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Handler Table")
+        lines.append("-- =========================================")
+
+        # Utility functions
+        lines.append(self.handler_generator.generate_utility_functions())
+        lines.append("")
+
+        # Handler table
+        lines.append("local handlers = {")
+
+        for opcode in sorted(self.handler_generator.HANDLER_TEMPLATES.keys()):
+            template = self.handler_generator.HANDLER_TEMPLATES[opcode]
+            if self.include_comments:
+                lines.append(f"    -- opcode: {opcode} ({template['desc']})")
+            lines.append(f"    {template['template'].strip()},")
+
+        # Default handler
+        lines.append("")
+        lines.append("    -- Default handler for unknown opcodes")
+        lines.append("    default = function(instr, state, pc)")
+        lines.append("        if _DEBUG then")
+        lines.append("            print('Unknown opcode: ' .. tostring(instr[1]))")
+        lines.append("        end")
+        lines.append("        return pc + 1")
+        lines.append("    end,")
+
+        lines.append("}")
+
+        return "\n".join(lines)
+
+    def emit_dispatcher(self) -> str:
+        """
+        生成 dispatcher 函数
+
+        Returns:
+            Lua 代码字符串
+        """
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Dispatcher")
+        lines.append("-- =========================================")
+        lines.append("")
+        lines.append("local function dispatch(instr, state, pc)")
+        lines.append("    local op = instr[1]")
+        lines.append("    local handler = handlers[op] or handlers.default")
+        lines.append("    return handler(instr, state, pc)")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def emit_handler_module(self) -> str:
+        """
+        生成完整的 handler 模块
+
+        Returns:
+            Lua 代码字符串
+        """
+        parts = []
+        parts.append(self.emit_handler_table())
+        parts.append("")
+        parts.append(self.emit_dispatcher())
+        return "\n\n".join(parts)
+
+    # ===== Part 4: Executor Loop 生成 =====
+
+    def emit_executor_loop(
+        self,
+        code_var: str = "code",
+        state_var: str = "state",
+        function_name: str = "execute"
+    ) -> str:
+        """
+        生成执行循环
+
+        Args:
+            code_var: 代码变量名
+            state_var: 状态变量名
+            function_name: 函数名
+
+        Returns:
+            Lua 代码字符串
+        """
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Executor Loop")
+        lines.append("-- =========================================")
+        lines.append("")
+        lines.append(f"local function {function_name}({code_var}, {state_var})")
+        lines.append(f"    local pc = 1")
+        lines.append(f"    while pc and not {state_var}.halted do")
+        lines.append(f"        local instr = {code_var}[pc]")
+        lines.append("        if not instr then break end")
+        lines.append(f"        pc = dispatch(instr, {state_var}, pc)")
+        lines.append("        -- Safety check")
+        lines.append("        if not pc then break end")
+        lines.append(f"        if pc < 1 or pc > #{code_var} + 1 then")
+        lines.append("            break")
+        lines.append("        end")
+        lines.append("    end")
+        lines.append(f"    return {state_var}.return_value")
+        lines.append("end")
+
+        return "\n".join(lines)
+
+    def emit_runner(
+        self,
+        code_var: str = "code",
+        state_var: str = "state",
+        result_var: str = "_result",
+        execute_func: str = "execute"
+    ) -> str:
+        """
+        生成运行代码
+
+        Args:
+            code_var: 代码变量名
+            state_var: 状态变量名
+            result_var: 结果变量名
+            execute_func: 执行函数名
+
+        Returns:
+            Lua 代码字符串
+        """
+        lines = []
+        lines.append("-- =========================================")
+        lines.append("-- Run")
+        lines.append("-- =========================================")
+        lines.append("")
+        lines.append(f"local {result_var} = {execute_func}({code_var}, {state_var})")
+
+        if self.include_debug:
+            lines.append(f'if _DEBUG then print("Result: " .. tostring({result_var})) end')
+
+        return "\n".join(lines)
+
+    # ===== Part 5: 完整程序生成 =====
+
+    def emit_complete_program(
+        self,
+        instructions: list[Instruction] | None = None,
+        code_var: str = "code",
+        state_var: str = "state",
+        result_var: str = "_result",
+        execute_func: str = "execute"
+    ) -> str:
+        """
+        生成完整的 Lua 程序
+
+        按顺序输出:
+        1. instruction 数据表
+        2. 执行上下文
+        3. handler table
+        4. dispatcher
+        5. 执行循环
+        6. 运行代码
+
+        Args:
+            instructions: 指令列表
+            code_var: 代码变量名
+            state_var: 状态变量名
+            result_var: 结果变量名
+            execute_func: 执行函数名
+
+        Returns:
+            完整的 Lua 程序字符串
+        """
+        parts = []
+
+        # Header
+        header = []
+        header.append("-- =========================================")
+        header.append("-- Lua Instruction Interpreter Program")
+        header.append("-- Generated by lua_obfuscator")
+        header.append("-- =========================================")
+        header.append("")
+        header.append(f"local _DEBUG = {'true' if self.include_debug else 'false'}")
+        parts.append("\n".join(header))
+
+        # Part 1: Instruction Table
+        if instructions:
+            parts.append(self.emit_instruction_table(instructions, code_var))
+
+        # Part 2: Execution State
+        parts.append(self.emit_execution_state(state_var))
+
+        # Part 3: Handler Module
+        parts.append(self.emit_handler_module())
+
+        # Part 4: Executor Loop
+        parts.append(self.emit_executor_loop(code_var, state_var, execute_func))
+
+        # Part 5: Runner
+        if instructions:
+            parts.append(self.emit_runner(code_var, state_var, result_var, execute_func))
+
+        return "\n\n".join(parts)
+
+    def emit_program_from_pipeline_state(
+        self,
+        state: PipelineState,
+        code_var: str = "code",
+        state_var: str = "state",
+        result_var: str = "_result",
+        execute_func: str = "execute"
+    ) -> str:
+        """
+        从 PipelineState 生成完整程序
+
+        使用已处理好的指令数据
+
+        Args:
+            state: PipelineState 实例
+            code_var: 代码变量名
+            state_var: 状态变量名
+            result_var: 结果变量名
+            execute_func: 执行函数名
+
+        Returns:
+            完整的 Lua 程序字符串
+        """
+        parts = []
+
+        # Header
+        header = []
+        header.append("-- =========================================")
+        header.append("-- Lua Instruction Interpreter Program")
+        header.append("-- Generated by lua_obfuscator (Pipeline Mode)")
+        header.append("-- =========================================")
+        header.append("")
+        header.append(f"local _DEBUG = {'true' if self.include_debug else 'false'}")
+        parts.append("\n".join(header))
+
+        # Part 1: Instruction Table (from state.instructions)
+        if state.instructions:
+            parts.append(self.emit_instruction_table_from_dict(state.instructions, code_var))
+
+        # Part 2: Execution State
+        parts.append(self.emit_execution_state(state_var))
+
+        # Part 3: Handler Module
+        parts.append(self.emit_handler_module())
+
+        # Part 4: Executor Loop
+        parts.append(self.emit_executor_loop(code_var, state_var, execute_func))
+
+        # Part 5: Runner
+        if state.instructions:
+            parts.append(self.emit_runner(code_var, state_var, result_var, execute_func))
+
+        return "\n\n".join(parts)
+
+
+def emit_lua_program(
+    instructions: list[Instruction] | None = None,
+    code_var: str = "code",
+    state_var: str = "state",
+    result_var: str = "_result",
+    include_debug: bool = False,
+    serializer: InstructionSerializer | None = None,
+    handler_generator: LuaHandlerGenerator | None = None,
+) -> str:
+    """
+    便捷函数：发射完整的 Lua 程序
+
+    Args:
+        instructions: 指令列表
+        code_var: 代码变量名
+        state_var: 状态变量名
+        result_var: 结果变量名
+        include_debug: 是否包含调试信息
+        serializer: 自定义序列化器
+        handler_generator: 自定义 handler 生成器
+
+    Returns:
+        完整的 Lua 程序字符串
+    """
+    emitter = LuaProgramEmitter(
+        serializer=serializer,
+        handler_generator=handler_generator,
+        include_debug=include_debug,
+    )
+    return emitter.emit_complete_program(
+        instructions=instructions,
+        code_var=code_var,
+        state_var=state_var,
+        result_var=result_var,
+    )
+
+
+def emit_lua_program_from_state(
+    state: PipelineState,
+    code_var: str = "code",
+    state_var: str = "state",
+    result_var: str = "_result",
+    include_debug: bool = False,
+) -> str:
+    """
+    便捷函数：从 PipelineState 发射完整的 Lua 程序
+
+    Args:
+        state: PipelineState 实例
+        code_var: 代码变量名
+        state_var: 状态变量名
+        result_var: 结果变量名
+        include_debug: 是否包含调试信息
+
+    Returns:
+        完整的 Lua 程序字符串
+    """
+    emitter = LuaProgramEmitter(include_debug=include_debug)
+    return emitter.emit_program_from_pipeline_state(
+        state=state,
+        code_var=code_var,
+        state_var=state_var,
+        result_var=result_var,
+    )
+
+
+# ===== 修改 transform_v2 使用新的发射器 =====
+
+def transform_v3(source: str, watermark: str) -> str:
+    """
+    使用完整 Lua 程序发射器的新版本 transform 函数
+
+    将 instruction 数据、handler 定义、执行器逻辑整合为
+    一个完整、可独立运行的 Lua 程序。
+
+    Args:
+        source: 源代码
+        watermark: 水印
+
+    Returns:
+        混淆后的 Lua 代码
+    """
+    source = strip_leading_bom(source)
+    random.seed(int(time.time()))
+    rng = create_time_seeded_random()
+    profile = ProtectionProfile(rng, watermark)
+
+    randomize_algorithms(profile, rng)
+    shuffle_tables(profile, rng)
+
+    # 执行 Pipeline
+    state = execute_pipeline(source, profile, rng)
+
+    # 使用新的发射器生成完整程序
+    emitter = LuaProgramEmitter(include_debug=False)
+
+    # 生成完整程序
+    full_program = emitter.emit_program_from_pipeline_state(state)
+
+    # 添加 API 前导码
+    api_plan = apply_api_indirection(state.tokens, profile, rng)
+
+    # 组装最终代码
+    return (
+        "--[[\n"
+        + "Lua Protector Watermark: "
+        + sanitize_comment(watermark)
+        + "\nGenerated by LuaProgramEmitter\n"
+        + "Architecture: instruction_table + handler + executor\n"
+        + "]]\n"
+        + build_runtime_prelude(profile)
+        + api_plan.prelude
+        + "\n"
+        + full_program
+        + "\n"
+    )
+
+
+# ===== 更新 transform 函数入口 =====
+
+def transform(source: str, watermark: str) -> str:
+    """
+    主入口函数，使用完整 Lua 程序发射器
+
+    Args:
+        source: 源代码
+        watermark: 水印
+
+    Returns:
+        混淆后的 Lua 代码
+    """
+    return transform_v3(source, watermark)
+
+
+def demo_lua_program_emitter():
+    """演示 Lua 程序发射器"""
+    print("=" * 60)
+    print("Lua Program Emitter Demo")
+    print("=" * 60)
+
+    # 创建示例指令
+    instructions = [
+        Instruction(OpCode.INIT, ["x"], None, "10"),
+        Instruction(OpCode.INIT, ["y"], None, "20"),
+        Instruction(OpCode.ASSIGN, ["sum"], None, "x + y"),
+        Instruction(OpCode.RETURN_VAL, ["sum"]),
+    ]
+
+    # 创建发射器
+    emitter = LuaProgramEmitter(include_debug=True)
+
+    print("\n[1] Instruction Table:")
+    print("-" * 40)
+    print(emitter.emit_instruction_table(instructions))
+
+    print("\n[2] Execution State:")
+    print("-" * 40)
+    print(emitter.emit_execution_state())
+
+    print("\n[3] Handler Module:")
+    print("-" * 40)
+    print(emitter.emit_handler_module())
+
+    print("\n[4] Executor Loop:")
+    print("-" * 40)
+    print(emitter.emit_executor_loop())
+
+    print("\n[5] Complete Program:")
+    print("-" * 40)
+    print(emitter.emit_complete_program(instructions))
+
+    print("\n" + "=" * 60)
+    print("Demo Complete")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    demo_lua_program_emitter()
 
