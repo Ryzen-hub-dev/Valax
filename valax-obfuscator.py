@@ -321,7 +321,7 @@ def replace_bitwise_ops(code: str) -> str:
 # =============================================================================
 
 class TokenKind:
-
+    
     # 关键字
     IF = "IF"
     THEN = "THEN"
@@ -419,7 +419,7 @@ class Lexer:
         self.tokens: List[Token] = []
     
     def scan(self) -> List[Token]:
-
+       
         while not self._is_eof():
             # 跳过空白字符
             self._skip_whitespace()
@@ -440,7 +440,7 @@ class Lexer:
         return self.tokens
     
     def _scan_token(self, line: int, col: int) -> Optional[Token]:
-
+       
         c = self._peek()
         
         # 标识符或关键字 (a-zA-Z_)
@@ -459,7 +459,7 @@ class Lexer:
         return self._scan_symbol(line, col)
     
     def _scan_identifier(self, line: int, col: int) -> Token:
-
+       
         start = self.pos
         while self._peek().isalnum() or self._peek() in ('_',):
             self._advance()
@@ -475,7 +475,7 @@ class Lexer:
         return Token(kind, text, line, col)
     
     def _scan_string(self, line: int, col: int) -> Token:
-
+       
         quote = self._peek()
         self._advance()
         
@@ -517,9 +517,9 @@ class Lexer:
         return Token(TokenKind.STRING, ''.join(chars), line, col)
     
     def _scan_number(self, line: int, col: int) -> Token:
-
+       
         start = self.pos
-
+        
         # 处理十六进制 (0x)
         if self._peek() == '0' and self._peek_next() in ('x', 'X'):
             self._advance()  # 0
@@ -553,7 +553,7 @@ class Lexer:
         return Token(TokenKind.NUMBER, value, line, col)
     
     def _scan_symbol(self, line: int, col: int) -> Token:
-
+        
         # 先检查两字符运算符
         two_char = self.source[self.pos:self.pos+2]
         three_char = self.source[self.pos:self.pos+3]
@@ -603,7 +603,7 @@ class Lexer:
         return Token(single_tokens.get(c, TokenKind.EOF), c, line, col)
     
     def _skip_whitespace(self):
-
+       
         while not self._is_eof():
             c = self._peek()
             if c in ' \t':
@@ -622,19 +622,19 @@ class Lexer:
                 break
     
     def _peek(self) -> str:
-
+     
         if self.pos < len(self.source):
             return self.source[self.pos]
         return '\0'
-
+    
     def _peek_next(self) -> str:
-
+        """查看下一个字符"""
         if self.pos + 1 < len(self.source):
             return self.source[self.pos + 1]
         return '\0'
-
+    
     def _advance(self):
-
+        """前进到下一个字符"""
         if self.pos < len(self.source):
             if self.source[self.pos] == '\n':
                 self.line += 1
@@ -642,9 +642,9 @@ class Lexer:
             else:
                 self.column += 1
             self.pos += 1
-
+    
     def _is_eof(self) -> bool:
-
+        """检查是否到达末尾"""
         return self.pos >= len(self.source)
 
 
@@ -653,7 +653,7 @@ class Lexer:
 # =============================================================================
 
 class NodeKind:
-
+    """AST节点类型"""
     PROGRAM = "PROGRAM"
     BLOCK = "BLOCK"
     
@@ -696,7 +696,7 @@ class NodeKind:
 
 @dataclass
 class ASTNode:
-
+    """AST节点基类"""
     kind: str
     value: Any = None
     children: List['ASTNode'] = None
@@ -710,14 +710,14 @@ class ASTNode:
 
 
 class ProgramNode(ASTNode):
-
+    """程序根节点"""
     def __init__(self, body: List[ASTNode]):
         super().__init__(NodeKind.PROGRAM)
         self.body = body
 
 
 class BlockNode(ASTNode):
-
+    """代码块"""
     def __init__(self, statements: List[ASTNode]):
         super().__init__(NodeKind.BLOCK)
         self.statements = statements
@@ -725,7 +725,7 @@ class BlockNode(ASTNode):
 
 
 class LocalVarNode(ASTNode):
-
+    """局部变量声明: local a, b = 1, 2"""
     def __init__(self, names: List[str], values: List[ASTNode]):
         super().__init__(NodeKind.LOCAL_VAR)
         self.names = names
@@ -733,7 +733,7 @@ class LocalVarNode(ASTNode):
 
 
 class AssignmentNode(ASTNode):
-
+    """赋值语句: a = 1"""
     def __init__(self, targets: List[ASTNode], values: List[ASTNode]):
         super().__init__(NodeKind.ASSIGNMENT)
         self.targets = targets
@@ -741,7 +741,7 @@ class AssignmentNode(ASTNode):
 
 
 class IfNode(ASTNode):
-    
+    """if语句"""
     def __init__(self, condition: ASTNode, then_body: BlockNode, 
                  elseif_blocks: List[Tuple[ASTNode, BlockNode]], 
                  else_body: Optional[BlockNode]):
@@ -753,7 +753,7 @@ class IfNode(ASTNode):
 
 
 class WhileNode(ASTNode):
-    
+    """while循环"""
     def __init__(self, condition: ASTNode, body: BlockNode):
         super().__init__(NodeKind.WHILE_STMT)
         self.condition = condition
@@ -761,7 +761,7 @@ class WhileNode(ASTNode):
 
 
 class RepeatNode(ASTNode):
-    
+    """repeat-until循环"""
     def __init__(self, body: BlockNode, condition: ASTNode):
         super().__init__(NodeKind.REPEAT_STMT)
         self.body = body
@@ -769,7 +769,7 @@ class RepeatNode(ASTNode):
 
 
 class ForNumericNode(ASTNode):
-
+    """数值for循环: for i = 1, 10 do end"""
     def __init__(self, variable: str, start: ASTNode, stop: ASTNode, 
                  step: Optional[ASTNode], body: BlockNode):
         super().__init__(NodeKind.FOR_NUMERIC)
@@ -781,7 +781,7 @@ class ForNumericNode(ASTNode):
 
 
 class ForInNode(ASTNode):
-   
+    """迭代for循环: for k, v in pairs(t) do end"""
     def __init__(self, variables: List[str], iter_exprs: List[ASTNode], body: BlockNode):
         super().__init__(NodeKind.FOR_IN)
         self.variables = variables
@@ -790,7 +790,7 @@ class ForInNode(ASTNode):
 
 
 class FunctionDefNode(ASTNode):
-
+    """函数定义"""
     def __init__(self, name: str, params: List[str], body: BlockNode, 
                  is_local: bool = False, is_vararg: bool = False):
         super().__init__(NodeKind.FUNCTION_DEF if not is_local else NodeKind.LOCAL_FUNCTION)
@@ -802,27 +802,27 @@ class FunctionDefNode(ASTNode):
 
 
 class ReturnNode(ASTNode):
-    
+    """return语句"""
     def __init__(self, values: List[ASTNode]):
         super().__init__(NodeKind.RETURN_STMT)
         self.values = values
 
 
 class BreakNode(ASTNode):
- 
+    """break语句"""
     def __init__(self):
         super().__init__(NodeKind.BREAK_STMT)
 
 
 class DoBlockNode(ASTNode):
-    
+    """do-end块"""
     def __init__(self, body: BlockNode):
         super().__init__(NodeKind.DO_BLOCK)
         self.body = body
 
 
 class FunctionCallNode(ASTNode):
-   
+    """函数调用"""
     def __init__(self, func: ASTNode, args: List[ASTNode], method: Optional[str] = None):
         super().__init__(NodeKind.FUNCTION_CALL)
         self.func = func
@@ -831,14 +831,14 @@ class FunctionCallNode(ASTNode):
 
 
 class ExpressionWrapper(ASTNode):
-    
+    """表达式包装器 (用于独立表达式语句)"""
     def __init__(self, expr: ASTNode):
         super().__init__("EXPRESSION_WRAPPER")
         self.expr = expr
 
 
 class LocalFunctionNode(ASTNode):
-   
+    """局部函数定义: local function f() end"""
     def __init__(self, name: str, params: List[str], body: BlockNode):
         super().__init__(NodeKind.LOCAL_FUNCTION)
         self.name = name
@@ -847,49 +847,49 @@ class LocalFunctionNode(ASTNode):
 
 
 class NumberNode(ASTNode):
-
+    """数字字面量"""
     def __init__(self, value: float):
         super().__init__(NodeKind.NUMBER_LIT, value)
 
 
 class StringNode(ASTNode):
-    
+    """字符串字面量"""
     def __init__(self, value: str):
         super().__init__(NodeKind.STRING_LIT, value)
 
 
 class IdentifierNode(ASTNode):
-    
+    """标识符"""
     def __init__(self, name: str):
         super().__init__(NodeKind.IDENTIFIER, name)
 
 
 class NilNode(ASTNode):
-    
+    """nil"""
     def __init__(self):
         super().__init__(NodeKind.NIL_LIT)
 
 
 class TrueNode(ASTNode):
-    
+    """true"""
     def __init__(self):
         super().__init__(NodeKind.TRUE_LIT, True)
 
 
 class FalseNode(ASTNode):
-    
+    """false"""
     def __init__(self):
         super().__init__(NodeKind.FALSE_LIT, False)
 
 
 class VarargNode(ASTNode):
-    
+    """..."""
     def __init__(self):
         super().__init__(NodeKind.VARARG, '...')
 
 
 class TableConstructNode(ASTNode):
-
+    """表构造: {1, 2, a = 3}"""
     def __init__(self, entries: List[Tuple[Optional[ASTNode], ASTNode]]):
         super().__init__(NodeKind.TABLE_CONSTRUCT)
         self.entries = entries  # [(key, value) or (None, value)]
@@ -897,7 +897,6 @@ class TableConstructNode(ASTNode):
 
 class IndexAccessNode(ASTNode):
     """索引访问: t[key]"""
-
     def __init__(self, base: ASTNode, index: ASTNode):
         super().__init__(NodeKind.INDEX_ACCESS)
         self.base = base
@@ -906,7 +905,6 @@ class IndexAccessNode(ASTNode):
 
 class UnaryOpNode(ASTNode):
     """一元运算符: -x, #x, not x"""
-
     def __init__(self, operator: str, operand: ASTNode):
         super().__init__(NodeKind.UNARY_OP, operator)
         self.operand = operand
@@ -914,7 +912,6 @@ class UnaryOpNode(ASTNode):
 
 class BinaryOpNode(ASTNode):
     """二元运算符: a + b, a == b"""
-
     def __init__(self, operator: str, left: ASTNode, right: ASTNode):
         super().__init__(NodeKind.BINARY_OP, operator)
         self.left = left
@@ -927,7 +924,6 @@ class BinaryOpNode(ASTNode):
 
 class StringTableInitNode(ASTNode):
     """字符串表初始化节点"""
-
     def __init__(self, table_name: str, strings: List[Tuple[str, str]]):
         super().__init__(NodeKind.STRING_TABLE_INIT)
         self.table_name = table_name
@@ -936,7 +932,6 @@ class StringTableInitNode(ASTNode):
 
 class ControlFlowFlatNode(ASTNode):
     """控制流扁平化节点 (state machine)"""
-
     def __init__(self, state_var: str, blocks: List[BlockNode], exit_state: int):
         super().__init__(NodeKind.CONTROL_FLOW_FLAT)
         self.state_var = state_var
@@ -946,7 +941,6 @@ class ControlFlowFlatNode(ASTNode):
 
 class VMCallNode(ASTNode):
     """简单VM调用节点"""
-
     def __init__(self, bytecode: List[int], constants: List[Any]):
         super().__init__(NodeKind.VM_CALL)
         self.bytecode = bytecode
@@ -955,7 +949,6 @@ class VMCallNode(ASTNode):
 
 class AntiDebugNode(ASTNode):
     """Anti-debug代码节点"""
-
     def __init__(self, junk_loops: int = 1, detect_env: bool = True):
         super().__init__(NodeKind.ANTI_DEBUG)
         self.junk_loops = junk_loops
@@ -3619,7 +3612,7 @@ class AdvancedVMOp:
     2. fake opcode (永不执行)
     3. 指令顺序打乱
     """
-
+    
     # 基础指令 (会被随机重新映射)
     BASE_OPCODES = {
         'LOADK': 0x01,
