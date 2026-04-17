@@ -489,7 +489,7 @@ if (!$is_logged_in) {
             margin-top: 8px;
         }
 
-        .nav-btn {
+        .nav-link {
             display: flex;
             align-items: center;
             gap: 14px;
@@ -505,19 +505,19 @@ if (!$is_logged_in) {
             text-decoration: none;
         }
 
-        .nav-btn:hover {
+        .nav-link:hover {
             background: rgba(202, 187, 85, 0.08);
             color: #fff;
             border-color: rgba(202, 187, 85, 0.15);
         }
 
-        .nav-btn.active {
+        .nav-link.active {
             background: linear-gradient(135deg, rgba(124, 77, 255, 0.15) 0%, rgba(124, 77, 255, 0.05) 100%);
             color: #fff;
             border-color: rgba(124, 77, 255, 0.3);
         }
 
-        .nav-btn.active::before {
+        .nav-link.active::before {
             content: '';
             position: absolute;
             left: 0;
@@ -529,7 +529,7 @@ if (!$is_logged_in) {
             border-radius: 0 3px 3px 0;
         }
 
-        .nav-btn svg {
+        .nav-link svg {
             width: 20px;
             height: 20px;
             flex-shrink: 0;
@@ -775,12 +775,11 @@ if (!$is_logged_in) {
             padding: 30px;
         }
 
-        .page-section {
+        .page {
             display: none;
-            animation: fadeIn 0.35s ease;
         }
 
-        .page-section.active {
+        .page.active {
             display: block;
         }
 
@@ -1611,7 +1610,7 @@ if (!$is_logged_in) {
 
             <nav class="sidebar-nav">
                 <span class="sidebar-section-title">Main</span>
-                <a href="#" class="nav-btn active" data-page="home">
+                <a href="#" class="nav-link active" data-page="homePage">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="3" y="3" width="7" height="9" rx="1"/>
                         <rect x="14" y="3" width="7" height="5" rx="1"/>
@@ -1620,13 +1619,13 @@ if (!$is_logged_in) {
                     </svg>
                     Dashboard
                 </a>
-                <a href="#" class="nav-btn" data-page="hosting">
+                <a href="#" class="nav-link" data-page="hostingPage">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
                     </svg>
                     Hosting
                 </a>
-                <a href="#" class="nav-btn" data-page="credits">
+                <a href="#" class="nav-link" data-page="creditsPage">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"/>
                         <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/>
@@ -1634,13 +1633,13 @@ if (!$is_logged_in) {
                     </svg>
                     Credits
                 </a>
-                <a href="#" class="nav-btn" data-page="redeem">
+                <a href="#" class="nav-link" data-page="redeemPage">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
                     </svg>
                     Redeem
                 </a>
-                <a href="#" class="nav-btn" data-page="profile">
+                <a href="#" class="nav-link" data-page="profilePage">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                         <circle cx="12" cy="7" r="4"/>
@@ -1712,7 +1711,7 @@ if (!$is_logged_in) {
             <div class="page-container">
                 
                 <!-- ==================== HOME SECTION ==================== -->
-                <section id="page-home" class="page-section active">
+                <section id="homePage" class="page active">
                     <div class="page-header">
                         <h1>Welcome back, <span class="gradient"><?php echo $username; ?></span></h1>
                         <p>Your command center for script protection and cloud hosting</p>
@@ -1763,7 +1762,7 @@ if (!$is_logged_in) {
                     </div>
 
                     <div class="feature-nav-grid">
-                        <div class="card feature-card" data-navigate="hosting">
+                        <div class="card feature-card" data-page="hostingPage">
                             <div class="f-icon">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
@@ -1772,7 +1771,7 @@ if (!$is_logged_in) {
                             <h3>Cloud Hosting</h3>
                             <p>Deploy and manage your protected scripts globally</p>
                         </div>
-                        <div class="card feature-card" data-navigate="credits">
+                        <div class="card feature-card" data-page="creditsPage">
                             <div class="f-icon">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <circle cx="12" cy="12" r="10"/>
@@ -1783,7 +1782,7 @@ if (!$is_logged_in) {
                             <h3>Credits</h3>
                             <p>Purchase credits for obfuscation and hosting</p>
                         </div>
-                        <div class="card feature-card" data-navigate="redeem">
+                        <div class="card feature-card" data-page="redeemPage">
                             <div class="f-icon">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
@@ -1796,7 +1795,7 @@ if (!$is_logged_in) {
                 </section>
 
                 <!-- ==================== HOSTING SECTION ==================== -->
-                <section id="page-hosting" class="page-section">
+                <section id="hostingPage" class="page">
                     <div class="page-header">
                         <h1><span class="gradient">Aegis</span> Cloud Hosting</h1>
                         <p>Deploy and manage your protected scripts on military-grade infrastructure</p>
@@ -1946,7 +1945,7 @@ if (!$is_logged_in) {
                 </section>
 
                 <!-- ==================== CREDITS SECTION ==================== -->
-                <section id="page-credits" class="page-section">
+                <section id="creditsPage" class="page">
                     <div class="page-header">
                         <h1>Credits <span class="gradient">Balance</span></h1>
                         <p>Manage your credits and purchase more</p>
@@ -2026,7 +2025,7 @@ if (!$is_logged_in) {
                 </section>
 
                 <!-- ==================== REDEEM SECTION ==================== -->
-                <section id="page-redeem" class="page-section">
+                <section id="redeemPage" class="page">
                     <div class="page-header">
                         <h1>Redeem <span class="gradient">License Key</span></h1>
                         <p>Activate credits with VALAX license codes</p>
@@ -2057,7 +2056,7 @@ if (!$is_logged_in) {
                 </section>
 
                 <!-- ==================== PROFILE SECTION ==================== -->
-                <section id="page-profile" class="page-section">
+                <section id="profilePage" class="page">
                     <div class="page-header">
                         <h1>Profile <span class="gradient">Settings</span></h1>
                         <p>Manage your account information and security</p>
@@ -2352,110 +2351,81 @@ if (!$is_logged_in) {
     }
 
     // =====================================================
-    // 页面切换系统 (恢复自 dashboard-2(1).php)
+    // 页面切换系统 (稳定版本)
     // =====================================================
-    console.log("Dashboard JS Loaded");
+    document.addEventListener("DOMContentLoaded", function () {
+        console.log("Dashboard Init OK");
 
-    // Cookie 工具函数
-    function setCookie(name, value, days) {
-        var expires = "";
-        if (days) {
-            var date = new Date();
-            date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
-            expires = "; expires=" + date.toUTCString();
-        }
-        document.cookie = name + "=" + (value || "") + expires + "; path=/";
-    }
+        // 获取所有导航按钮和页面
+        const buttons = document.querySelectorAll("[data-page]");
+        const pages = document.querySelectorAll(".page");
 
-    function getCookie(name) {
-        var nameEQ = name + "=";
-        var ca = document.cookie.split(';');
-        for (var i = 0; i < ca.length; i++) {
-            var c = ca[i];
-            while (c.charAt(0) === ' ') c = c.substring(1, c.length);
-            if (c.indexOf(nameEQ) === 0) return decodeURIComponent(c.substring(nameEQ.length, c.length));
-        }
-        return null;
-    }
+        // 页面切换函数
+        function switchPage(pageId) {
+            // 隐藏所有页面
+            pages.forEach(function(p) {
+                p.classList.remove("active");
+                p.style.display = "none";
+            });
 
-    // 页面标题
-    var pageTitles = {
-        'home': 'Dashboard',
-        'hosting': 'Hosting',
-        'credits': 'Credits',
-        'redeem': 'Redeem',
-        'profile': 'Profile'
-    };
-
-    // 切换页面函数
-    function switchPage(page) {
-        console.log('switchPage called:', page);
-
-        // 移除所有 page-section 的 active 类
-        document.querySelectorAll('.page-section').forEach(function(p) {
-            p.classList.remove('active');
-        });
-
-        // 移除所有 nav-btn 的 active 类
-        document.querySelectorAll('.nav-btn').forEach(function(item) {
-            item.classList.remove('active');
-        });
-
-        // 显示目标页面
-        var target = document.getElementById('page-' + page);
-        if (target) {
-            target.classList.add('active');
-        }
-
-        // 高亮对应导航按钮
-        document.querySelectorAll('.nav-btn').forEach(function(item) {
-            if (item.getAttribute('data-page') === page) {
-                item.classList.add('active');
+            // 显示目标页面
+            const target = document.getElementById(pageId);
+            if (target) {
+                target.style.display = "block";
+                target.classList.add("active");
+            } else {
+                console.error("Page not found:", pageId);
             }
-        });
 
-        // 更新标题
-        var titleEl = document.getElementById('topbar-title');
-        if (titleEl && pageTitles[page]) {
-            titleEl.textContent = pageTitles[page];
+            // 更新导航高亮
+            buttons.forEach(function(btn) {
+                btn.classList.remove("active");
+                if (btn.getAttribute("data-page") === pageId) {
+                    btn.classList.add("active");
+                }
+            });
+
+            // 更新标题
+            const pageTitles = {
+                'homePage': 'Dashboard',
+                'hostingPage': 'Hosting',
+                'creditsPage': 'Credits',
+                'redeemPage': 'Redeem',
+                'profilePage': 'Profile'
+            };
+            const titleEl = document.getElementById('topbar-title');
+            if (titleEl && pageTitles[pageId]) {
+                titleEl.textContent = pageTitles[pageId];
+            }
+
+            console.log("Switch to:", pageId);
         }
 
-        // 保存到 cookie
-        setCookie('activePage', page, 7);
-    }
-
-    // 初始化
-    document.addEventListener('DOMContentLoaded', function() {
-        console.log('DOMContentLoaded fired');
-
-        var currentPage = getCookie('activePage') || 'home';
-        console.log('Initial page:', currentPage);
-
-        // 初始切换到当前页面
-        switchPage(currentPage);
-
-        // 绑定导航按钮点击事件
-        document.querySelectorAll('.nav-btn').forEach(function(item) {
-            item.addEventListener('click', function(e) {
+        // 绑定按钮点击
+        buttons.forEach(function(btn) {
+            btn.addEventListener("click", function(e) {
                 e.preventDefault();
-                var page = this.getAttribute('data-page');
-                console.log('Nav item clicked:', page);
+                const page = this.getAttribute("data-page");
                 if (page) {
                     switchPage(page);
                 }
             });
         });
 
-        // 绑定功能卡片点击事件
-        document.querySelectorAll('.feature-card[data-navigate]').forEach(function(card) {
-            card.addEventListener('click', function() {
-                var section = this.getAttribute('data-navigate');
-                console.log('Feature card clicked:', section);
-                if (section) {
-                    switchPage(section);
-                }
-            });
+        // 初始化（只显示 active）
+        pages.forEach(function(p) {
+            p.style.display = "none";
         });
+        const activePage = document.querySelector(".page.active");
+        if (activePage) {
+            activePage.style.display = "block";
+        } else if (pages.length > 0) {
+            pages[0].style.display = "block";
+            pages[0].classList.add("active");
+        }
+
+        console.log("Pages found:", pages.length);
+        console.log("Buttons found:", buttons.length);
     });
 
         // =====================================================
