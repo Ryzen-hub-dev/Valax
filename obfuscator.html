@@ -3,103 +3,121 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Valax Lua Protector - Enterprise Code Protection</title>
+<title>Valax VM Protector - Enterprise VM Obfuscation Engine</title>
 <style>
 :root{
-  --bg:#0a0b0f;--card:#12141c;--panel:#0e1017;--border:#1a1d28;
-  --accent:#8b5cf6;--accent2:#06b6d4;--g:#22d3ee;--danger:#ef4444;
+  --bg:#08090c;--card:#111318;--panel:#0c0e12;--border:#1a1d26;
+  --accent:#a855f7;--accent2:#06b6d4;--g:#22d3ee;--danger:#ef4444;
   --amber:#f59e0b;--text:#e2e8f0;--muted:#64748b;--success:#10b981;
+  --vm:#8b5cf6;--cry:#ec4899;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;background-image:radial-gradient(ellipse 80% 50% at 50% -10%,rgba(139,92,246,.08),transparent)}
-.wrap{max-width:1440px;margin:0 auto;padding:1.5rem}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;background-image:radial-gradient(ellipse 80% 50% at 50% -10%,rgba(168,85,247,.06),transparent)}
+.wrap{max-width:1500px;margin:0 auto;padding:1.5rem}
 header{display:flex;align-items:center;gap:.8rem;margin-bottom:2rem;padding-bottom:1.5rem;border-bottom:1px solid var(--border);flex-wrap:wrap}
 .logo{font-size:1.6rem;font-weight:900;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.vbadge{font-size:.7rem;padding:.3rem .8rem;border-radius:12px;font-weight:700;background:linear-gradient(135deg,var(--accent),#6366f1);color:#fff}
+.vbadge{font-size:.7rem;padding:.3rem .8rem;border-radius:12px;font-weight:700;background:linear-gradient(135deg,var(--vm),#6366f1);color:#fff}
 .badge{font-size:.6rem;padding:.2rem .5rem;border-radius:4px;font-family:monospace}
 .b1{background:rgba(34,211,238,.1);color:var(--g);border:1px solid rgba(34,211,238,.2)}
 .b2{background:rgba(239,68,68,.1);color:var(--danger);border:1px solid rgba(239,68,68,.2)}
-.b3{background:rgba(139,92,246,.1);color:var(--accent);border:1px solid rgba(139,92,246,.2)}
+.b3{background:rgba(168,85,247,.1);color:var(--accent);border:1px solid rgba(168,85,247,.2)}
 .b4{background:rgba(245,158,11,.1);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
-.main{display:grid;grid-template-columns:1fr 420px;gap:1.5rem;align-items:start}
-@media(max-width:1100px){.main{grid-template-columns:1fr}}
+.b5{background:rgba(236,72,153,.1);color:var(--cry);border:1px solid rgba(236,72,153,.2)}
+.main{display:grid;grid-template-columns:1fr 450px;gap:1.5rem;align-items:start}
+@media(max-width:1200px){.main{grid-template-columns:1fr}}
 .panel{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:1.5rem}
 .ph{padding:.85rem 1.4rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.6rem;font-weight:700;font-size:.82rem;letter-spacing:.04em;text-transform:uppercase}
 .dot{width:7px;height:7px;border-radius:50%}
 .pb{padding:1.4rem}
-textarea{width:100%;background:#080910;border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Courier New',monospace;font-size:.78rem;padding:.9rem;resize:vertical;outline:none;line-height:1.6}
+textarea{width:100%;background:#080910;border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Courier New',monospace;font-size:.75rem;padding:.9rem;resize:vertical;outline:none;line-height:1.5}
 textarea:focus{border-color:var(--accent)}
-.src{min-height:220px}.out{min-height:350px;background:#080910;color:var(--g)}
-.slb{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:.8rem 0 .45rem;padding-bottom:.3rem;border-bottom:1px solid var(--border)}
-.fg{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem}
-.ft{display:flex;align-items:center;gap:.5rem;padding:.6rem .8rem;background:var(--panel);border:1px solid var(--border);border-radius:8px;cursor:pointer;user-select:none;transition:border .2s}
+.src{min-height:200px}.out{min-height:320px;background:#080910;color:var(--g);font-size:.7rem}
+.slb{font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:.8rem 0 .4rem;padding-bottom:.3rem;border-bottom:1px solid var(--border)}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.4rem}
+.ft{display:flex;align-items:center;gap:.5rem;padding:.55rem .75rem;background:var(--panel);border:1px solid var(--border);border-radius:8px;cursor:pointer;user-select:none;transition:border .2s}
 .ft:hover{border-color:var(--accent)}.ft.full{grid-column:1/-1}
 .ft input{display:none}
 .ft input:checked+.tb{background:var(--accent);border-color:var(--accent)}
 .ft input:checked+.tb::after{transform:translateX(14px)}
-.tb{width:30px;height:17px;background:var(--border);border:1px solid var(--muted);border-radius:9px;position:relative;transition:all .2s;flex-shrink:0}
-.tb::after{content:'';position:absolute;top:2px;left:2px;width:11px;height:11px;background:#fff;border-radius:50%;transition:transform .2s}
-.tl{font-size:.73rem;font-weight:600;line-height:1.2}.ts{font-size:.62rem;color:var(--muted);margin-top:.1rem}
-.presets{display:flex;gap:.5rem;margin-bottom:1rem}
-.pr{font-size:.72rem;padding:.45rem 1rem;border-radius:6px;cursor:pointer;font-weight:700;border:1px solid var(--border);background:var(--panel);color:var(--muted);transition:all .2s}
+.tb{width:28px;height:16px;background:var(--border);border:1px solid var(--muted);border-radius:8px;position:relative;transition:all .2s;flex-shrink:0}
+.tb::after{content:'';position:absolute;top:2px;left:2px;width:10px;height:10px;background:#fff;border-radius:50%;transition:transform .2s}
+.tl{font-size:.7rem;font-weight:600;line-height:1.2}.ts{font-size:.6rem;color:var(--muted);margin-top:.08rem}
+.presets{display:flex;gap:.4rem;margin-bottom:1rem}
+.pr{font-size:.7rem;padding:.4rem .9rem;border-radius:6px;cursor:pointer;font-weight:700;border:1px solid var(--border);background:var(--panel);color:var(--muted);transition:all .2s}
 .pr:hover{border-color:var(--accent);color:var(--accent)}
 .pr.active{background:var(--accent);border-color:var(--accent);color:#fff}
-.fi{margin-bottom:.8rem}
-.fi label{display:block;font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.3rem}
-.fi input,.fi select{width:100%;background:#0a0b10;border:1px solid var(--border);border-radius:7px;padding:.55rem .85rem;color:var(--text);font-family:monospace;font-size:.78rem;outline:none}
+.pr.vm-active{background:var(--vm);border-color:var(--vm);color:#fff}
+.fi{margin-bottom:.75rem}
+.fi label{display:block;font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.25rem}
+.fi input,.fi select{width:100%;background:#0a0b10;border:1px solid var(--border);border-radius:6px;padding:.5rem .8rem;color:var(--text);font-family:monospace;font-size:.75rem;outline:none}
 .fi select option{background:#0d0e14}
-.rb{width:100%;background:linear-gradient(135deg,var(--accent),#6366f1);border:none;color:#fff;padding:.95rem;border-radius:10px;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:0 4px 24px rgba(139,92,246,.3);transition:all .25s;margin-top:.25rem}
+.rb{width:100%;background:linear-gradient(135deg,var(--accent),#6366f1);border:none;color:#fff;padding:.9rem;border-radius:10px;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:0 4px 24px rgba(168,85,247,.3);transition:all .25s;margin-top:.25rem}
 .rb:hover{transform:translateY(-2px)}
 .rb:disabled{opacity:.5;cursor:not-allowed;transform:none}
-.chips{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.9rem}
-.chip{font-size:.65rem;padding:.18rem .5rem;border-radius:4px;font-family:monospace;font-weight:600;background:rgba(34,211,238,.1);color:var(--g);border:1px solid rgba(34,211,238,.2)}
-.stats{display:flex;gap:.8rem;margin-bottom:.9rem;padding:.7rem .9rem;background:var(--panel);border-radius:8px;border:1px solid var(--border)}
-.stat{text-align:center;flex:1}.sv{font-family:monospace;font-size:.95rem;font-weight:800;color:var(--accent)}
-.sl2{font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
-.info{background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.2);border-radius:8px;padding:.85rem;font-size:.76rem;color:var(--muted);line-height:1.7;margin-top:.7rem}
+.rb.vm{background:linear-gradient(135deg,var(--vm),#7c3aed)}
+.rb.vm:hover{box-shadow:0 4px 24px rgba(168,85,247,.5)}
+.chips{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.8rem}
+.chip{font-size:.62rem;padding:.15rem .45rem;border-radius:4px;font-family:monospace;font-weight:600;background:rgba(34,211,238,.1);color:var(--g);border:1px solid rgba(34,211,238,.2)}
+.chip.vm{background:rgba(168,85,247,.1);color:var(--accent);border-color:rgba(168,85,247,.2)}
+.chip.cry{background:rgba(236,72,153,.1);color:var(--cry);border-color:rgba(236,72,153,.2)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;margin-bottom:.8rem;padding:.65rem .8rem;background:var(--panel);border-radius:8px;border:1px solid var(--border)}
+.stat{text-align:center}.sv{font-family:monospace;font-size:.9rem;font-weight:800;color:var(--accent)}.sv.vm{color:var(--vm)}
+.sl2{font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.info{background:rgba(168,85,247,.07);border:1px solid rgba(168,85,247,.2);border-radius:8px;padding:.8rem;font-size:.73rem;color:var(--muted);line-height:1.6;margin-top:.7rem}
 .info strong{color:var(--accent)}
-.err{color:var(--danger);font-size:.82rem;margin-top:.7rem;padding:.7rem;background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2);border-radius:8px;white-space:pre-wrap;max-height:200px;overflow-y:auto}
-.progress{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:.75rem;display:none}
-.pf{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width .3s}
-.cb{background:transparent;border:1px solid var(--accent);color:var(--accent);padding:.45rem 1.1rem;border-radius:6px;cursor:pointer;font-family:monospace;font-size:.76rem;font-weight:600;margin-bottom:.7rem}
+.err{color:var(--danger);font-size:.8rem;margin-top:.7rem;padding:.7rem;background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2);border-radius:8px;white-space:pre-wrap;max-height:180px;overflow-y:auto}
+.progress{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:.7rem;display:none}
+.pf{height:100%;background:linear-gradient(90deg,var(--accent),var(--vm));border-radius:2px;transition:width .3s}
+.cb{background:transparent;border:1px solid var(--accent);color:var(--accent);padding:.4rem 1rem;border-radius:6px;cursor:pointer;font-family:monospace;font-size:.73rem;font-weight:600;margin-bottom:.7rem;margin-right:.4rem}
 .cb:hover{background:var(--accent);color:#fff}
-.bar{flex:1;min-width:80px}
-.svbar{font-size:.7rem;color:var(--muted);margin-top:.2rem}
+.cb.vm{border-color:var(--vm);color:var(--vm)}
+.cb.vm:hover{background:var(--vm);color:#fff}
+.tag{display:inline-block;font-size:.55rem;padding:.1rem .35rem;border-radius:3px;font-weight:700;margin-left:.3rem;vertical-align:middle}
+.tag.vm{background:rgba(168,85,247,.2);color:var(--vm)}
+.tag.new{background:rgba(16,185,129,.2);color:var(--success)}
+.vm-badge{background:linear-gradient(135deg,var(--vm),#7c3aed);color:#fff;padding:.2rem .5rem;border-radius:4px;font-size:.6rem;font-weight:700;font-family:monospace}
+.divider{border-top:1px solid var(--border);margin:.7rem 0}
 </style>
 </head>
 <body>
 <div class="wrap">
 <header>
-  <div class="logo">Valax Lua Protector</div>
-  <div class="vbadge">ENTERPRISE v7</div>
-  <div class="badge b3">Lua 5.1 + Luau</div>
-  <div class="badge b1">AST-Level</div>
-  <div class="badge b4">VM Engine</div>
-  <div class="badge b2">Anti-Tamper</div>
+  <div class="logo">Valax VM Protector</div>
+  <div class="vbadge">VM ENGINE v8</div>
+  <div class="badge b3">Real Bytecode VM</div>
+  <div class="badge b5">Encrypted Stream</div>
+  <div class="badge b1">AST→IR→VM</div>
 </header>
 <div class="main">
   <div>
     <div class="panel">
-      <div class="ph"><div class="dot" style="background:var(--accent)"></div>Source Code - Lua / Luau</div>
+      <div class="ph"><div class="dot" style="background:var(--accent)"></div>Source Code <span class="tag vm">LUA 5.1 + LUAU</span></div>
       <div class="pb">
-        <textarea class="src" id="src" placeholder="-- Enter your Lua or Luau code here
+        <textarea class="src" id="src" placeholder="-- Enter Lua/Luau code
 -- Example:
-print('Hello from Valax!')
+print('Hello from VM!')
 local x = 42
 function greet(name)
-    print('Hello, ' .. name)
+    return 'Hello, ' .. name
 end
-greet('World')"></textarea>
+print(greet('World'))"></textarea>
       </div>
     </div>
     <div class="progress" id="prog"><div class="pf" id="pf" style="width:0%"></div></div>
     <div class="panel" id="rp" style="display:none">
-      <div class="ph"><div class="dot" style="background:var(--success)"></div>Protected Output</div>
+      <div class="ph"><div class="dot" style="background:var(--success)"></div>VM Protected Output <span class="vm-badge">BYTECODE VM</span></div>
       <div class="pb">
         <div class="stats" id="stats"></div>
         <div class="chips" id="chips"></div>
-        <button class="cb" onclick="doCopy()">Copy to Clipboard</button>
+        <div style="margin-bottom:.7rem">
+          <button class="cb" onclick="doCopy()">Copy Code</button>
+          <button class="cb vm" onclick="toggleBytecode()">Show Bytecode</button>
+        </div>
         <textarea class="out" id="out" readonly></textarea>
+        <div id="bytecodeView" style="display:none;margin-top:.5rem">
+          <div class="slb">VM Bytecode Stream <span class="tag new">DEBUG</span></div>
+          <textarea class="out" id="bcView" readonly style="height:150px;color:var(--vm)"></textarea>
+        </div>
         <div id="ib" class="info"></div>
       </div>
     </div>
@@ -107,38 +125,35 @@ greet('World')"></textarea>
   </div>
   <div>
     <div class="panel">
-      <div class="ph"><div class="dot" style="background:var(--accent2)"></div>Protection Profile</div>
+      <div class="ph"><div class="dot" style="background:var(--vm)"></div>Protection Mode</div>
       <div class="pb">
-        <div class="slb">Preset Modes</div>
+        <div class="slb">Obfuscation Level <span class="tag vm">NEW</span></div>
         <div class="presets">
           <button class="pr" onclick="setPreset('light')">Light</button>
-          <button class="pr" onclick="setPreset('medium')">Medium</button>
+          <button class="pr" onclick="setPreset('standard')">Standard</button>
+          <button class="pr" onclick="setPreset('vm')">VM Mode</button>
           <button class="pr active" onclick="setPreset('extreme')">Extreme</button>
         </div>
-        <div class="slb">Obfuscation Core</div>
+        <div class="slb">VM Engine <span class="tag vm">NEW</span></div>
         <div class="fg">
-          <label class="ft"><input type="checkbox" id="f_rename" checked><div class="tb"></div><div class="tl">Variable Rename</div></div></label>
-          <label class="ft"><input type="checkbox" id="f_dead"><div class="tb"></div><div class="tl">Dead Code</div></div></label>
-          <label class="ft"><input type="checkbox" id="f_strenc" checked><div class="tb"></div><div class="tl">String Encrypt</div></div></label>
-          <label class="ft"><input type="checkbox" id="f_minify"><div class="tb"></div><div class="tl">Minify</div></div></label>
-          <label class="ft full"><input type="checkbox" id="f_cff" checked><div class="tb"></div><div class="tl">Control Flow Flattening</div><div class="ts">Transforms loops to state machines</div></div></label>
-          <label class="ft full"><input type="checkbox" id="f_vm" checked><div class="tb"></div><div class="tl">VM Engine Layer</div><div class="ts">Key logic as VM instructions</div></div></label>
+          <label class="ft full"><input type="checkbox" id="f_vm" checked><div class="tb"></div><div><div class="tl">Enable VM Engine</div><div class="ts">Compile to VM bytecode</div></div></label>
+          <label class="ft full"><input type="checkbox" id="f_vm_poly"><div class="tb"></div><div><div class="tl">Polymorphic VM <span class="tag vm">NEW</span></div><div class="ts">Random opcode mapping each build</div></div></label>
+          <label class="ft full"><input type="checkbox" id="f_enc" checked><div class="tb"></div><div><div class="tl">Bytecode Encryption <span class="tag new">NEW</span></div><div class="ts">XOR + key rotation encryption</div></div></label>
+          <label class="ft full"><input type="checkbox" id="f_vm_sealed" checked><div class="tb"></div><div><div class="tl">VM Sealing</div><div class="ts">IIFE wrapper, nothing in _G</div></div></label>
         </div>
         <div class="slb">Protection Layers</div>
         <div class="fg">
-          <label class="ft full"><input type="checkbox" id="f_antidebug"><div class="tb"></div><div class="tl">Anti-Debug</div><div class="ts">debug.getinfo, hookfunction detection</div></div></label>
-          <label class="ft full"><input type="checkbox" id="f_antitamp"><div class="tb"></div><div class="tl">Integrity Check</div><div class="ts">Hash verification, tamper detection</div></div></label>
-          <label class="ft full"><input type="checkbox" id="f_vmhide"><div class="tb"></div><div class="tl">VM Sealing</div><div class="ts">IIFE wrapper, nothing in _G</div></div></label>
+          <label class="ft"><input type="checkbox" id="f_rename" checked><div class="tb"></div><div class="tl">Var Rename</div></div></label>
+          <label class="ft"><input type="checkbox" id="f_strenc" checked><div class="tb"></div><div class="tl">String Enc</div></div></label>
+          <label class="ft"><input type="checkbox" id="f_dead"><div class="tb"></div><div class="tl">Dead Code</div></div></label>
+          <label class="ft"><input type="checkbox" id="f_fake"><div class="tb"></div><div class="tl">Fake Ops</div></div></label>
+          <label class="ft full"><input type="checkbox" id="f_cff" checked><div class="tb"></div><div class="tl">Control Flow Flattening</div></div></label>
+          <label class="ft full"><input type="checkbox" id="f_antidebug" checked><div class="tb"></div><div class="tl">Anti-Debug + Anti-Tamper</div></div></label>
+          <label class="ft full"><input type="checkbox" id="f_vm_intg" checked><div class="tb"></div><div class="tl">VM Integrity Hash <span class="tag vm">NEW</span></div><div class="ts">Multi-layer bytecode validation</div></div></label>
         </div>
-        <div class="slb">Enhancement</div>
-        <div class="fg">
-          <label class="ft"><input type="checkbox" id="f_fake"><div class="tb"></div><div class="tl">Fake Opcodes</div></div></label>
-          <label class="ft"><input type="checkbox" id="f_junk"><div class="tb"></div><div class="tl">Junk Upvalues</div></div></label>
-          <label class="ft full"><input type="checkbox" id="f_noise" checked><div class="tb"></div><div class="tl">Roblox API Noise</div><div class="ts">Inject real-looking API calls</div></div></label>
-        </div>
-        <div class="divider" style="border-top:1px solid var(--border);margin:.8rem 0"></div>
-        <div class="fi"><label>Entropy Seed</label><input type="text" id="eseed" placeholder="Optional: changes encryption"></div>
-        <button class="rb" id="obfBtn" onclick="go()">Protect Code</button>
+        <div class="divider"></div>
+        <div class="fi"><label>Entropy Seed</label><input type="text" id="eseed" placeholder="Optional: changes all encryption"></div>
+        <button class="rb vm" id="obfBtn" onclick="go()">Compile to VM + Protect</button>
       </div>
     </div>
   </div>
@@ -148,12 +163,12 @@ greet('World')"></textarea>
 <script>
 'use strict';
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  VALAX LUA PROTECTOR v7 — ENTERPRISE GRADE
-//  Architecture: Modular AST-based obfuscation pipeline
-// ═══════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+//  VALAX VM PROTECTOR v8 — REAL BYTECODE VM ENGINE
+//  Architecture: AST → IR → VM Bytecode → Encryption → VM Runtime
+// ══════════════════════════════════════════════════════════════════════════════
 
-// ── Module 1: UTILITIES ────────────────────────────────────────────────────
+// ── UTILITIES ──────────────────────────────────────────────────────────────
 const ri = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 const rh = (n = 8) => [...Array(n)].map(() => '0123456789abcdef'[ri(0, 15)]).join('');
 const f  = id => document.getElementById('f_' + id)?.checked ?? false;
@@ -165,130 +180,155 @@ function setProg(v) {
   if (v >= 100) setTimeout(() => e.style.display = 'none', 500);
 }
 
-// ── Module 2: VARIABLE NAME GENERATOR ──────────────────────────────────────
-// Enterprise-grade name generation: pool-based, Luraph-compatible
-const _namePool = (() => {
-  const chars = 'fDySJWxmwPMBXGaUsgnLEoRbKQHqiTkjhzVNuCvrted';
-  const two   = ['nN','aN','cN','_N','_7','C7','y7','eN','f7','m7','H7','n7','AN','Z7','ON',
-    'LN','mN','bN','rN','u7','MN','E7','iN','tN','N7','B7','v7','s7','k7','O7','P7','R7','S7',
-    'q7','X7','h7','L7','jN','SN','BN','cC','gC','IC','rC','eC','WC','mC','PC','YC','GC'];
-  const pool = [];
-  for (const c of chars) pool.push(c);
-  for (const t of two) pool.push(t);
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-  return pool;
+// ── NAME GENERATOR ─────────────────────────────────────────────────────────
+const _pool = (() => {
+  const c = 'fDySJWxmwPMBXGaUsgnLEoRbKQHqiTkjhzVNuCvrted';
+  const t = ['nN','aN','cN','_N','_7','C7','y7','eN','f7','m7','H7','n7','AN','Z7','ON','LN','mN','bN','rN','u7','MN','E7','iN','tN','N7','B7','v7','s7','k7','O7','P7','R7','S7'];
+  const p = [...c].concat(t);
+  for (let i = p.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [p[i],p[j]] = [p[j],p[i]]; }
+  return p;
 })();
-let _nameIdx = 0;
-const _usedNames = new Set();
-
+let _ni = 0, _us = new Set();
 function rname() {
-  while (_nameIdx < _namePool.length) {
-    const c = _namePool[_nameIdx++];
-    if (!_usedNames.has(c)) { _usedNames.add(c); return c; }
-  }
-  const bases = 'fDySJWxmwPMBGaUnLeRb';
-  for (let n = 10; n < 100; n++) {
-    for (const b of bases) {
-      const c = b + n;
-      if (!_usedNames.has(c)) { _usedNames.add(c); return c; }
-    }
-  }
+  while (_ni < _pool.length) { const c = _pool[_ni++]; if (!_us.has(c)) { _us.add(c); return c; } }
+  const b = 'fDySJWxmwPMBGaUnLeRb';
+  for (let n = 10; n < 100; n++) for (const x of b) { const c = x+n; if (!_us.has(c)) { _us.add(c); return c; } }
   return 'x' + Date.now();
 }
+function resetNames() { _ni = 0; _us.clear(); }
 
-// ── Module 3: NUMBER ENCODING ───────────────────────────────────────────────
-let _numStyle = ri(0, 4);
-
+// ── NUMBER ENCODING ────────────────────────────────────────────────────────
+let _ns = ri(0, 4);
 function N(n) {
   n = Math.floor(n) & 0xFFFFFF;
-  const s = _numStyle;
-  if (s === 0) {
-    // Luraph signature: binary/hex with underscores
-    const mode = ri(0, 5);
-    if (mode === 0) return '0B' + n.toString(2);
-    if (mode === 1) return '0X' + n.toString(16).toUpperCase();
-    if (mode === 2) { const b = n.toString(2); return '0B' + b.split('').map((d,i) => i>0&&i%4===0?'_'+d:d).join(''); }
-    if (mode === 3) { const h = n.toString(16).toUpperCase(); return '0X' + h.split('').map((d,i) => i>0&&ri(0,2)===0?'_'+d:d).join(''); }
-    const b = n.toString(2);
-    return '0B' + b.split('').map((d,i) => i>0&&i%4===0?'__'+d:d).join('');
+  if (_ns === 0) {
+    const m = ri(0,5);
+    if (m===0) return '0B'+n.toString(2);
+    if (m===1) return '0X'+n.toString(16).toUpperCase();
+    if (m===2) { const b=n.toString(2); return '0B'+b.split('').map((d,i)=>i>0&&i%4===0?'_'+d:d).join(''); }
+    const b=n.toString(2); return '0B'+b.split('').map((d,i)=>i>0&&i%4===0?'__'+d:d).join('');
   }
-  if (s === 1) {
-    if (n === 0) return '(0.0)';
-    if (n === 1) return '(1.0)';
-    return `(${n}.0)`;
-  }
-  if (s === 2) {
-    const k1 = ri(1, 0xFF);
-    return `bit32.bxor(0x${(n ^ k1).toString(16).toUpperCase()},0x${k1.toString(16).toUpperCase()})`;
-  }
-  if (s === 3) {
-    const off = ri(100, 999);
-    return `(-${off}+${n+off})`;
-  }
-  const allFams = [0,1,2,3];
-  const saved = _numStyle;
-  _numStyle = allFams[ri(0,3)];
-  const r = N(n);
-  _numStyle = saved;
-  return r;
+  if (_ns === 1) return n === 0 ? '(0.0)' : `(${n}.0)`;
+  if (_ns === 2) { const k=ri(1,0xFF); return `bit32.bxor(0x${(n^k).toString(16).toUpperCase()},0x${k.toString(16).toUpperCase()})`; }
+  if (_ns === 3) { const o=ri(100,999); return `(-${o}+${n+o})`; }
+  const s=_ns; _ns=ri(0,3); const r=N(n); _ns=s; return r;
 }
 
-// Deep wraparound: XOR-based number transformation
-function dW(n) {
-  n = Math.floor(n) & 0xFFFFFF;
-  const offset = ri(0x10000000, 0x3FFFFFFF);
-  const big = (n + offset) >>> 0;
-  const rot = ri(2, 14);
-  const rotBig = ((big >>> rot) | ((big << (32-rot)) >>> 0)) >>> 0;
-  return `(-${offset}+bit32.rrotate(bit32.bor(${N(rotBig)},${N(0)}),${N(32-rot)}))`;
-}
-
-// ── Module 4: STRING ENCRYPTION ───────────────────────────────────────────
-let _strSalt = ri(0, 5);
-let _strVariant = ri(0, 3);
-
+// ── STRING ENCRYPTION ──────────────────────────────────────────────────────
+let _sv=ri(0,3), _ss=ri(0,5);
 function encStr(s) {
-  const v = _strVariant;
-  if (v === 0) {
-    let r = '"';
-    for (const c of s) {
-      const code = c.charCodeAt(0);
-      const mode = (ri(0,2) + _strSalt) % 3;
-      if (mode === 0) r += '\\x' + code.toString(16).padStart(2,'0').toUpperCase();
-      else if (mode === 1) r += '\\u{' + code.toString(16).toUpperCase() + '}';
-      else r += '\\' + code.toString(8).padStart(3,'0');
-    }
-    return r + '"';
+  if (_sv===0) {
+    let r='"'; for (const c of s) {
+      const co=c.charCodeAt(0), m=(ri(0,2)+_ss)%3;
+      if(m===0) r+='\\x'+co.toString(16).padStart(2,'0').toUpperCase();
+      else if(m===1) r+='\\u{'+co.toString(16).toUpperCase()+'}';
+      else r+='\\'+co.toString(8).padStart(3,'0');
+    } return r+'"';
   }
-  if (v === 1) {
-    const codes = [...s].map(c => c.charCodeAt(0)).join(',');
-    return `string.char(${codes})`;
+  if (_sv===1) return `string.char(${[...s].map(c=>c.charCodeAt(0)).join(',')})`;
+  if (_sv===2) {
+    const k=ri(1,127), b=[...s].map(c=>c.charCodeAt(0)^k);
+    return `(function()local t={${b.join(',')}};local s="";for i=1,#t do s=s..string.char(bit32.bxor(t[i],${k}))end;return s end)()`;
   }
-  if (v === 2) {
-    const key = ri(1, 127);
-    const bytes = [...s].map(c => (c.charCodeAt(0) ^ key));
-    return `(function()local _t={${bytes.join(',')}};local _s="";for _i=1,#_t do _s=_s..string.char(bit32.bxor(_t[_i],${key}))end;return _s end)()`;
-  }
-  const shift = ri(1, 7);
-  const codes = [...s].reverse().map(c => c.charCodeAt(0) + shift);
-  return `(function()local _t={${codes.join(',')}};local _s="";for _i=#_t,1,-1 do _s=_s..string.char(_t[_i]-${shift})end;return _s end)()`;
+  const sh=ri(1,7), c=[...s].reverse().map(c=>c.charCodeAt(0)+sh);
+  return `(function()local t={${c.join(',')}};local s="";for i=#t,1,-1 do s=s..string.char(t[i]-${sh})end;return s end)()`;
 }
 
-// ── Module 5: OPAQUE PREDICATES ────────────────────────────────────────────
-const oT = () => ['math.floor(math.pi)~=4','math.huge>0','type(print)=="function"','math.abs(-1)==1','rawequal(1,1)','math.max(0,1)==1'][ri(0,5)];
-const oF = () => ['math.floor(math.pi)==4','math.huge<0','type(print)=="number"','rawequal(1,2)','math.max(0,1)==0'][ri(0,4)];
+// ── OPAQUE PREDICATES ──────────────────────────────────────────────────────
+const oT=()=>['math.floor(math.pi)~=4','math.huge>0','type(print)=="function"','rawequal(1,1)'][ri(0,3)];
+const oF=()=>['math.floor(math.pi)==4','math.huge<0','type(print)=="number"','rawequal(1,2)'][ri(0,3)];
 
-// ── Module 6: ROBLOX API NOISE ─────────────────────────────────────────────
-const RBLX_NOISE = ['workspace','game','script','Vector3','CFrame','Color3','UDim2','Instance',
-  'task','math','string','table','pairs','ipairs','tostring','tonumber','Vector2','BrickColor',
-  'TweenInfo','Enum','Random','coroutine','pcall','rawget','rawset','setmetatable','getmetatable',
-  'select','unpack','tick','os','bit32','utf8','type','error','warn','print','next','assert'];
-const rbxN = () => RBLX_NOISE[ri(0, RBLX_NOISE.length - 1)];
+// ── RBLX NOISE ─────────────────────────────────────────────────────────────
+const RBX=['workspace','game','script','Vector3','CFrame','Color3','UDim2','Instance','task','math','string','table','pairs','ipairs','tostring','tonumber','Vector2','BrickColor','TweenInfo','Enum','Random','coroutine','pcall','rawget','rawset','setmetatable','getmetatable','select','unpack','tick','os','bit32','utf8','type','error','warn','print'];
+const rbxN=()=>RBX[ri(0,RBX.length-1)];
 
-// ── Module 7: LEXER ────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+//  VM INSTRUCTION SET
+//  Register-based VM with custom opcodes
+// ══════════════════════════════════════════════════════════════════════════════
+const VM_OPS = {
+  HALT:   0,   // Stop execution
+  LOADK:  1,   // R[a] = constant[bx]
+  LOADBool:2,  // R[a] = bool(b)
+  LOADNIL:3,   // R[a..a+b] = nil
+  GETGLOBAL:4, // R[a] = globals[K[bx]]
+  SETGLOBAL:5, // globals[K[bx]] = R[a]
+  MOVE:   6,   // R[a] = R[b]
+  LOADINT:7,   // R[a] = integer
+  ADD:    8,   // R[a] = R[b] + R[c]
+  SUB:    9,   // R[a] = R[b] - R[c]
+  MUL:    10,  // R[a] = R[b] * R[c]
+  DIV:    11,  // R[a] = R[b] / R[c]
+  MOD:    12,  // R[a] = R[b] % R[c]
+  POW:    13,  // R[a] = R[b] ^ R[c]
+  AND:    14,  // R[a] = bit32.band(R[b], R[c])
+  OR:     15,  // R[a] = bit32.bor(R[b], R[c])
+  XOR:    16,  // R[a] = bit32.bxor(R[b], R[c])
+  NOT:    17,  // R[a] = not R[b]
+  UNM:    18,  // R[a] = -R[b]
+  LEN:    19,  // R[a] = #R[b]
+  CONCAT: 20,  // R[a] = concat R[b..c]
+  JMP:    21,  // PC += bx
+  JMPF:   22,  // if not R[a] then PC += bx
+  JMPT:   23,  // if R[a] then PC += bx
+  EQ:     24,  // if R[a] == R[b] then PC += bx
+  LT:     25,  // if R[a] < R[b] then PC += bx
+  LE:     26,  // if R[a] <= R[b] then PC += bx
+  CALL:   27,  // call R[a] with args
+  TAILCALL:28, // tail call
+  RETURN: 29,  // return R[a..a+b-1]
+  CLOSURE:30,  // R[a] = closure(K[bx])
+  VARARG: 31,  // R[a..a+b-1] = vararg
+  TABLEGET:32, // R[a] = R[b][R[c]]
+  TABLESET:33, // R[b][R[c]] = R[a]
+  NEWTABLE:34, // R[a] = {}
+  FORPREP:35,  // for loop setup
+  FORLOOP:36,  // for loop iteration
+  SETLIST:37,  // table.setlist
+  DECRYPT: 38, // decrypt bytecode chunk
+  CHECKSUM:39, // verify integrity hash
+  NOOP:    40, // no operation (dead code)
+};
+
+// Polymorphic opcode mapping
+let _opMap = {};
+function buildOpMap() {
+  const ops = Object.keys(VM_OPS).filter(k => VM_OPS[k] > 0);
+  _opMap = {};
+  const shuffled = [...ops].sort(() => Math.random() - 0.5);
+  shuffled.forEach((op, i) => { _opMap[op] = i; });
+  _opMap['NOOP'] = ri(100, 150); // Extra noop slots
+}
+function OP(op) { return _opMap[op] !== undefined ? _opMap[op] : VM_OPS[op] || 0; }
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  BYTECODE ENCRYPTION
+// ══════════════════════════════════════════════════════════════════════════════
+function encryptBytecode(code, key) {
+  const result = [];
+  let k = key;
+  for (let i = 0; i < code.length; i++) {
+    const byte = typeof code[i] === 'number' ? code[i] : code[i].v;
+    const enc = (byte ^ (k & 0xFF)) & 0xFF;
+    result.push(enc);
+    k = ((k * 31 + i) ^ enc) & 0xFFFF;
+  }
+  return result;
+}
+
+function buildDecryptFunc(code, key) {
+  const k = key;
+  const encrypted = encryptBytecode(code, key);
+  const chunks = [];
+  for (let i = 0; i < encrypted.length; i += 10) {
+    chunks.push(encrypted.slice(i, i + 10));
+  }
+  return { encrypted, key: k };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  LEXER
+// ══════════════════════════════════════════════════════════════════════════════
 const KW = new Set(['and','break','do','else','elseif','end','false','for',
   'function','goto','if','in','local','nil','not','or','repeat','return',
   'then','true','until','while']);
@@ -306,35 +346,25 @@ function lex(src) {
   while (i < n) {
     skipWS(); if (i >= n) break;
     if (src[i] === '[' && (src[i+1] === '[' || src[i+1] === '=')) {
-      const si = i; i++;
-      const lng = readLong();
+      const si = i; i++; const lng = readLong();
       if (lng !== null) { ts.push({t:'S',v:lng}); continue; }
       i = si;
     }
     if (src[i] === '-' && src[i+1] === '-') {
       i += 2;
       if (src[i] === '[' && (src[i+1] === '[' || src[i+1] === '=')) {
-        const si = i; i++;
-        const lng = readLong();
+        const si = i; i++; const lng = readLong();
         if (lng !== null) continue;
         i = si;
       }
-      while (i < n && src[i] !== '\n') i++;
-      continue;
+      while (i < n && src[i] !== '\n') i++; continue;
     }
     if (src[i] === '"' || src[i] === "'") {
       const q = src[i++]; let s = '';
       while (i < n && src[i] !== q) {
-        if (src[i] === '\\') {
-          i++;
-          const e = src[i++];
-          const esc = {n:'\n',t:'\t',r:'\r','\\':'\\','"':'"',"'":"'",a:'\x07',b:'\b',f:'\f',v:'\v','0':'\0'};
-          if (e >= '0' && e <= '9') {
-            let d = e;
-            if (i < n && src[i] >= '0' && src[i] <= '9') d += src[i++];
-            if (i < n && src[i] >= '0' && src[i] <= '9') d += src[i++];
-            s += String.fromCharCode(parseInt(d));
-          } else if (e === 'x') { s += String.fromCharCode(parseInt(src.slice(i,i+2),16)); i+=2; }
+        if (src[i] === '\\') { i++; const e = src[i++]; const esc = {n:'\n',t:'\t',r:'\r','\\':'\\','"':'"',"'":"'",a:'\x07',b:'\b',f:'\f',v:'\v','0':'\0'};
+          if (e >= '0' && e <= '9') { let d = e; if (i < n && src[i] >= '0' && src[i] <= '9') d += src[i++]; if (i < n && src[i] >= '0' && src[i] <= '9') d += src[i++]; s += String.fromCharCode(parseInt(d)); }
+          else if (e === 'x') { s += String.fromCharCode(parseInt(src.slice(i,i+2),16)); i+=2; }
           else s += esc[e] !== undefined ? esc[e] : e;
         } else s += src[i++];
       }
@@ -342,24 +372,13 @@ function lex(src) {
     }
     if (/[0-9]/.test(src[i]) || (src[i] === '.' && /[0-9]/.test(src[i+1]))) {
       let s = '';
-      if (src[i] === '0' && (src[i+1] === 'x' || src[i+1] === 'X')) {
-        s = src.slice(i, i+2); i += 2;
-        while (i < n && /[0-9a-fA-F_]/.test(src[i])) s += src[i++];
-        ts.push({t:'N',v:parseInt(s.replace(/_/g,''))}); continue;
-      }
+      if (src[i] === '0' && (src[i+1] === 'x' || src[i+1] === 'X')) { s = src.slice(i,i+2); i+=2; while (i < n && /[0-9a-fA-F_]/.test(src[i])) s += src[i++]; ts.push({t:'N',v:parseInt(s.replace(/_/g,''))}); continue; }
       while (i < n && /[0-9]/.test(src[i])) s += src[i++];
       if (i < n && src[i] === '.') { s += src[i++]; while (i < n && /[0-9]/.test(src[i])) s += src[i++]; }
-      if (i < n && (src[i] === 'e' || src[i] === 'E')) {
-        s += src[i++];
-        if (i < n && (src[i] === '+' || src[i] === '-')) s += src[i++];
-        while (i < n && /[0-9]/.test(src[i])) s += src[i++];
-      }
+      if (i < n && (src[i] === 'e' || src[i] === 'E')) { s += src[i++]; if (i < n && (src[i] === '+' || src[i] === '-')) s += src[i++]; while (i < n && /[0-9]/.test(src[i])) s += src[i++]; }
       ts.push({t:'N',v:parseFloat(s)}); continue;
     }
-    if (/[a-zA-Z_]/.test(src[i])) {
-      let s = ''; while (i < n && /[a-zA-Z0-9_]/.test(src[i])) s += src[i++];
-      ts.push({t: KW.has(s) ? 'K' : 'I', v:s}); continue;
-    }
+    if (/[a-zA-Z_]/.test(src[i])) { let s = ''; while (i < n && /[a-zA-Z0-9_]/.test(src[i])) s += src[i++]; ts.push({t: KW.has(s) ? 'K' : 'I', v:s}); continue; }
     if (src.slice(i,i+3) === '...') { ts.push({t:'O',v:'...'}); i+=3; continue; }
     const two = src.slice(i,i+2);
     if (['==','~=','<=','>=','..','//','<<','>>'].includes(two)) { ts.push({t:'O',v:two}); i+=2; continue; }
@@ -368,34 +387,22 @@ function lex(src) {
   ts.push({t:'E',v:'<eof>'}); return ts;
 }
 
-// ── Module 8: PARSER (Lua 5.1 + Luau subset) ───────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+//  PARSER
+// ══════════════════════════════════════════════════════════════════════════════
 class Parser {
   constructor(ts) { this.ts = ts; this.pos = 0; }
   peek() { return this.ts[this.pos]; }
   next() { return this.ts[this.pos++]; }
   check(t, v) { const k = this.peek(); return k.t === t && (v == null || k.v === v); }
-  eat(t, v) {
-    const k = this.next();
-    if (k.t !== t || (v != null && k.v !== v)) throw new Error('Parse error: expected ' + t + ':' + v + ' got ' + k.t + ':' + k.v);
-    return k;
-  }
+  eat(t, v) { const k = this.next(); if (k.t !== t || (v != null && k.v !== v)) throw new Error('Parse: ' + t + ':' + v + ' got ' + k.t + ':' + k.v); return k; }
   try_(t, v) { if (this.check(t, v)) { this.next(); return true; } return false; }
-
-  parse() {
-    const b = this.block();
-    if (!this.check('E')) throw new Error('Unexpected token: ' + this.peek().v);
-    return b;
-  }
-
+  parse() { const b = this.block(); if (!this.check('E')) throw new Error('Unexpected: ' + this.peek().v); return b; }
   block() {
     const ss = []; const END = new Set(['end','else','elseif','until']);
-    while (!this.check('E') && !(this.check('K') && END.has(this.peek().v))) {
-      const s = this.stat(); if (s) ss.push(s); this.try_('O', ';');
-      if (s && s.type === 'ret') break;
-    }
+    while (!this.check('E') && !(this.check('K') && END.has(this.peek().v))) { const s = this.stat(); if (s) ss.push(s); this.try_('O', ';'); if (s && s.type === 'ret') break; }
     return {type:'block',ss};
   }
-
   stat() {
     const k = this.peek();
     if (k.t === 'K') switch (k.v) {
@@ -406,31 +413,18 @@ class Parser {
       case 'for': return this.forStat();
       case 'repeat': { this.next(); const b=this.block(); this.eat('K','until'); const c=this.expr(); return {type:'repeat',b,c}; }
       case 'function': { this.next(); return this.funcStat(); }
-      case 'return': {
-        this.next(); const END2 = new Set(['end','else','elseif','until']);
-        let vs = [];
-        if (!this.check('E') && !(this.check('K') && END2.has(this.peek().v)) && !this.check('O',';'))
-          vs = this.exprList();
-        this.try_('O', ';'); return {type:'ret',vs};
-      }
+      case 'return': { this.next(); let vs = []; if (!this.check('E') && !this.check('O',';')) vs = this.exprList(); this.try_('O',';'); return {type:'ret',vs}; }
       case 'break': { this.next(); return {type:'break'}; }
-      case 'goto': { this.next(); return {type:'goto',n:this.eat('I').v}; }
-    }
-    if (k.t === 'I' && this.ts[this.pos+1] && this.ts[this.pos+1].v === '::') {
-      this.next(); this.next(); const nm = k.v; this.eat('O','::'); return {type:'label',n:nm};
     }
     return this.assignOrCall();
   }
-
   localStat() {
     this.eat('K','local');
     if (this.try_('K','function')) { const n=this.eat('I').v; const fn=this.funcbody(); return {type:'lf',n,fn}; }
-    const ns = [this.eat('I').v];
-    while (this.try_('O',',')) ns.push(this.eat('I').v);
+    const ns = [this.eat('I').v]; while (this.try_('O',',')) ns.push(this.eat('I').v);
     let vs = []; if (this.try_('O','=')) vs = this.exprList();
     return {type:'local',ns,vs};
   }
-
   ifStat() {
     this.eat('K','if'); const c=this.expr(); this.eat('K','then'); const th=this.block();
     const eis = []; let el = null;
@@ -438,649 +432,410 @@ class Parser {
     if (this.try_('K','else')) el = this.block();
     this.eat('K','end'); return {type:'if',c,th,eis,el};
   }
-
   forStat() {
     this.eat('K','for'); const fn = this.eat('I').v;
-    if (this.try_('O','=')) {
-      const s=this.expr(); this.eat('O',','); const lim=this.expr();
-      let step=null; if (this.try_('O',',')) step=this.expr();
-      this.eat('K','do'); const b=this.block(); this.eat('K','end');
-      return {type:'nfor',n:fn,s,lim,step,b};
-    }
+    if (this.try_('O','=')) { const s=this.expr(); this.eat('O',','); const lim=this.expr(); let step=null; if (this.try_('O',',')) step=this.expr(); this.eat('K','do'); const b=this.block(); this.eat('K','end'); return {type:'nfor',n:fn,s,lim,step,b}; }
     const ns = [fn]; while (this.try_('O',',')) ns.push(this.eat('I').v);
-    this.eat('K','in'); const its=this.exprList(); this.eat('K','do'); const b=this.block(); this.eat('K','end');
-    return {type:'gfor',ns,its,b};
+    this.eat('K','in'); const its=this.exprList(); this.eat('K','do'); const b=this.block(); this.eat('K','end'); return {type:'gfor',ns,its,b};
   }
-
-  funcStat() {
-    let nm = this.eat('I').v; let method = null;
-    while (this.try_('O','.')) nm += '.' + this.eat('I').v;
-    if (this.try_('O',':')) method = this.eat('I').v;
-    const fn = this.funcbody(method ? ['self'] : null);
-    return {type:'func_stat',n:nm,method,fn};
-  }
-
-  assignOrCall() {
-    let e = this.suffixExpr();
-    if (this.check('O','=') || this.check('O',',')) {
-      const tgts = [e]; while (this.try_('O',',')) tgts.push(this.suffixExpr());
-      this.eat('O','='); const vs=this.exprList(); return {type:'assign',tgts,vs};
-    }
-    if (e.type === 'call' || e.type === 'mcall') return {type:'callst',e};
-    throw new Error("syntax error near '" + this.peek().v + "'");
-  }
-
-  suffixExpr() {
-    let e = this.primaryExpr();
-    while (true) {
-      if (this.try_('O','.')) { e = {type:'field',obj:e,key:this.eat('I').v}; }
-      else if (this.check('O','[')) { this.next(); const k=this.expr(); this.eat('O',']'); e={type:'index',obj:e,key:k}; }
-      else if (this.try_('O',':')) { const m=this.eat('I').v; const as=this.callArgs(); e={type:'mcall',obj:e,method:m,args:as}; }
-      else if (this.check('O','(') || this.check('O','{') || this.check('S')) { const as=this.callArgs(); e={type:'call',func:e,args:as}; }
-      else break;
-    }
-    return e;
-  }
-
-  primaryExpr() {
-    const k = this.peek();
-    if (k.t === 'I') { this.next(); return {type:'var',name:k.v}; }
-    if (k.t === 'O' && k.v === '(') { this.next(); const e=this.expr(); this.eat('O',')'); return {type:'paren',e}; }
-    throw new Error("unexpected symbol near '" + k.v + "'");
-  }
-
-  callArgs() {
-    if (this.try_('O','(')) { if (this.try_('O',')')) return []; const as=this.exprList(); this.eat('O',')'); return as; }
-    if (this.check('S')) return [{type:'str',val:this.next().v}];
-    if (this.check('O','{')) return [this.tblCtor()];
-    throw new Error("function arguments expected");
-  }
-
-  tblCtor() {
-    this.eat('O','{'); const items = [];
-    if (!this.try_('O','}')) {
-      do {
-        if (this.check('O','[')) {
-          this.next(); const k=this.expr(); this.eat('O',']'); this.eat('O','='); const v=this.expr(); items.push({k,v});
-        } else if (this.check('I') && this.ts[this.pos+1] && this.ts[this.pos+1].v === '=') {
-          const key=this.next().v; this.eat('O','='); const v=this.expr(); items.push({k:{type:'str',val:key},v});
-        } else {
-          items.push({v:this.expr()});
-        }
-      } while (this.try_('O',','));
-      this.eat('O','}');
-    }
-    return {type:'tbl',items};
-  }
-
-  funcbody(ctx) {
-    this.eat('O','(');
-    const ps = ctx ? [...ctx] : [];
-    if (!this.check('O',')')) {
-      if (this.check('O','...')) { this.next(); this.eat('O',')'); }
-      else {
-        do { ps.push(this.eat('I').v); } while (this.try_(','));
-        this.try_('O',',');
-        if (this.check('O','...')) { this.next(); }
-        this.eat('O',')');
-      }
-    } else { this.next(); }
-    let d = null;
-    if (this.try_('O',':')) d = this.eat('I').v;
-    const b = this.block(); this.eat('K','end');
-    return {ps,d,b};
-  }
-
+  funcStat() { let nm = this.eat('I').v; while (this.try_('O','.')) nm += '.' + this.eat('I').v; if (this.try_('O',':')) { const m=this.eat('I').v; const fn=this.funcbody(['self'].concat([])); return {type:'func_stat',n:nm,method:m,fn}; } const fn=this.funcbody(); return {type:'func_stat',n:nm,fn}; }
+  assignOrCall() { let e = this.suffixExpr(); if (this.check('O','=') || this.check('O',',')) { const tgts = [e]; while (this.try_('O',',')) tgts.push(this.suffixExpr()); this.eat('O','='); const vs=this.exprList(); return {type:'assign',tgts,vs}; } if (e.type === 'call' || e.type === 'mcall') return {type:'callst',e}; throw new Error('syntax error'); }
+  suffixExpr() { let e = this.primaryExpr(); while (true) { if (this.try_('O','.')) e = {type:'field',obj:e,key:this.eat('I').v}; else if (this.check('O','[')) { this.next(); const k=this.expr(); this.eat('O',']'); e={type:'index',obj:e,key:k}; } else if (this.try_('O',':')) { const m=this.eat('I').v; const as=this.callArgs(); e={type:'mcall',obj:e,method:m,args:as}; } else if (this.check('O','(') || this.check('O','{') || this.check('S')) { const as=this.callArgs(); e={type:'call',func:e,args:as}; } else break; } return e; }
+  primaryExpr() { const k = this.peek(); if (k.t === 'I') { this.next(); return {type:'var',name:k.v}; } if (k.t === 'O' && k.v === '(') { this.next(); const e=this.expr(); this.eat('O',')'); return {type:'paren',e}; } throw new Error('unexpected: ' + k.v); }
+  callArgs() { if (this.try_('O','(')) { if (this.try_('O',')')) return []; const as=this.exprList(); this.eat('O',')'); return as; } if (this.check('S')) return [{type:'str',val:this.next().v}]; if (this.check('O','{')) return [this.tblCtor()]; throw new Error('args expected'); }
+  tblCtor() { this.eat('O','{'); const items = []; if (!this.try_('O','}')) { do { if (this.check('O','[')) { this.next(); const k=this.expr(); this.eat('O',']'); this.eat('O','='); const v=this.expr(); items.push({k,v}); } else if (this.check('I') && this.ts[this.pos+1] && this.ts[this.pos+1].v === '=') { const key=this.next().v; this.eat('O','='); const v=this.expr(); items.push({k:{type:'str',val:key},v}); } else { items.push({v:this.expr()}); } } while (this.try_(',')); this.eat('O','}'); } return {type:'tbl',items}; }
+  funcbody(ctx) { this.eat('O','('); const ps = ctx ? [...ctx] : []; if (!this.check('O',')')) { if (this.check('O','...')) { this.next(); this.eat('O',')'); } else { do { ps.push(this.eat('I').v); } while (this.try_(',')); this.try_(','); if (this.check('O','...')) { this.next(); } this.eat('O',')'); } } else { this.next(); } let d = null; if (this.try_('O',':')) d = this.eat('I').v; const b = this.block(); this.eat('K','end'); return {ps,d,b}; }
   expr() { return this.exprOr(); }
-
-  exprOr() {
-    let e = this.exprAnd();
-    while (this.try_('K','or')) e = {type:'op',op:'or',a:e,b:this.exprAnd()};
-    return e;
-  }
-
-  exprAnd() {
-    let e = this.exprNot();
-    while (this.try_('K','and')) e = {type:'op',op:'and',a:e,b:this.exprNot()};
-    return e;
-  }
-
-  exprNot() {
-    if (this.try_('K','not')) return {type:'op',op:'not',a:this.exprNot()};
-    return this.exprComp();
-  }
-
-  exprComp() {
-    let e = this.exprConcat();
-    const ops = ['==','~=','<','>','<=','>='];
-    while (this.check('O') && ops.includes(this.peek().v)) {
-      const op = this.next().v; e = {type:'op',op,a:e,b:this.exprConcat()};
-    }
-    return e;
-  }
-
-  exprConcat() {
-    let e = this.exprAdd();
-    while (this.try_('O','..')) e = {type:'op',op:'..',a:e,b:this.exprAdd()};
-    return e;
-  }
-
-  exprAdd() {
-    let e = this.exprMul();
-    while (this.check('O') && ['+','-'].includes(this.peek().v)) {
-      const op = this.next().v; e = {type:'op',op,a:e,b:this.exprMul()};
-    }
-    return e;
-  }
-
-  exprMul() {
-    let e = this.exprUnary();
-    while (this.check('O') && ['*','/','//','%'].includes(this.peek().v)) {
-      const op = this.next().v; e = {type:'op',op,a:e,b:this.exprUnary()};
-    }
-    return e;
-  }
-
-  exprUnary() {
-    if (this.check('O') && ['-','#'].includes(this.peek().v)) {
-      const op = this.next().v; return {type:'op',op,a:this.exprUnary()};
-    }
-    return this.exprPow();
-  }
-
-  exprPow() {
-    let e = this.primaryExpr();
-    if (this.try_('O','^')) return {type:'op',op:'^',a:e,b:this.exprUnary()};
-    return e;
-  }
-
-  exprList() {
-    const es = []; do { es.push(this.expr()); } while (this.try_(','));
-    return es;
-  }
+  exprOr() { let e = this.exprAnd(); while (this.try_('K','or')) e = {type:'op',op:'or',a:e,b:this.exprAnd()}; return e; }
+  exprAnd() { let e = this.exprNot(); while (this.try_('K','and')) e = {type:'op',op:'and',a:e,b:this.exprNot()}; return e; }
+  exprNot() { if (this.try_('K','not')) return {type:'op',op:'not',a:this.exprNot()}; return this.exprComp(); }
+  exprComp() { let e = this.exprConcat(); const ops = ['==','~=','<','>','<=','>=']; while (this.check('O') && ops.includes(this.peek().v)) { const op = this.next().v; e = {type:'op',op,a:e,b:this.exprConcat()}; } return e; }
+  exprConcat() { let e = this.exprAdd(); while (this.try_('O','..')) e = {type:'op',op:'..',a:e,b:this.exprAdd()}; return e; }
+  exprAdd() { let e = this.exprMul(); while (this.check('O') && ['+','-'].includes(this.peek().v)) { const op = this.next().v; e = {type:'op',op,a:e,b:this.exprMul()}; } return e; }
+  exprMul() { let e = this.exprUnary(); while (this.check('O') && ['*','/','//','%'].includes(this.peek().v)) { const op = this.next().v; e = {type:'op',op,a:e,b:this.exprUnary()}; } return e; }
+  exprUnary() { if (this.check('O') && ['-','#'].includes(this.peek().v)) { const op = this.next().v; return {type:'op',op,a:this.exprUnary()}; } return this.exprPow(); }
+  exprPow() { let e = this.primaryExpr(); if (this.try_('O','^')) return {type:'op',op:'^',a:e,b:this.exprUnary()}; return e; }
+  exprList() { const es = []; do { es.push(this.expr()); } while (this.try_(',')); return es; }
 }
 
-// ── Module 9: AST TRANSFORMER ──────────────────────────────────────────────
-class ASTTransformer {
+// ══════════════════════════════════════════════════════════════════════════════
+//  BYTECODE COMPILER — AST → VM Instructions
+// ══════════════════════════════════════════════════════════════════════════════
+class BytecodeCompiler {
   constructor(opts) {
     this.opts = opts;
-    this.varMap = new Map();
-    this.globalRefs = new Set();
-    this.funcNames = new Set();
-    this.stats = { vars: 0, funcs: 0, strings: 0, deadBlocks: 0 };
+    this.instructions = [];
+    this.constants = [];
+    this.constMap = new Map();
+    this.regAlloc = 0;
+    this.labels = {};
+    this.pendingJumps = [];
+    this.stats = { instructions: 0, constants: 0 };
   }
 
-  transform(ast) {
-    this._collectInfo(ast);
-    return this._transformBlock(ast);
+  emit(op, a = 0, b = 0, c = 0) {
+    const opcode = OP(op);
+    this.instructions.push({ op: opcode, a, b, c });
+    this.stats.instructions++;
+    return this.instructions.length - 1;
   }
 
-  _collectInfo(node) {
-    if (!node || typeof node !== 'object') return;
-    if (node.type === 'var' && !KW.has(node.name)) {
-      if (!this.varMap.has(node.name)) {
-        this.varMap.set(node.name, rname());
-        this.stats.vars++;
-      }
-    }
-    if (node.type === 'lf' || node.type === 'func_stat') {
-      const nm = node.type === 'lf' ? node.n : node.n;
-      this.funcNames.add(nm);
-      this._collectInfo(node.fn?.b);
-    }
-    if (node.type === 'block') node.ss?.forEach(s => this._collectInfo(s));
-    if (node.type === 'if') { this._collectInfo(node.c); this._collectInfo(node.th); node.eis?.forEach(e => { this._collectInfo(e.c); this._collectInfo(e.b); }); this._collectInfo(node.el); }
-    if (node.type === 'while') { this._collectInfo(node.c); this._collectInfo(node.b); }
-    if (node.type === 'for' || node.type === 'gfor') { this._collectInfo(node.b); }
-    if (node.type === 'assign') { node.tgts?.forEach(t => this._collectInfo(t)); node.vs?.forEach(v => this._collectInfo(v)); }
-    if (node.type === 'call' || node.type === 'mcall') { this._collectInfo(node.func); node.args?.forEach(a => this._collectInfo(a)); }
-    if (node.type === 'op') { this._collectInfo(node.a); this._collectInfo(node.b); }
-    if (node.type === 'tbl') node.items?.forEach(i => { this._collectInfo(i.k); this._collectInfo(i.v); });
+  emitJmp(op, target) {
+    const idx = this.emit(op, 0, target);
+    return idx;
   }
 
-  _transformBlock(node) {
-    if (node.type !== 'block') return node;
-    const ss = [];
-    for (const s of node.ss) {
-      const ts = this._transformStat(s);
-      if (Array.isArray(ts)) ss.push(...ts);
-      else if (ts) ss.push(ts);
-    }
-    return {...node, ss};
+  loadConst(val) {
+    const key = JSON.stringify(val);
+    if (this.constMap.has(key)) return this.constMap.get(key);
+    const idx = this.constants.length;
+    this.constants.push(val);
+    this.constMap.set(key, idx);
+    this.stats.constants++;
+    return idx;
   }
 
-  _transformStat(node) {
-    if (!node) return null;
-    switch (node.type) {
-      case 'local': {
-        const ns = node.ns.map(n => {
-          if (KW.has(n)) return n;
-          this.varMap.set(n, rname()); return this.varMap.get(n);
-        });
-        const vs = node.vs?.map(v => this._transformExpr(v));
-        if (node.fn) {
-          const nm = this.varMap.get(node.n) || node.n;
-          const fn = this._transformFunc(node.fn, nm);
-          return {type:'lf',n:nm,fn};
-        }
-        return {type:'local',ns,vs};
-      }
-      case 'func_stat': {
-        const fn = this._transformFunc(node.fn, node.n);
-        return {type:'func_stat',n:node.n,method:node.method,fn};
-      }
-      case 'if': {
-        const c = this._transformExpr(node.c);
-        const th = this._transformBlock(node.th);
-        const eis = node.eis?.map(e => ({c: this._transformExpr(e.c), b: this._transformBlock(e.b)}));
-        const el = node.el ? this._transformBlock(node.el) : null;
-        return {type:'if',c,th,eis,el};
-      }
-      case 'while': {
-        const c = this._transformExpr(node.c);
-        const b = this._transformBlock(node.b);
-        return {type:'while',c,b};
-      }
-      case 'nfor': {
-        const b = this._transformBlock(node.b);
-        return {...node,b};
-      }
-      case 'gfor': {
-        const b = this._transformBlock(node.b);
-        return {...node,b};
-      }
-      case 'do': {
-        const b = this._transformBlock(node.b);
-        return {type:'do',b};
-      }
-      case 'repeat': {
-        const b = this._transformBlock(node.b);
-        const c = this._transformExpr(node.c);
-        return {type:'repeat',b,c};
-      }
-      case 'assign': {
-        const tgts = node.tgts?.map(t => this._transformExpr(t));
-        const vs = node.vs?.map(v => this._transformExpr(v));
-        return {type:'assign',tgts,vs};
-      }
-      case 'callst': {
-        const e = this._transformExpr(node.e);
-        return {type:'callst',e};
-      }
-      case 'ret': {
-        const vs = node.vs?.map(v => this._transformExpr(v));
-        return {type:'ret',vs};
-      }
-      case 'break': return node;
-      case 'block': return this._transformBlock(node);
-      default: return node;
+  allocReg() { return this.regAlloc++; }
+  freeReg() { this.regAlloc--; }
+
+  compile(ast) {
+    this.compileBlock(ast);
+    this.emit('HALT');
+    return {
+      instructions: this.instructions,
+      constants: this.constants
+    };
+  }
+
+  compileBlock(node) {
+    if (node.type !== 'block') return;
+    for (const stmt of node.ss) {
+      this.compileStmt(stmt);
     }
   }
 
-  _transformFunc(fn, name) {
-    const oldMap = new Map(this.varMap);
-    const newParams = fn.ps.map(p => { const nr = rname(); this.varMap.set(p, nr); return nr; });
-    const b = this._transformBlock(fn.b);
-    this.varMap = oldMap;
-    return {...fn, ps: newParams, b};
-  }
-
-  _transformExpr(node) {
-    if (!node || typeof node !== 'object') return node;
-    switch (node.type) {
-      case 'var': {
-        if (KW.has(node.name)) return node;
-        const mapped = this.varMap.get(node.name);
-        return mapped ? {...node, name: mapped} : node;
-      }
-      case 'str': {
-        this.stats.strings++;
-        if (this.opts.strenc) {
-          const enc = encStr(node.val);
-          return {type:'raw',code: enc};
-        }
-        return node;
-      }
-      case 'op': {
-        const a = this._transformExpr(node.a);
-        const b = this._transformExpr(node.b);
-        return {...node,a,b};
-      }
-      case 'call': {
-        const func = this._transformExpr(node.func);
-        const args = node.args?.map(a => this._transformExpr(a));
-        return {...node,func,args};
-      }
-      case 'mcall': {
-        const obj = this._transformExpr(node.obj);
-        const args = node.args?.map(a => this._transformExpr(a));
-        return {...node,obj,args};
-      }
-      case 'field': {
-        const obj = this._transformExpr(node.obj);
-        return {...node,obj};
-      }
-      case 'index': {
-        const obj = this._transformExpr(node.obj);
-        const key = this._transformExpr(node.key);
-        return {...node,obj,key};
-      }
-      case 'tbl': {
-        const items = node.items?.map(i => ({
-          k: i.k ? this._transformExpr(i.k) : null,
-          v: this._transformExpr(i.v)
-        }));
-        return {...node,items};
-      }
-      case 'paren': {
-        const e = this._transformExpr(node.e);
-        return {...node,e};
-      }
-      case 'raw': return node;
-      default: return node;
-    }
-  }
-}
-
-// ── Module 10: CODE GENERATOR ──────────────────────────────────────────────
-class CodeGenerator {
-  constructor(opts) {
-    this.opts = opts;
-    this.indent = 0;
-    this.output = [];
-  }
-
-  generate(ast) {
-    this.output = [];
-    this._genBlock(ast);
-    return this.output.join('');
-  }
-
-  _genBlock(node, needEnd = false) {
-    if (node.type === 'block') {
-      for (const s of node.ss) {
-        if (s.type === 'ret') { this._genRet(s); this.output.push('\n'); continue; }
-        this._genStat(s);
-        if (s.type !== 'if' && s.type !== 'while' && s.type !== 'do' && s.type !== 'nfor' && s.type !== 'gfor' && s.type !== 'repeat')
-          this.output.push('\n');
-      }
-      return;
-    }
-    this._genStat(node);
-  }
-
-  _genStat(node) {
+  compileStmt(node) {
     if (!node) return;
-    const i = '  '.repeat(this.indent);
     switch (node.type) {
       case 'local': {
-        const vs = node.vs?.map(v => this._genExpr(v)).join(', ') || '';
-        this.output.push(i + 'local ' + node.ns.join(', ') + (vs ? ' = ' + vs : ''));
-        break;
+        const regs = node.ns.map(() => this.allocReg());
+        if (node.vs) {
+          node.vs.forEach((v, i) => {
+            const r = this.compileExpr(v);
+            if (i < regs.length) this.emit('MOVE', regs[i], r);
+          });
+        }
+        return regs;
       }
       case 'lf': {
-        this._genFuncDecl(node.n, node.fn);
-        break;
+        const r = this.allocReg();
+        const subCompiler = new BytecodeCompiler(this.opts);
+        const subBC = subCompiler.compile(node.fn.b);
+        const constIdx = this.loadConst({ type: 'func', bc: subBC, name: node.n, params: node.fn.ps });
+        this.emit('LOADK', r, constIdx);
+        return r;
       }
       case 'func_stat': {
-        this.output.push(i + node.n + (node.method ? ':' + node.method : '') + this._genFuncSig(node.fn));
-        this.indent++;
-        this._genBlock(node.fn.b);
-        this.indent--;
-        this.output.push('  '.repeat(this.indent) + 'end\n');
-        break;
+        const subCompiler = new BytecodeCompiler(this.opts);
+        const subBC = subCompiler.compile(node.fn.b);
+        this.constants.push({ type: 'func', bc: subBC, name: node.n, params: node.fn.ps });
+        return null;
       }
       case 'if': {
-        this.output.push(i + 'if ' + this._genExpr(node.c) + ' then\n');
-        this.indent++;
-        this._genBlock(node.th);
-        this.indent--;
-        node.eis?.forEach(e => {
-          this.output.push('  '.repeat(this.indent) + 'elseif ' + this._genExpr(e.c) + ' then\n');
-          this.indent++;
-          this._genBlock(e.b);
-          this.indent--;
+        const condReg = this.compileExpr(node.c);
+        const jmpFalse = this.emit('JMPF', condReg, 0);
+        this.compileBlock(node.th);
+        const jmpEnd = this.emit('JMP', 0, 0);
+        this.instructions[jmpFalse].c = this.instructions.length - jmpFalse;
+        node.eis?.forEach(ei => {
+          const eCond = this.compileExpr(ei.c);
+          const eJmp = this.emit('JMPF', eCond, 0);
+          this.compileBlock(ei.b);
+          this.instructions[eJmp].c = this.instructions.length - eJmp;
         });
-        if (node.el) {
-          this.output.push('  '.repeat(this.indent) + 'else\n');
-          this.indent++;
-          this._genBlock(node.el);
-          this.indent--;
-        }
-        this.output.push('  '.repeat(this.indent) + 'end\n');
-        break;
+        if (node.el) this.compileBlock(node.el);
+        this.instructions[jmpEnd].c = this.instructions.length - jmpEnd;
+        return null;
       }
       case 'while': {
-        this.output.push(i + 'while ' + this._genExpr(node.c) + ' do\n');
-        this.indent++;
-        this._genBlock(node.b);
-        this.indent--;
-        this.output.push('  '.repeat(this.indent) + 'end\n');
-        break;
+        const loopStart = this.instructions.length;
+        const condReg = this.compileExpr(node.c);
+        const jmpFalse = this.emit('JMPF', condReg, 0);
+        this.compileBlock(node.b);
+        this.emit('JMP', 0, loopStart - this.instructions.length);
+        this.instructions[jmpFalse].c = this.instructions.length - jmpFalse;
+        return null;
       }
       case 'do': {
-        this.output.push(i + 'do\n');
-        this.indent++;
-        this._genBlock(node.b);
-        this.indent--;
-        this.output.push('  '.repeat(this.indent) + 'end\n');
-        break;
+        this.compileBlock(node.b);
+        return null;
       }
       case 'nfor': {
-        const step = node.step ? this._genExpr(node.step) : '1';
-        this.output.push(i + 'for ' + node.n + ' = ' + this._genExpr(node.s) + ', ' + this._genExpr(node.lim) + (step !== '1' ? ', ' + step : '') + ' do\n');
-        this.indent++;
-        this._genBlock(node.b);
-        this.indent--;
-        this.output.push('  '.repeat(this.indent) + 'end\n');
-        break;
-      }
-      case 'gfor': {
-        this.output.push(i + 'for ' + node.ns.join(', ') + ' in ' + node.its.map(it => this._genExpr(it)).join(', ') + ' do\n');
-        this.indent++;
-        this._genBlock(node.b);
-        this.indent--;
-        this.output.push('  '.repeat(this.indent) + 'end\n');
-        break;
+        const initReg = this.compileExpr(node.s);
+        const limitReg = this.compileExpr(node.lim);
+        const stepReg = node.step ? this.compileExpr(node.step) : this.loadConst(1);
+        const varReg = this.allocReg();
+        this.emit('MOVE', varReg, initReg);
+        const prepIdx = this.emit('FORPREP', varReg, this.constants.length);
+        const stepIdx = this.loadConst(node.step ? this.compileExpr(node.step) : 1);
+        this.compileBlock(node.b);
+        this.emit('FORLOOP', varReg, stepIdx);
+        this.instructions[prepIdx].c = this.instructions.length - prepIdx;
+        return null;
       }
       case 'repeat': {
-        this.output.push(i + 'repeat\n');
-        this.indent++;
-        this._genBlock(node.b);
-        this.indent--;
-        this.output.push('  '.repeat(this.indent) + 'until ' + this._genExpr(node.c) + '\n');
-        break;
+        const loopStart = this.instructions.length;
+        this.compileBlock(node.b);
+        const condReg = this.compileExpr(node.c);
+        this.emit('JMPF', condReg, loopStart - this.instructions.length);
+        return null;
       }
       case 'assign': {
-        const tgts = node.tgts.map(t => this._genExpr(t)).join(', ');
-        const vs = node.vs.map(v => this._genExpr(v)).join(', ');
-        this.output.push(i + tgts + ' = ' + vs);
-        break;
+        const tgtRegs = node.tgts.map(t => this.compileExpr(t));
+        const valRegs = node.vs.map(v => this.compileExpr(v));
+        tgtRegs.forEach((tr, i) => {
+          if (i < valRegs.length) this.emit('MOVE', tr, valRegs[i]);
+        });
+        return tgtRegs;
       }
       case 'callst': {
-        this.output.push(i + this._genExpr(node.e));
-        break;
+        this.compileExpr(node.e);
+        return null;
       }
       case 'ret': {
         if (node.vs?.length) {
-          this.output.push(i + 'return ' + node.vs.map(v => this._genExpr(v)).join(', '));
+          const r = this.compileExpr(node.vs[0]);
+          this.emit('RETURN', r, node.vs.length);
         } else {
-          this.output.push(i + 'return');
+          this.emit('RETURN', 0, 0);
         }
-        break;
+        return null;
       }
       case 'break': {
-        this.output.push(i + 'break');
-        break;
+        this.emit('JMP', 0, 9999); // Will be patched
+        return null;
       }
       case 'block': {
-        this._genBlock(node);
-        break;
+        this.compileBlock(node);
+        return null;
       }
     }
   }
 
-  _genRet(node) {
-    const i = '  '.repeat(this.indent);
-    if (node.vs?.length) {
-      this.output.push(i + 'return ' + node.vs.map(v => this._genExpr(v)).join(', '));
-    } else {
-      this.output.push(i + 'return');
-    }
-  }
-
-  _genFuncDecl(name, fn) {
-    const i = '  '.repeat(this.indent);
-    this.output.push(i + 'function ' + name + this._genFuncSig(fn));
-    this.indent++;
-    this._genBlock(fn.b);
-    this.indent--;
-    this.output.push('  '.repeat(this.indent) + 'end\n');
-  }
-
-  _genFuncSig(fn) {
-    const ps = fn.ps.join(', ');
-    return '(' + ps + ')' + (fn.d ? ':' + fn.d : '') + '\n';
-  }
-
-  _genExpr(node) {
-    if (!node) return 'nil';
+  compileExpr(node) {
+    if (!node) return this.loadConst(null);
     switch (node.type) {
-      case 'var': return node.name;
-      case 'num': return String(node.val);
-      case 'str': return JSON.stringify(node.val);
-      case 'raw': return node.code;
-      case 'bool': return String(node.val);
-      case 'nil': return 'nil';
-      case 'tbl': {
-        const items = node.items?.map(i => {
-          if (i.k) return '[' + this._genExpr(i.k) + '] = ' + this._genExpr(i.v);
-          return this._genExpr(i.v);
-        }).join(', ') || '';
-        return '{' + items + '}';
+      case 'nil': return this.loadConst(null);
+      case 'num': return this.loadConst(node.val);
+      case 'str': {
+        const s = this.opts.strenc ? encStr(node.val) : JSON.stringify(node.val);
+        return this.loadConst({ encrypted: s, isString: true });
       }
-      case 'op': {
-        if (node.op === 'not') return 'not ' + this._genExpr(node.a);
-        if (node.op === '#') return '#' + this._genExpr(node.a);
-        if (node.op === '-') return '-' + this._genExpr(node.a);
-        const a = this._genExpr(node.a), b = this._genExpr(node.b);
-        if (node.op === '..') return a + ' .. ' + b;
-        return '(' + a + ' ' + node.op + ' ' + b + ')';
+      case 'bool': return this.loadConst(node.val);
+      case 'var': {
+        const r = this.allocReg();
+        this.emit('GETGLOBAL', r, this.loadConst(node.name));
+        return r;
       }
+      case 'op': return this.compileOp(node);
       case 'call': {
-        const args = node.args?.map(a => this._genExpr(a)).join(', ') || '';
-        return this._genExpr(node.func) + '(' + args + ')';
+        const funcReg = this.compileExpr(node.func);
+        const argRegs = node.args?.map(a => this.compileExpr(a)) || [];
+        const r = this.allocReg();
+        this.emit('CALL', funcReg, argRegs.length, r);
+        return r;
       }
       case 'mcall': {
-        const args = node.args?.map(a => this._genExpr(a)).join(', ') || '';
-        return this._genExpr(node.obj) + ':' + node.method + '(' + args + ')';
+        const objReg = this.compileExpr(node.obj);
+        const argRegs = node.args?.map(a => this.compileExpr(a)) || [];
+        const r = this.allocReg();
+        this.emit('CALL', objReg, argRegs.length + 1, r); // +1 for self
+        return r;
       }
-      case 'field': return this._genExpr(node.obj) + '.' + node.key;
-      case 'index': return this._genExpr(node.obj) + '[' + this._genExpr(node.key) + ']';
-      case 'paren': return '(' + this._genExpr(node.e) + ')';
-      case 'vararg': return '...';
-      default: return 'nil';
+      case 'field': {
+        const objReg = this.compileExpr(node.obj);
+        const keyReg = this.loadConst(node.key);
+        const r = this.allocReg();
+        this.emit('TABLEGET', r, objReg, keyReg);
+        return r;
+      }
+      case 'tbl': {
+        const r = this.allocReg();
+        this.emit('NEWTABLE', r);
+        node.items?.forEach((item, i) => {
+          const valReg = this.compileExpr(item.v);
+          const keyReg = item.k ? this.compileExpr(item.k) : this.loadConst(i + 1);
+          this.emit('TABLESET', r, keyReg, valReg);
+        });
+        return r;
+      }
+      case 'paren': return this.compileExpr(node.e);
+      default: return this.loadConst(null);
     }
   }
-}
 
-// ── Module 11: CONTROL FLOW FLATTENING ─────────────────────────────────────
-function flattenControlFlow(code, opts) {
-  if (!opts.cff) return code;
-  const vG = rname(), vT = rname();
-  const s1 = ri(0x20, 0x5F), s2 = ri(0x60, 0x9F), s3 = ri(0xA0, 0xDF);
-  const fakeState = ri(0xE0, 0xFF);
-  return (
-    `local ${vG}=${N(s1)}\n` +
-    `while true do\n` +
-    `if ${vG}==${N(fakeState)} then\n` +
-    `  local _=0\n` +
-    `  break\n` +
-    `elseif ${vG}==${N(s1)} then\n` +
-    `  ${code}\n` +
-    `  ${vG}=${N(s2)};continue\n` +
-    `elseif ${vG}==${N(s2)} then\n` +
-    `  break\n` +
-    `end\n` +
-    `end\n`
-  );
-}
-
-// ── Module 12: DEAD CODE INJECTION ─────────────────────────────────────────
-function injectDeadCode(opts) {
-  if (!opts.dead) return '';
-  const count = ri(2, 4);
-  let code = '';
-  for (let i = 0; i < count; i++) {
-    const v = rname();
-    const forms = [
-      `if ${oF()} then local ${v}=${N(ri(1,0xFF))};${v}=nil end\n`,
-      `do local ${v}=${N(ri(1,0xFFF))};if ${oF()} then ${v}=nil end end\n`,
-      `while ${oF()} do break end\n`,
-    ];
-    code += '  ' + forms[ri(0, forms.length-1)];
+  compileOp(node) {
+    const { op, a, b } = node;
+    if (op === 'not') { const r = this.compileExpr(a); this.emit('NOT', this.allocReg(), r); return this.regAlloc - 1; }
+    if (op === '#') { const r = this.compileExpr(a); this.emit('LEN', this.allocReg(), r); return this.regAlloc - 1; }
+    if (op === '-') { const r = this.compileExpr(a); this.emit('UNM', this.allocReg(), r); return this.regAlloc - 1; }
+    if (['+','-','*','/','%','^','and','or','==','~=','<','>','<=','>=','..'].includes(op)) {
+      const ra = this.compileExpr(a);
+      const rb = this.compileExpr(b);
+      const rc = this.allocReg();
+      let vmOp = 'ADD';
+      if (op === '-') vmOp = 'SUB';
+      else if (op === '*') vmOp = 'MUL';
+      else if (op === '/') vmOp = 'DIV';
+      else if (op === '%') vmOp = 'MOD';
+      else if (op === '^') vmOp = 'POW';
+      else if (op === 'and') vmOp = 'AND';
+      else if (op === 'or') vmOp = 'OR';
+      else if (op === '==') vmOp = 'EQ';
+      else if (op === '~=') vmOp = 'EQ';
+      else if (op === '<') vmOp = 'LT';
+      else if (op === '>') vmOp = 'LT';
+      else if (op === '<=') vmOp = 'LE';
+      else if (op === '>=') vmOp = 'LE';
+      else if (op === '..') vmOp = 'CONCAT';
+      this.emit(vmOp, rc, ra, rb);
+      return rc;
+    }
+    return this.loadConst(null);
   }
-  return code;
 }
 
-// ── Module 13: FAKE OPCODE INJECTION ────────────────────────────────────────
-function injectFakeOpcodes(opts) {
-  if (!opts.fake) return '';
-  const vB = rname(), vD = rname();
-  const count = ri(20, 35);
-  let code = `local ${vB}={}\n`;
-  const used = new Set();
-  for (let i = 0; i < count; i++) {
-    let fid; do { fid = ri(100, 200); } while (used.has(fid));
-    used.add(fid);
+// ══════════════════════════════════════════════════════════════════════════════
+//  VM RUNTIME ENGINE
+// ══════════════════════════════════════════════════════════════════════════════
+function buildVMRuntime(bytecode, constants, opts) {
+  const vVM = rname(), vIP = rname(), vRK = rname(), vSP = rname();
+  const vCode = rname(), vConst = rname(), vStack = rname();
+  const vRunning = rname(), vR = rname();
+
+  // Build instruction dispatch table
+  let dispatchCode = `  local ${vRK}={}\n`;
+  Object.entries(_opMap).forEach(([name, code]) => {
+    dispatchCode += `  ${vRK}[${N(code)}]=function(${vVM},${vIP},${vR})\n`;
+    dispatchCode += buildOpHandler(name, vVM, vIP, vR, vStack, vSP, vCode, vConst);
+    dispatchCode += `  end\n`;
+  });
+
+  // Add extra fake opcodes for noise
+  const fakeCount = opts.fake ? ri(30, 50) : 0;
+  for (let i = 0; i < fakeCount; i++) {
+    const fakeCode = ri(200, 255);
     const families = [
-      () => `if ${oF()} then return ${N(ri(0x1000,0x7FFF))} end`,
-      () => `do local ${rname()}=${rbxN()};if ${oT()} then return end end`,
-      () => `for ${rname()}=${N(1)},${N(ri(2,5))} do if ${oF()} then break end end`,
-      () => `local ${rname()}=bit32.bxor(${N(ri(1,0xFF))},${N(ri(1,0xFF))})`,
+      `    ${vR}[1]=nil\n    ${vIP}=${vIP}+${N(1)}\n`,
+      `    if ${oF()} then ${vIP}=${vIP}+${N(3)} end\n`,
+      `    local ${rname()}=bit32.bxor(${N(ri(1,255))},${N(ri(1,255))})\n    ${vIP}=${vIP}+${N(1)}\n`,
     ];
-    const body = families[ri(0, families.length-1)]();
-    code += `${vB}[${N(fid)}]=function() ${body} end\n`;
+    dispatchCode += `  ${vRK}[${N(fakeCode)}]=function(${vVM},${vIP},${vR})\n${families[ri(0,families.length-1)]}  end\n`;
   }
-  return code;
+
+  const vmRuntime = `(function()\n` +
+    `  local ${vCode}=${JSON.stringify(bytecode)}\n` +
+    `  local ${vConst}={${constants.map(c => JSON.stringify(c)).join(',')}}\n` +
+    `  local ${vStack}={}\n` +
+    `  local ${vRunning}=true\n` +
+    `  local ${vVM}={ip=1,stack=${vStack},regs={},running=${vRunning},consts=${vConst},code=${vCode}}\n` +
+    `  local ${vR}=${vVM}.regs\n` +
+    dispatchCode +
+    `  ${vVM}.dispatch=${vRK}\n` +
+    `  function ${vVM}:step()\n` +
+    `    local op=${vCode}[self.ip] or 0\n` +
+    `    self.ip=self.ip+1\n` +
+    `    local h=self.dispatch[op]\n` +
+    `    if h then h(self,self.ip,self.regs)end\n` +
+    `  end\n` +
+    `  function ${vVM}:run()\n` +
+    `    while self.running do self:step()end\n` +
+    `  end\n` +
+    `  return ${vVM}\n` +
+    `end)()`;
+
+  return vmRuntime;
 }
 
-// ── Module 14: JUNK UPVALUE CAPTURES ───────────────────────────────────────
-function injectJunkUpvalues(opts) {
-  if (!opts.junk) return '';
-  const count = ri(3, 7);
-  const upvals = [];
-  for (let i = 0; i < count; i++) {
-    upvals.push(rname());
+function buildOpHandler(op, vm, ip, r, stack, sp, code, cnst) {
+  const i = '    ';
+  switch (op) {
+    case 'HALT': return `${i}${vm}.running=false\n`;
+    case 'LOADK': return `${i}${r}[${op === 'LOADK' ? 'a' : '1'}]=${cnst}[${op === 'LOADK' ? 'b' : '2'}] or 0\n${i}${ip}=${ip}+3\n`;
+    case 'MOVE': return `${i}${r}[${op === 'MOVE' ? 'a' : '1'}]=${r}[${op === 'MOVE' ? 'b' : '2'}] or nil\n${i}${ip}=${ip}+3\n`;
+    case 'ADD': return `${i}${r}[1]=(${r}[2] or 0)+(${r}[3] or 0)\n${i}${ip}=${ip}+4\n`;
+    case 'SUB': return `${i}${r}[1]=(${r}[2] or 0)-(${r}[3] or 0)\n${i}${ip}=${ip}+4\n`;
+    case 'MUL': return `${i}${r}[1]=(${r}[2] or 0)*(${r}[3] or 0)\n${i}${ip}=${ip}+4\n`;
+    case 'DIV': return `${i}${r}[1]=(${r}[2] or 0)/(${r}[3] or 0)\n${i}${ip}=${ip}+4\n`;
+    case 'MOD': return `${i}${r}[1]=((${r}[2] or 0)%(${r}[3] or 1))\n${i}${ip}=${ip}+4\n`;
+    case 'POW': return `${i}${r}[1]=math.pow(${r}[2] or 0,${r}[3] or 0)\n${i}${ip}=${ip}+4\n`;
+    case 'AND': return `${i}${r}[1]=bit32.band(${r}[2] or 0,${r}[3] or 0)\n${i}${ip}=${ip}+4\n`;
+    case 'OR': return `${i}${r}[1]=bit32.bor(${r}[2] or 0,${r}[3] or 0)\n${i}${ip}=${ip}+4\n`;
+    case 'JMP': return `${i}${ip}=${ip}+(${op === 'JMP' ? 'c' : '3'})\n`;
+    case 'JMPF': return `${i}if not ${r}[1]then ${ip}=${ip}+(${op === 'JMPF' ? 'c' : '3'})end\n`;
+    case 'CALL': return `${i}local f=${r}[${op === 'CALL' ? 'a' : '1'}];if type(f)=='function'then f(unpack(${r},2,${op === 'CALL' ? 'b' : '2'}))end\n${i}${ip}=${ip}+4\n`;
+    case 'RETURN': return `${i}${vm}.running=false\n`;
+    case 'GETGLOBAL': return `${i}${r}[1]=_G[${cnst}[${op === 'GETGLOBAL' ? 'b' : '2'}] or '']or _ENV[${cnst}[2]]or nil\n${i}${ip}=${ip}+3\n`;
+    case 'NEWTABLE': return `${i}${r}[1]={}\n${i}${ip}=${ip}+2\n`;
+    case 'NOOP': return `${i}${ip}=${ip}+1\n`;
+    default: return `${i}${ip}=${ip}+1\n`;
   }
-  const vEnv = rname();
-  return (
-    `(function(${upvals.join(',')})\n` +
-    `  local ${vEnv}=getgenv or {}\n` +
-    `end)(${upvals.map(u => 'nil').join(',')})\n`
-  );
 }
 
-// ── Module 15: ANTI-DEBUG PROTECTION ───────────────────────────────────────
-function buildAntiDebug(opts) {
+// ══════════════════════════════════════════════════════════════════════════════
+//  VM BYTECODE ENCRYPTION
+// ══════════════════════════════════════════════════════════════════════════════
+function encryptAndBuildLoader(bytecode, constants, opts) {
+  if (!opts.enc) return { code: bytecode, key: null };
+
+  const key = ri(0x1000, 0xFFFF);
+  const encCode = encryptBytecode(bytecode, key);
+  const encConst = encryptBytecode(constants, key);
+
+  const vC = rname(), vK = rname(), vD = rname(), vI = rname(), vL = rname();
+  const vDec = rname();
+
+  // Build decryption function
+  const decryptFn = `(function(${vK})\n` +
+    `  local ${vL}={}\n` +
+    `  for ${vI}=1,#${vC}do\n` +
+    `    ${vL}[${vI}]=bit32.bxor(${vC}[${vI}],${vK}&${N(0xFF)})\n` +
+    `    ${vK}=(((${vK}*${N(31)}+${vI})%${N(0xFFFF)})%${N(256)})%${N(0xFFFF)}\n` +
+    `  end\n` +
+    `  return ${vL}\n` +
+    `end)(0)`;
+
+  return {
+    encryptedCode: encCode,
+    encryptedConst: encConst,
+    key: key,
+    decryptFn: decryptFn
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ANTI-DEBUG + ANTI-TAMPER PRO
+// ══════════════════════════════════════════════════════════════════════════════
+function buildAntiDebugPro(opts) {
   if (!opts.antidebug) return '';
   const v = rname();
   return (
     `local ${v}=function()\n` +
-    `  if hookfunction then local _h=hookfunction(function()end,function()end)if type(_h)=="function"then error("")end end\n` +
+    `  if hookfunction then local h=hookfunction(function()end,function()end)if type(h)=="function"then error("")end end\n` +
     `  if syn and syn.protect_gui then pcall(syn.protect_gui,function()end)end\n` +
     `  if getgenv then local g=getgenv()if type(g)=="table"then for k,_ in pairs(g)do if string.find(tostring(k),"hook")then error("")end end end end\n` +
     `  if debug and debug.getinfo then pcall(function()local i=debug.getinfo(1)if not i then error("")end end)end\n` +
     `  if newcclosure then local n=newcclosure(function()end)if type(n)~="function"then error("")end end\n` +
+    `  if is_synapse_function then error("")end\n` +
+    `  if secure_callback then pcall(secure_callback)end\n` +
     `end\n` +
     `pcall(${v})\n`
   );
 }
 
-// ── Module 16: ANTI-TAMPER (INTEGRITY CHECK) ─────────────────────────────────
-function buildAntiTamper(opts) {
-  if (!opts.antitamp) return '';
-  const vH = rname(), vC = rname();
+function buildVMIntegrityCheck(opts) {
+  if (!opts.vm_intg) return '';
+  const vH = rname(), vC = rname(), vS = rname();
   const seed = ri(0x100000, 0xFFFFFF);
   return (
     `local ${vH}=function(${vC})\n` +
@@ -1088,185 +843,289 @@ function buildAntiTamper(opts) {
     `  for i=1,#${vC}do h=((h*${N(31)}+string.byte(${vC},i))%${N(0x7FFFFFFF)})end\n` +
     `  return h\n` +
     `end\n` +
-    `local _chk=${vH}(string.sub(debug.getinfo and debug.getinfo(1,"S").source or "=x",2))\n` +
-    `if math.abs(_chk-${N(seed)})>${N(100)}then error("integrity violation")end\n`
+    `local ${vS}=${vH}(tostring(debug.getinfo and debug.getinfo(1,"S").source or "=x"))\n` +
+    `if math.abs(${vS}-${N(seed)})>${N(500)}then error("VM integrity violation")end\n`
   );
 }
 
-// ── Module 17: VM ENGINE ───────────────────────────────────────────────────
-function buildVMEngine(opts) {
-  if (!opts.vm) return '';
-  const vM = rname(), vO = rname(), vA = rname(), vB = rname(), vC = rname();
-  const vT = rname();
-  const mk = ri(10, 200);
-  
-  const opcodes = [
-    {name:'ADD', body:`${vA}=(${vB}+${vC})`},
-    {name:'SUB', body:`${vA}=(${vB}-${vC})`},
-    {name:'MUL', body:`${vA}=(${vB}*${vC})`},
-    {name:'DIV', body:`${vA}=(${vB}/${vC})`},
-    {name:'MOD', body:`${vA}=(${vB}%${vC})`},
-    {name:'POW', body:`${vA}=(${vB}^${vC})`},
-    {name:'AND', body:`${vA}=bit32.band(${vB},${vC})`},
-    {name:'OR', body:`${vA}=bit32.bor(${vB},${vC})`},
-    {name:'XOR', body:`${vA}=bit32.bxor(${vB},${vC})`},
-  ];
-
-  const mm = {};
-  opcodes.forEach((op, i) => { mm[op.name] = (i + mk) & 0xFF; });
-
-  let lua = `local ${vM}\n${vM}=function(${vO},${vA},${vB},${vC})\n`;
-  lua += `  local ${vT}={}\n`;
-  opcodes.forEach(op => {
-    lua += `  ${vT}[${N(mm[op.name])}]=function() ${op.body} end\n`;
-  });
-  lua += `  local _h=${vT}[${vO}]if _h then _h()end\nend\n`;
-
-  if (opts.vmhide) {
-    const wrapper = rname();
-    return `(function()local ${wrapper}=${vM};${vM}=nil;return function(o,a,b,c)${wrapper}(o,a,b,c)end end)()`;
-  }
-  return lua;
-}
-
-// ── Module 18: VM SEALING (IIFE WRAPPER) ────────────────────────────────────
-function buildVMSealing(vmCode) {
-  const wrapper = rname();
+// ══════════════════════════════════════════════════════════════════════════════
+//  CONTROL FLOW FLATTENING (STATE-DRIVEN)
+// ══════════════════════════════════════════════════════════════════════════════
+function buildStateMachine(code, opts) {
+  if (!opts.cff) return code;
+  const vG = rname(), vT = rname();
+  const states = [ri(0x20,0x4F), ri(0x50,0x7F), ri(0x80,0xAF), ri(0xB0,0xDF)];
+  const fake = ri(0xE0, 0xFF);
   return (
-    `(function()\n` +
-    `  local ${wrapper}=function()\n` +
-    vmCode.split('\n').map(l => '    ' + l).join('\n') + '\n' +
-    `  end\n` +
-    `  return ${wrapper}\n` +
-    `end)()`
+    `local ${vG}=${N(states[0])}\n` +
+    `while true do\n` +
+    `if ${vG}==${N(fake)}then\n` +
+    `  break\n` +
+    `elseif ${vG}==${N(states[0])}then\n` +
+    `  ${code}\n` +
+    `  ${vG}=${N(states[1])};continue\n` +
+    `elseif ${vG}==${N(states[1])}then\n` +
+    `  if ${oF()}then ${vG}=${N(states[2])}end\n` +
+    `  ${vG}=${N(states[2])};continue\n` +
+    `elseif ${vG}==${N(states[2])}then\n` +
+    `  break\n` +
+    `end\n` +
+    `end\n`
   );
 }
 
-// ── Module 19: ROBLOX API NOISE ─────────────────────────────────────────────
-function buildRbxNoise(opts) {
-  if (!opts.noise) return '';
-  const count = ri(2, 4);
+// ══════════════════════════════════════════════════════════════════════════════
+//  DEAD CODE + OPAQUE PREDICATES 2.0
+// ══════════════════════════════════════════════════════════════════════════════
+function injectDeadCode2(opts) {
+  if (!opts.dead) return '';
+  const count = ri(3, 6);
   let code = '';
   for (let i = 0; i < count; i++) {
-    const v1 = rname(), v2 = rname();
-    const api1 = rbxN(), api2 = rbxN();
+    const v = rname();
     const forms = [
-      `do local ${v1}=${api1};if ${oF()}then ${v2}=${api2}end;${v1}=nil end\n`,
-      `if type(${api1})=="${ri(0,1)===0?'function':'table'}"then local ${v1}=${api2}end\n`,
-      `local ${v1}=${api1}or ${api2};${v1}=nil\n`,
+      `if ${oF()}then local ${v}=${N(ri(1,0xFF))};${v}=nil end\n`,
+      `while ${oF()}do break end\n`,
+      `for ${rname()}=${N(1)},${N(ri(2,5))}do if ${oF()}then break end end\n`,
+      `do local ${v}=bit32.bxor(${N(ri(1,0xFF))},${N(ri(1,0xFF))})if ${oT()}then ${v}=nil end end\n`,
+      `if(((${rname()})^${N(2)}+${N(1)})%${N(2)})==${N(0)}then ${rname()}=nil end\n`,
     ];
     code += '  ' + forms[ri(0, forms.length-1)];
   }
   return code;
 }
 
-// ── Module 20: MAIN PIPELINE ───────────────────────────────────────────────
-function obfuscate(source, opts) {
-  _usedNames.clear();
-  _nameIdx = 0;
-  _numStyle = ri(0, 4);
-  _strVariant = ri(0, 3);
-  _strSalt = ri(0, 5);
+// ══════════════════════════════════════════════════════════════════════════════
+//  VM SEALING (IIFE WRAPPER)
+// ══════════════════════════════════════════════════════════════════════════════
+function sealVM(vmCode, opts) {
+  if (!opts.vm_sealed) return vmCode;
+  const outer = rname(), inner = rname();
+  return (
+    `(function()\n` +
+    `  local ${outer}=function()\n` +
+    vmCode.split('\n').map(l => '    ' + l).join('\n') + '\n' +
+    `  end\n` +
+    `  ${outer}()\n` +
+    `end)()`
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  MAIN COMPILATION PIPELINE
+// ══════════════════════════════════════════════════════════════════════════════
+function compileToVM(source, opts) {
+  resetNames();
+  _ns = ri(0, 4);
+  _sv = ri(0, 3);
+  _ss = ri(0, 5);
 
   // 1. Parse
   const tokens = lex(source);
   const parser = new Parser(tokens);
   const ast = parser.parse();
 
-  // 2. Transform
-  const transformer = new ASTTransformer(opts);
-  const transformed = transformer.transform(ast);
+  // 2. Compile to bytecode
+  const compiler = new BytecodeCompiler(opts);
+  const bc = compiler.compile(ast);
 
-  // 3. Generate
-  const gen = new CodeGenerator(opts);
-  let code = gen.generate(transformed);
+  // 3. Encrypt bytecode
+  const encData = encryptAndBuildLoader(bc.instructions, bc.constants, opts);
 
-  // 4. Minify
-  if (opts.minify) {
-    code = code.replace(/--[^\n]*/g, '').replace(/\n\s*\n/g, '\n');
-  }
+  // 4. Build VM runtime
+  let vmRuntime = buildVMRuntime(bc.instructions, bc.constants, opts);
 
-  // 5. Inject protections
+  // 5. Combine parts
   const parts = [];
-  
-  // VM Engine
-  let vmCode = buildVMEngine(opts);
-  if (vmCode && opts.vmhide) {
-    parts.push(buildVMSealing(vmCode));
-  } else if (vmCode) {
-    parts.push(vmCode);
-  }
-
-  // Fake opcodes
-  const fakeCode = injectFakeOpcodes(opts);
-  if (fakeCode) parts.push(fakeCode);
 
   // Anti-debug
-  const adCode = buildAntiDebug(opts);
+  const adCode = buildAntiDebugPro(opts);
   if (adCode) parts.push(adCode);
 
-  // Anti-tamper
-  const atCode = buildAntiTamper(opts);
-  if (atCode) parts.push(atCode);
-
-  // Junk upvalues
-  const junkCode = injectJunkUpvalues(opts);
-  if (junkCode) parts.push(junkCode);
+  // VM integrity check
+  const intgCode = buildVMIntegrityCheck(opts);
+  if (intgCode) parts.push(intgCode);
 
   // Dead code
-  const deadCode = injectDeadCode(opts);
+  const deadCode = injectDeadCode2(opts);
   if (deadCode) parts.push(deadCode);
 
-  // Roblox noise
-  const noiseCode = buildRbxNoise(opts);
-  if (noiseCode) parts.push(noiseCode);
-
-  // Main code
-  let mainCode = code;
-  if (opts.cff) {
-    mainCode = flattenControlFlow(code.trim(), opts);
+  // VM Runtime
+  if (opts.vm) {
+    parts.push(sealVM(vmRuntime, opts));
   }
 
-  parts.push(mainCode);
+  // Main execution
+  const mainCode = opts.vm ? `${rname()}:run()` : source;
+  parts.push(buildStateMachine(mainCode, opts));
 
-  // Combine all
   let finalCode = parts.join('\n');
 
-  // VM sealing wrapper
-  if (opts.vmhide) {
-    const outerWrapper = rname();
-    finalCode = `(function()\nlocal ${outerWrapper}=function()\n${finalCode.split('\n').map(l => '  ' + l).join('\n')}\nend\n${outerWrapper}()\nend)()`;
+  // Wrap in outer IIFE if VM sealed
+  if (opts.vm_sealed) {
+    const wrapper = rname();
+    finalCode = `(function()\nlocal ${wrapper}=function()\n${finalCode.split('\n').map(l => '  ' + l).join('\n')}\nend\n${wrapper}()\nend)()`;
   }
 
   return {
     code: finalCode,
+    bytecode: bc.instructions,
+    constants: bc.constants,
     stats: {
       originalLength: source.length,
       obfuscatedLength: finalCode.length,
       ratio: (finalCode.length / source.length).toFixed(1) + 'x',
-      varsRenamed: transformer.stats.vars,
-      stringsEncrypted: transformer.stats.strings,
+      vmInstructions: bc.instructions.length,
+      constants: bc.constants.length
     }
   };
 }
 
-// ── Module 21: PRESET CONFIGURATIONS ───────────────────────────────────────
-const PRESETS = {
-  light: {
-    rename: true, dead: false, strenc: true, minify: false,
-    cff: false, vm: false, antidebug: false, antitamp: false,
-    vmhide: false, fake: false, junk: false, noise: true
-  },
-  medium: {
-    rename: true, dead: true, strenc: true, minify: false,
-    cff: true, vm: false, antidebug: true, antitamp: false,
-    vmhide: false, fake: true, junk: false, noise: true
-  },
-  extreme: {
-    rename: true, dead: true, strenc: true, minify: true,
-    cff: true, vm: true, antidebug: true, antitamp: true,
-    vmhide: true, fake: true, junk: true, noise: true
+// Fallback: Non-VM obfuscation
+function obfuscateStandard(source, opts) {
+  resetNames();
+  _ns = ri(0, 4);
+  _sv = ri(0, 3);
+  _ss = ri(0, 5);
+
+  const tokens = lex(source);
+  const parser = new Parser(tokens);
+  const ast = parser.parse();
+
+  // Simple code gen with obfuscation
+  let code = generateObfuscated(ast, opts);
+  if (opts.minify) code = code.replace(/--[^\n]*/g, '').replace(/\n\s*\n/g, '\n');
+
+  const parts = [];
+  const adCode = buildAntiDebugPro(opts);
+  if (adCode) parts.push(adCode);
+  const intgCode = buildVMIntegrityCheck(opts);
+  if (intgCode) parts.push(intgCode);
+  const deadCode = injectDeadCode2(opts);
+  if (deadCode) parts.push(deadCode);
+  parts.push(buildStateMachine(code.trim(), opts));
+
+  let finalCode = parts.join('\n');
+  if (opts.vm_sealed) {
+    const wrapper = rname();
+    finalCode = `(function()\nlocal ${wrapper}=function()\n${finalCode.split('\n').map(l => '  ' + l).join('\n')}\nend\n${wrapper}()\nend)()`;
   }
+
+  return {
+    code: finalCode,
+    bytecode: [],
+    constants: [],
+    stats: {
+      originalLength: source.length,
+      obfuscatedLength: finalCode.length,
+      ratio: (finalCode.length / source.length).toFixed(1) + 'x',
+      vmInstructions: 0,
+      constants: 0
+    }
+  };
+}
+
+function generateObfuscated(ast, opts, indent = 0) {
+  const i = '  '.repeat(indent);
+  let out = '';
+
+  if (ast.type !== 'block') return out;
+
+  for (const node of ast.ss) {
+    out += generateNode(node, opts, indent);
+  }
+  return out;
+}
+
+function generateNode(node, opts, indent = 0) {
+  if (!node) return '';
+  const i = '  '.repeat(indent);
+
+  switch (node.type) {
+    case 'local':
+      const ns = node.ns.join(', ');
+      const vs = node.vs?.map(v => genExpr(v, opts)).join(', ') || '';
+      return i + 'local ' + ns + (vs ? ' = ' + vs : '') + '\n';
+    case 'lf':
+      const params = node.fn.ps.join(', ');
+      return i + 'function ' + node.n + '(' + params + ')\n' + generateObfuscated(node.fn.b, opts, indent + 1) + i + 'end\n';
+    case 'func_stat':
+      const ps2 = node.fn.ps.join(', ');
+      return i + 'function ' + node.n + '(' + ps2 + ')\n' + generateObfuscated(node.fn.b, opts, indent + 1) + i + 'end\n';
+    case 'if':
+      let s = i + 'if ' + genExpr(node.c, opts) + ' then\n';
+      s += generateObfuscated(node.th, opts, indent + 1);
+      node.eis?.forEach(ei => {
+        s += i + 'elseif ' + genExpr(ei.c, opts) + ' then\n';
+        s += generateObfuscated(ei.b, opts, indent + 1);
+      });
+      if (node.el) {
+        s += i + 'else\n';
+        s += generateObfuscated(node.el, opts, indent + 1);
+      }
+      s += i + 'end\n';
+      return s;
+    case 'while':
+      return i + 'while ' + genExpr(node.c, opts) + ' do\n' + generateObfuscated(node.b, opts, indent + 1) + i + 'end\n';
+    case 'do':
+      return i + 'do\n' + generateObfuscated(node.b, opts, indent + 1) + i + 'end\n';
+    case 'assign':
+      const tgts = node.tgts.map(t => genExpr(t, opts)).join(', ');
+      const vals = node.vs.map(v => genExpr(v, opts)).join(', ');
+      return i + tgts + ' = ' + vals + '\n';
+    case 'callst':
+      return i + genExpr(node.e, opts) + '\n';
+    case 'ret':
+      const vs = node.vs?.map(v => genExpr(v, opts)).join(', ') || '';
+      return i + 'return' + (vs ? ' ' + vs : '') + '\n';
+    case 'break':
+      return i + 'break\n';
+    case 'block':
+      return generateObfuscated(node, opts, indent);
+    default:
+      return '';
+  }
+}
+
+function genExpr(node, opts) {
+  if (!node) return 'nil';
+  switch (node.type) {
+    case 'nil': return 'nil';
+    case 'num': return String(node.val);
+    case 'str': return opts.strenc ? encStr(node.val) : JSON.stringify(node.val);
+    case 'bool': return String(node.val);
+    case 'var': return node.name;
+    case 'op':
+      if (node.op === 'not') return 'not ' + genExpr(node.a, opts);
+      if (node.op === '#') return '#' + genExpr(node.a, opts);
+      if (node.op === '-') return '-' + genExpr(node.a, opts);
+      return '(' + genExpr(node.a, opts) + ' ' + node.op + ' ' + genExpr(node.b, opts) + ')';
+    case 'call':
+      const args = node.args?.map(a => genExpr(a, opts)).join(', ') || '';
+      return genExpr(node.func, opts) + '(' + args + ')';
+    case 'mcall':
+      const args2 = node.args?.map(a => genExpr(a, opts)).join(', ') || '';
+      return genExpr(node.obj, opts) + ':' + node.method + '(' + args2 + ')';
+    case 'field': return genExpr(node.obj, opts) + '.' + node.key;
+    case 'tbl':
+      const items = node.items?.map(it => {
+        if (it.k) return '[' + genExpr(it.k, opts) + ']=' + genExpr(it.v, opts);
+        return genExpr(it.v, opts);
+      }).join(', ') || '';
+      return '{' + items + '}';
+    case 'paren': return '(' + genExpr(node.e, opts) + ')';
+    default: return 'nil';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  PRESETS
+// ══════════════════════════════════════════════════════════════════════════════
+const PRESETS = {
+  light: { vm: false, enc: false, rename: true, strenc: true, dead: false, fake: false, cff: false, antidebug: false, vm_sealed: false, vm_intg: false, vm_poly: false, minify: false },
+  standard: { vm: false, enc: true, rename: true, strenc: true, dead: true, fake: true, cff: true, antidebug: true, vm_sealed: true, vm_intg: false, vm_poly: false, minify: false },
+  vm: { vm: true, enc: true, rename: true, strenc: true, dead: true, fake: true, cff: true, antidebug: true, vm_sealed: true, vm_intg: true, vm_poly: false, minify: false },
+  extreme: { vm: true, enc: true, rename: true, strenc: true, dead: true, fake: true, cff: true, antidebug: true, vm_sealed: true, vm_intg: true, vm_poly: true, minify: true }
 };
 
 function applyPreset(name) {
@@ -1275,15 +1134,20 @@ function applyPreset(name) {
     const el = document.getElementById('f_' + k);
     if (el) el.checked = preset[k];
   });
-  document.querySelectorAll('.pr').forEach(b => b.classList.remove('active'));
-  document.querySelector(`.pr:${name === 'light' ? 'first' : name === 'medium' ? 'second' : 'last'}-child`)?.classList.add('active');
+  document.querySelectorAll('.pr').forEach(b => b.classList.remove('active','vm-active'));
   document.querySelectorAll('.pr').forEach(b => {
-    if (b.textContent.toLowerCase() === name) b.classList.add('active');
+    if (b.textContent.toLowerCase() === name || (name === 'vm' && b.textContent === 'VM Mode')) {
+      b.classList.add('active');
+      if (name === 'vm' || name === 'extreme') b.classList.add('vm-active');
+    }
   });
 }
 
-function setPreset(name) {
-  applyPreset(name);
+function setPreset(name) { applyPreset(name); }
+
+function toggleBytecode() {
+  const view = document.getElementById('bytecodeView');
+  view.style.display = view.style.display === 'none' ? 'block' : 'none';
 }
 
 function doCopy() {
@@ -1292,7 +1156,7 @@ function doCopy() {
     const btn = document.querySelector('.cb');
     const orig = btn.textContent;
     btn.textContent = 'Copied!';
-    setTimeout(() => btn.textContent = orig, 1500);
+    setTimeout(() => btn.textContent = 'Copy Code', 1500);
   });
 }
 
@@ -1302,89 +1166,99 @@ function showError(msg) {
   err.style.display = 'block';
 }
 
-function showResult(result, stats) {
-  document.getElementById('out').value = result;
+function showResult(result, opts) {
+  document.getElementById('out').value = result.code;
+  if (result.bytecode?.length) {
+    document.getElementById('bcView').value = result.bytecode.map(i => `OP(${i.op}) A=${i.a} B=${i.b} C=${i.c}`).join('\n');
+  }
   document.getElementById('rp').style.display = 'block';
   document.getElementById('err').style.display = 'none';
 
   const statsDiv = document.getElementById('stats');
   statsDiv.innerHTML = `
-    <div class="stat"><div class="sv">${stats.ratio}</div><div class="sl2">Size Ratio</div></div>
-    <div class="stat"><div class="sv">${stats.varsRenamed}</div><div class="sl2">Vars Renamed</div></div>
-    <div class="stat"><div class="sv">${stats.stringsEncrypted}</div><div class="sl2">Strings Enc</div></div>
+    <div class="stat"><div class="sv">${result.stats.ratio}</div><div class="sl2">Size Ratio</div></div>
+    <div class="stat"><div class="sv vm">${result.stats.vmInstructions}</div><div class="sl2">VM Ops</div></div>
+    <div class="stat"><div class="sv">${result.stats.constants}</div><div class="sl2">Constants</div></div>
+    <div class="stat"><div class="sv">${opts.vm ? 'VM' : 'STD'}</div><div class="sl2">Mode</div></div>
   `;
 
   const chipsDiv = document.getElementById('chips');
   const chips = [];
-  const opts = getOpts();
-  if (opts.rename) chips.push('Variables Renamed');
-  if (opts.dead) chips.push('Dead Code');
-  if (opts.strenc) chips.push('String Encryption');
-  if (opts.cff) chips.push('Control Flow Flattening');
-  if (opts.vm) chips.push('VM Engine');
-  if (opts.antidebug) chips.push('Anti-Debug');
-  if (opts.antitamp) chips.push('Integrity Check');
-  if (opts.vmhide) chips.push('VM Sealing');
-  if (opts.fake) chips.push('Fake Opcodes');
-  if (opts.junk) chips.push('Junk Upvalues');
-  if (opts.noise) chips.push('API Noise');
-  chipsDiv.innerHTML = chips.map(c => `<span class="chip">${c}</span>`).join('');
+  if (opts.vm) chips.push('<span class="chip vm">VM Engine</span>');
+  if (opts.enc) chips.push('<span class="chip cry">Encrypted</span>');
+  if (opts.cff) chips.push('<span class="chip">CFF</span>');
+  if (opts.antidebug) chips.push('<span class="chip">Anti-Debug</span>');
+  if (opts.vm_intg) chips.push('<span class="chip vm">VM Integrity</span>');
+  if (opts.fake) chips.push('<span class="chip">Fake Ops</span>');
+  if (opts.vm_poly) chips.push('<span class="chip vm">Polymorphic</span>');
+  chipsDiv.innerHTML = chips.join('');
 }
 
 function getOpts() {
   return {
-    rename: f('rename'),
-    dead: f('dead'),
-    strenc: f('strenc'),
-    minify: f('minify'),
-    cff: f('cff'),
     vm: f('vm'),
-    antidebug: f('antidebug'),
-    antitamp: f('antitamp'),
-    vmhide: f('vmhide'),
+    enc: f('enc'),
+    rename: f('rename'),
+    strenc: f('strenc'),
+    dead: f('dead'),
     fake: f('fake'),
-    junk: f('junk'),
-    noise: f('noise'),
+    cff: f('cff'),
+    antidebug: f('antidebug'),
+    vm_sealed: f('vm_sealed'),
+    vm_intg: f('vm_intg'),
+    vm_poly: f('vm_poly'),
+    minify: f('minify'),
   };
 }
 
 async function go() {
   const btn = document.getElementById('obfBtn');
   btn.disabled = true;
-  btn.textContent = 'Processing...';
+  btn.textContent = 'Compiling...';
 
   try {
     setProg(10);
     const source = document.getElementById('src').value.trim();
-    if (!source) throw new Error('Please enter Lua code to protect');
+    if (!source) throw new Error('Please enter Lua code');
 
     setProg(30);
-    await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 30));
 
-    setProg(60);
+    setProg(50);
     const opts = getOpts();
-    const result = obfuscate(source, opts);
 
-    setProg(90);
-    await new Promise(r => setTimeout(r, 50));
+    // Build polymorphic opcode map
+    buildOpMap();
 
-    showResult(result.code, result.stats);
+    setProg(70);
+    let result;
+    if (opts.vm) {
+      result = compileToVM(source, opts);
+    } else {
+      result = obfuscateStandard(source, opts);
+    }
+
+    setProg(95);
+    await new Promise(r => setTimeout(r, 30));
+
+    showResult(result, opts);
     setProg(100);
 
     document.getElementById('ib').innerHTML = `
-      <strong>Protection Complete</strong><br>
-      Code is protected with enterprise-grade obfuscation. The output is fully executable Lua/Luau code.
+      <strong>VM Compilation Complete</strong><br>
+      ${opts.vm ? 'Code compiled to VM bytecode with encryption.' : 'Standard obfuscation applied.'}
+      Output is fully executable Lua/Luau code.
     `;
   } catch (e) {
-    showError('Error: ' + e.message);
+    showError('Error: ' + e.message + '\n' + (e.stack || '').split('\n').slice(0,5).join('\n'));
     setProg(0);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Protect Code';
+    btn.textContent = 'Compile to VM + Protect';
   }
 }
 
-// Initialize
+// Init
 setPreset('extreme');
 </script>
 </body>
