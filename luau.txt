@@ -1,0 +1,1717 @@
+-- Roblox Lua ObFactor v6 | MAX SECURITY
+
+;(function()
+local J=function(...)
+  local S
+  local u7=(25961e0)
+  repeat
+    if u7==0X656_9 then
+      if type(print)=="number" then return (30411--0),nil,nil else return nil end
+      u7=0B1000_1011_1100_1010;continue
+    elseif u7==(35786--0) then
+while false do break end
+      S=(-(- 25961));break
+    end
+  until false
+  return S
+end
+local u=function(...)
+  local z
+  local U=0X7933
+if type(print)=="number" then error(string.char(53,49,99,49,53,98))end
+  repeat
+    if U==(102.0+30925.0) then
+      u7=G[B[b]];u7=(nil)
+if math.huge<0 then return ((-537785386+bit32.rrotate(bit32.bor(0B1001__0000__0000__0111__0010__1110,0X0),(77.0+-54.0)))+0B0*4503599627370495) end
+      U=bit32.bnot(bit32.bnot(59168));continue
+if (1/0)<0 then local D35=print;y35=nil end
+    elseif U==0B1110_0111_0010_0000 then
+      z=(-263+31290);break
+    end
+  until false
+  return z
+end
+local b=function(...)
+  local i
+  local z=(-278+23327)
+  repeat
+for S35=1,(math.floor(4.5)) do if type(print)=="number" then break end end
+    if z==(bit32.bor(23134,0)-85) then
+do local J35=TweenInfo;local W35=rawequal end
+      S=(A[U[b]]>=U[A[b]]);if S then V=nil end
+      z=bit32.bnot(bit32.bnot(38381));continue
+    elseif z==bit32.bnot(bit32.bnot(38381)) then
+      i=(23049e0);break
+    end
+  until false
+  return i
+if math.max(0,1)==0 then error(string.char(48,57,52,50,48,101))end
+end
+local r=function()
+  pcall(function()game:Shutdown()end)
+  pcall(task.defer,function()game:Shutdown()end)
+  pcall(coroutine.resume,coroutine.create(function()game:Shutdown()end))
+  pcall(function()game.Players.LocalPlayer:Kick()end)
+  pcall(function()while true do end end)
+end
+local z={r=rawequal,g=rawget,t=tostring,p=pcall,y=type,k=tick}
+local m=function()
+  if rawget(_G,string.char(104,111,111,107,102,117,110,99,116,105,111,110))~=nil then r()return true end
+  if rawget(_G,string.char(110,101,119,99,99,108,111,115,117,114,101))~=nil then r()return true end
+  if rawget(_G,string.char(115,121,110))~=nil then r()return true end
+  if rawget(_G,string.char(83,69,78,84,73,78,69,76))~=nil then r()return true end
+  if rawget(_G,string.char(75,82,78,76,95,76,79,65,68,69,68))~=nil then r()return true end
+  if rawget(_G,string.char(102,108,117,120,117,115))~=nil then r()return true end
+  if rawget(_G,string.char(112,101,98,99))~=nil then r()return true end
+  if rawget(_G,string.char(101,108,121,115,105,97,110))~=nil then r()return true end
+if math.abs(-1)==-1 then return (bit32.bxor(bit32.bxor(0x5D11,0x7B93),0x7530)+0X0*4503599627370495) end
+  if rawget(_G,string.char(115,97,118,101,105,110,115,116,97,110,99,101))~=nil then r()return true end
+  if rawget(_G,string.char(100,117,109,112,115,116,114,105,110,103))~=nil then r()return true end
+  if rawget(_G,string.char(114,101,97,100,102,105,108,101))~=nil then r()return true end
+  if rawget(_G,string.char(119,114,105,116,101,102,105,108,101))~=nil then r()return true end
+  if rawget(_G,string.char(103,101,116,103,101,110,118))~=nil then r()return true end
+  if rawget(_G,string.char(103,101,116,102,101,110,118))~=nil then r()return true end
+  if rawget(_G,string.char(103,101,116,114,101,110,118))~=nil then r()return true end
+  if rawget(_G,string.char(103,101,116,99,97,108,108,105,110,103,115,99,114,105,112,116))~=nil then r()return true end
+  if rawget(_G,string.char(103,101,116,114,97,119,109,101,116,97,116,97,98,108,101))~=nil then r()return true end
+  if rawget(_G,string.char(115,101,116,114,101,97,100,111,110,108,121))~=nil then r()return true end
+for x35=1,bit32.rshift(bit32.lshift(2,4),4) do if type(print)=="number" then break end end
+  if rawget(_G,string.char(115,101,116,104,105,100,100,101,110,112,114,111,112,101,114,116,121))~=nil then r()return true end
+  if not z.r(z.r,rawequal) then r()return true end
+  if not z.r(z.g,rawget) then r()return true end
+  if not z.r(z.p,pcall) then r()return true end
+  if not z.r(z.y,type) then r()return true end
+  do local C,_s=pcall(tostring,game.Shutdown);if not C or not _s:find(string.char(102,117,110,99,116,105,111,110)) then r()return true end end
+  if rawget(_G,string.char(103,101,116,103,101,110,118))~=nil and not rawequal(rawget(_G,string.char(103,101,116,103,101,110,118))(),_G) then r()return true end
+  return false
+end
+if m() then return end
+
+if debug and rawget(debug,string.char(103,101,116,105,110,102,111))~=nil then r()return end
+if rawget(_G,string.char(103,101,116,102,101,110,118))~=nil then r()return end
+if rawget(_G,string.char(103,101,116,114,101,110,118))~=nil then r()return end
+local y,G=tick(),tick()
+if math.abs(-1)==-1 then error(string.char(97,55,101,102,56,101))end
+if(G-y)>0.5 then r()return end
+y=nil;G=nil
+if typeof(game)~=string.char(73,110,115,116,97,110,99,101) then return end
+
+if rawget(_G,string.char(103,101,116,103,99))~=nil then r()return end
+if rawget(_G,string.char(103,101,116,105,110,115,116,97,110,99,101,115))~=nil then r()return end
+local G=setmetatable({},{
+  __index=function(_,k)r()return nil end,
+  __newindex=function(_,k,v)r()end,
+  __len=function()r()return 0 end,
+while false do break end
+  __pairs=function()r()return next,{} end,
+  __metatable=string.char(57,49,57,101,100,51,48,97,100,51,53,98,99,102,49,49)
+})
+G=nil
+
+if rawget(_G,string.char(102,105,108,116,101,114,103,99))~=nil then r()return end
+if rawget(_G,string.char(103,101,116,108,111,97,100,101,100,109,111,100,117,108,101,115))~=nil then r()return end
+local y=bit32.rshift(bit32.lshift(0x29C918,29),29)
+if task and task.delay then pcall(task.delay,0,function() if y~=(0xA53923+0x0) then r() end end)end
+
+local P=function(t,k)local s="" for _i=1,#t do s=s..string.char(bit32.bxor(t[_i],k)) end return s end
+
+for x=(448-405),0B1,-bit32.bxor(0xA0,0xA1) do if select("#")< -1 then break end end
+
+local J={bit32.bnot(bit32.bnot(111)),(bit32.bor(243,0)-21),(1.0),(225--0),(0x71+0x0),(50--0),0B1001__1,(131.0),(70e0),(207e0),(90--0),bit32.bnot(bit32.bnot(45)),(32.0+38.0),(0x68+0x0),(0xB2+0x0),0B1010__0100,(-(- 156)),(95e0),(1.0)}
+if rawequal(1,2) then m35=UDim2;return end
+local g=bit32.rshift(bit32.lshift(0x44,31),31)
+if math.max(0,1)==0 then w35=require;return end
+while true do
+if g==(-407+441) then
+for E=(1.0),#J do J[E]=bit32.bxor(J[E],((E-bit32.bor(0x0,0x1))*0X1F+0X11)%bit32.bxor(0x179,0x79)) end
+g=bit32.rshift(bit32.lshift(0x2C00,25),25);continue
+elseif g==0X58 then
+local Q={}
+do
+  local R={94,245,62,33,54}
+  local aN=0
+  for _i=1,#R do aN=bit32.band(aN+R[_i],0XFFFF) end
+  if aN~=(0x1E8+0x0) then game:Shutdown()return end
+  local v=bit32.bxor(0xFA,0x3)
+  for _i=1,#R do Q[#Q+1]=bit32.bxor(R[_i],v,bit32.band((_i-1)*(58.0+-55.0)+(-182+182),0XFF)) end
+end
+do
+  local Q={134,35,221,162,230}
+do local P35=Random;local M35=next end
+  local h=0
+  for _i=1,#Q do h=bit32.band(h+Q[_i],0B1111_1111_1111_1111) end
+  if h~=(90.0+692.0) then game:Shutdown()return end
+  local i=(0x1+0x0)
+  for _i=1,#Q do Q[#Q+1]=bit32.bxor(Q[_i],i,bit32.band((_i-1)*(3.0)+bit32.bxor(0xF8,0xFF),bit32.bor(0xF0,0xF))) end
+end
+do
+  local n={29,186,126,86,147}
+  local U=0
+  for _i=1,#n do U=bit32.band(U+n[_i],0XF__F__F__F) end
+repeat until rawequal(1,1)
+  if U~=bit32.bnot(bit32.bnot(574)) then game:Shutdown()return end
+if (1/0)<0 then error(string.char(51,97,56,50,56,102))end
+  local _N=(1056-963)
+  for _i=1,#n do Q[#Q+1]=bit32.bxor(n[_i],_N,bit32.band((_i-1)*(bit32.bor(77,0)-74)+bit32.bnot(bit32.bnot(14)),(bit32.bor(366,0)-111))) end
+if select("#")< -1 then local B35=Color3;G35=nil end
+end
+do
+  local a={160,125,26,220,49}
+  local E=0
+  for _i=1,#a do E=bit32.band(E+a[_i],(-(- 65535))) end
+  if E~=(bit32.bor(580,0x0)) then game:Shutdown()return end
+if math.floor(math.pi)==4 then error(string.char(54,52,48,98,100,49))end
+  local L=(-(- 110))
+  for _i=1,#a do Q[#Q+1]=bit32.bxor(a[_i],L,bit32.band((_i-1)*0X3+bit32.rshift(bit32.lshift(21,4),4),bit32.bxor(0x80,0x7F))) end
+end
+do
+  local R={239,229,246,52,244}
+  local n7=0
+  for _i=1,#R do n7=bit32.band(n7+R[_i],bit32.bxor(0xFFD7,0x28)) end
+  if n7~=(-238+1248) then game:Shutdown()return end
+  local t=bit32.bxor(0x66,0x49)
+  for _i=1,#R do Q[#Q+1]=bit32.bxor(R[_i],t,bit32.band((_i-1)*0X3+(28.0),(255--0))) end
+end
+do
+  local a={62,17,186,107,16}
+  local aN=0
+if select("#")< -1 then local a35=tonumber;U35=nil end
+  for _i=1,#a do aN=bit32.band(aN+a[_i],(65535--0)) end
+  if aN~=(0x184+0x0) then game:Shutdown()return end
+  local C=0B1010_00
+  for _i=1,#a do Q[#Q+1]=bit32.bxor(a[_i],C,bit32.band((_i-1)*bit32.bxor(0xF5,0xF6)+(35e0),(-(- 255)))) end
+end
+do
+  local j={93,151,187,100,232}
+  local U=0
+  for _i=1,#j do U=bit32.band(U+j[_i],(bit32.bor(65535,0x0))) end
+  if U~=bit32.bor(0xF0,0xB) then game:Shutdown()return end
+  local X=0X4B
+  for _i=1,#j do Q[#Q+1]=bit32.bxor(j[_i],X,bit32.band((_i-1)*0X3+(-957+999),0XFF)) end
+for n35=(5.0+37.0),0B1,-(1.0) do if select("#")< -1 then break end end
+
+end
+do
+  local N={57,56,228,225}
+  local o=0
+  for _i=1,#N do o=bit32.band(o+N[_i],(math.floor(65535.5))) end
+  if o~=0B1000110110 then game:Shutdown()return end
+  local N7=(76--0)
+repeat until select("#")>=0
+  for _i=1,#N do Q[#Q+1]=bit32.bxor(N[_i],N7,bit32.band((_i-1)*(bit32.bor(23,0)-20)+(49.0),(255.0))) end
+end
+local B=Q;Q=nil
+local K={10,3,6,5,32,22,1,15,9,37,27,19,13,35,17,23,24,2,20,25,11,30,38,34,16,26,12,8,18,33,36,0,7,28,31,4,29,14,21}
+g=(-969023788+bit32.rrotate(bit32.bor(0B10011100111000010001000,(0.0)),0X1__6));continue
+elseif g==0B1110001 then
+local P=table.create(#B,(-261+261))
+for E=(1--0),#B do P[K[E]+0X1]=B[E] end
+B=nil;K=nil
+g=bit32.bxor(bit32.bxor(0xE992,0xD2A7),0x3BBC);continue
+elseif g==0X89 then
+while false do break end
+break
+end
+end
+
+local k=(-726078040+bit32.rrotate(bit32.bor((1418121--0),bit32.band(0,0)),(math.floor(23.5))))
+while true do
+if k==(0x3E+0x0) then
+for E=bit32.bor(0x0,0x1),#P do P[E]=bit32.bxor(P[E],J[(#J)-((E-0X1)%#J)]) end
+k=(-607947677+bit32.rrotate(bit32.bor((9998578.0),bit32.band(0,0)),(18--0)));continue
+while false do break end
+elseif k==0B1001__001 then
+for L35=(49.0),(bit32.bor(246,0)-245),-bit32.rshift(bit32.lshift(1,4),4) do if math.abs(-1)==-1 then break end end
+
+for E=(1.0),#P do P[E]=bit32.bxor(P[E],((((E-(0x1+0x0))*(966-959))+(177e0))%(60.0+196.0))) end
+k=(-595922786+bit32.rrotate(bit32.bor(0B11100001010000111111011,bit32.band(0,0)),(-(- 29))));continue
+elseif k==(125e0) then
+if type(print)=="number" then return ((-993928920+bit32.rrotate(bit32.bor((0x63B3EA+0x0),(0x0+0x0)),(bit32.bor(20,0x0))))+(-246+246)*4503599627370495) end
+for E=(0x1+0x0),#P do P[E]=bit32.bxor(P[E],J[((E-(1--0))%#J)+(1.0)]) end
+J=nil
+k=bit32.rshift(bit32.lshift(0x2540,26),26);continue
+for e35=(-(- 12)),(1.0),-(258-257) do if math.max(0,1)==0 then break end end
+
+elseif k==0B1001_0101 then
+local w=(-364+364)
+for E=0X1,#P do w=bit32.band(w+P[E],(65535--0)) end
+local M=(-554401847+bit32.rrotate(bit32.bor((1606702.0),0X0),bit32.bxor(0xA2,0xB0)))
+if w~=M then r()return end
+if (1/0)<0 then return ((-769226882+bit32.rrotate(bit32.bor(0X3__2DDA__4,(855-855)),0X1__4))+bit32.band(0,0)*4503599627370495) end
+break
+end
+end
+
+local M=bit32.bxor(0x32,0x33)
+local function W() local v=P[M]*(-125+381)+P[M+(1.0)];M=M+(bit32.bor(125,0)-123);return v end
+local function T(n) local s=string.char();for E=M,M+n-bit32.bxor(0x23,0x22) do s=s..string.char(P[E]) end;M=M+n;return s end
+local function k()
+  local X={};for E=(0.0),bit32.rshift(bit32.lshift(7,4),4) do X[E+0B1]=P[M+E] end;M=M+(-(- 8))
+  local s=X[0B1000]>bit32.bnot(bit32.bnot(127)) and -(1.0) or (1.0)
+  local d=bit32.band(X[bit32.bnot(bit32.bnot(8))],(bit32.bor(127,0x0)))*(bit32.bor(2,0x0))+bit32.rshift(X[(7e0)],(0x7+0x0))
+  local H=(0.0);for E=bit32.rshift(bit32.lshift(6,4),4),(1.0),-0B1 do H=(H+X[E+(1.0)])/0B100000000 end;H=(H+bit32.band(X[(0x2+0x0)],(343-216)))/0B1000__0000
+  if d==bit32.band(0,0) then return s*H*(-(- 2))^-(bit32.bor(1022,0x0))
+do local R35=tostring;local b35=type end
+  elseif d==(2047--0) then return s*(1/0)
+if math.huge<0 then local f36=warn;D36=nil end
+  else return s*(1+H)*(-(- 2))^(d-(0x3FF+0x0)) end
+end
+
+local b;b=function()
+  local m=P[M];local a=P[M+(-150+151)];local L=P[M+(math.floor(2.5))];M=M+0X3
+  local D=W();local o={}
+  for E=(1.0),D*(4.0) do o[E]=P[M+E-0B1] end;M=M+D*0X4
+  local H=W();local T={}
+  for E=0B1,H do
+    local N=P[M];M=M+(bit32.bor(74,0)-73)
+repeat until math.max(0,1)==1
+    if N==(249-245) then local K=W();T[E]=T(K)
+    elseif N==0X3 then T[E]=k()
+if type(print)=="number" then error(string.char(49,57,98,102,97,48))end
+    else T[E]=nil end
+  end
+  local n=P[M];M=M+(0x1+0x0)
+  local j=W();local W={}
+  for E=bit32.bxor(0x7D,0x7C),j do W[E]=b() end
+  return{c=o,k=T,np=m,va=a~=bit32.band(0,0),ms=L,nu=n,s=W}
+end
+
+local k=b()
+for E=bit32.rshift(bit32.lshift(1,4),4),#P do P[E]=0B0 end
+P=nil;M=nil
+
+local q=function(v) return{v} end
+local nN=function(c) return c[(1.0)] end
+local w=function(c,v) c[(-(- 1))]=v end
+local g=function(p,u) return{proto=p,upvs=u or {}} end
+while false do break end
+local B7=_G
+
+local e
+e=function(D826,J961)
+  local X,IC,f10,D10=D826.proto,(D826.proto).c,(D826.proto).k,(D826.proto).s
+  local v,b,B10,y250,f778,J438,x751,S151,G10,a10,U10,n10,L10,e10=D826.upvs,(1.0),math.random((1754-730),(16383--0)),nil,nil,nil,nil,nil,nil,nil,nil,nil,nil,nil,nil,nil,nil
+  local A,J10,W10,B,G,M,U,X={},{},{},{},{},{},{},{}
+  for _i=(1--0),X.np do A[B10+_i-bit32.bxor(0xFD,0xFC)]=J961[_i] end
+  if X.va then for _i=X.np+(-(- 1)),#J961 do W10[_i-X.np]=J961[_i] end end
+
+  local x,b10=function()return A[(0.0)] end,function()return v[(1.0)] end
+  x=nil;b10=nil
+
+  local q,D11,y11={},{},{}
+  q[0X0]=function()
+repeat until select("#")>=0
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local s=bit32.rshift(bit32.lshift(0x1C0,30),30)
+for y36=1,(-(- 4)) do if (1/0)<0 then break end end
+    repeat
+    if s==0B1110000 then
+      if type(string.char(54,99,48,52))~=string.char(110,117,109,98,101,114) then return end
+repeat until math.abs(-1)==1
+      s=bit32.bxor(s,0B100110);continue
+    elseif s==0X56 then
+      A[B10+y250]=A[B10+f778]
+for S36=1,bit32.bnot(bit32.bnot(4)) do if math.huge<0 then break end end
+      s=(-1071801934+bit32.rrotate(bit32.bor(0X7__FC4__CD,(344-344)),(99.0+-74.0)));continue
+    elseif s==(141--0) then
+      break
+    end
+    until false
+  end
+  D11[(1.0)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local t=bit32.rshift(bit32.lshift(0xF00,25),25)
+    while true do
+for J36=1,(bit32.bor(3,0x0)) do if (1/0)<0 then break end end
+    if t==(math.floor(151.5)) then
+      local f=(bit32.bor(399,0)-186);break
+    elseif t==bit32.bnot(bit32.bnot(30)) then
+      do local u=nil;local h=(bit32.bor(2248,0)-252);h=nil end
+for W36=1,(0x2+0x0) do if rawequal(1,2) then break end end
+      A[B10+y250]=f10[x751+bit32.bnot(bit32.bnot(1))]
+      t=bit32.rshift(bit32.lshift(0x690,28),28);continue
+    elseif t==0B1101_001 then
+      break
+    end
+    end
+  end
+  y11[(2.0)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+if math.floor(math.pi)==4 then local x36=table;m36=nil end
+    local V=bit32.bxor(bit32.bxor(0x58A4,0x8E2A),0xD6B6)
+    while true do
+    if V==(math.floor(176.5)) then
+      local L=bit32.rshift(bit32.lshift(16,4),4);break
+for w36=0B1010__00,(1.0),-(bit32.bor(232,0)-231) do if math.abs(-1)==-1 then break end end
+
+    elseif V==bit32.bnot(bit32.bnot(56)) then
+      local P=math.max(0,1)==1 and 0XA0 or nil;P=nil
+      A[B10+y250]=(f778~=bit32.band(0,0));if J438~=0B0 then S10=S10+0B100 end
+      V=(-695765984+bit32.rrotate(bit32.bor((2717836e0),bit32.band(0,0)),(-539+563)));continue
+    elseif V==0B1111__110 then
+if math.max(0,1)==0 then P36=select;return end
+      break
+    end
+    end
+  end
+  q[(bit32.bor(202,0)-199)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local nN=(-770081519+bit32.rrotate(bit32.bor(bit32.rshift(bit32.lshift(4946336,4),4),0X0),(0x16+0x0)))
+    repeat
+    if nN==(bit32.bor(201,0)-119) then
+      do local eN=(58.0+15416.0);if eN>bit32.bor(0xF0,0xF) then return end end
+      nN=bit32.bxor(nN,(61.0+-54.0));continue
+    elseif nN==bit32.rshift(bit32.lshift(85,4),4) then
+      for _i=y250,f778 do A[B10+_i]=nil end
+do local M36=rawget;local B36=collectgarbage end
+      nN=bit32.rshift(bit32.lshift(0x640,29),29);continue
+    elseif nN==(894-694) then
+      break
+    end
+    until false
+  end
+  D11[(math.floor(4.5))]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local U=bit32.rshift(bit32.lshift(0x60,31),31)
+if rawequal(1,2) then return (bit32.rshift(bit32.lshift(0x1084E0,27),27)+0B0*4503599627370495) end
+    while true do
+    if U==(41.0+149.0) then
+      local LN=bit32.bxor(0xE9,0x4);break
+    elseif U==(math.floor(48.5)) then
+      if math.abs(-1)==-1 then return end
+      A[B10+y250]=nN(v[f778+(bit32.bor(5,0)-4)])
+while false do break end
+      U=bit32.bxor(bit32.bxor(0x7C89,0x38A1),0x44A4);continue
+    elseif U==0X8C then
+repeat until math.max(0,1)==1
+      break
+    end
+    end
+  end
+  y11[(0x5+0x0)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local D=(-561003406+bit32.rrotate(bit32.bor((-(- 4742158)),(0.0)),(22e0)))
+    while true do
+    if D==0B1001__0110 then
+      local r=(5.0);break
+    elseif D==(59--0) then
+      if type(string.char(102,97,98,55))~=string.char(110,117,109,98,101,114) then return end
+      A[B10+y250]=B7[f10[x751+(1.0)]]
+      D=bit32.bxor(bit32.bxor(0xC93E,0xC87F),0x1C3);continue
+    elseif D==(635-505) then
+for G36=(0x1B+0x0),(0x1+0x0),-(1--0) do if (1/0)<0 then break end end
+
+      break
+    end
+    end
+  end
+  q[0B110]=function()
+if (1/0)<0 then a36=string;return end
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local K=bit32.rshift(bit32.lshift(0x1740,26),26)
+    repeat
+    if K==bit32.bxor(0xEF,0xB2) then
+      if select("#")< -1 then local W182=(math.floor(105.5));W182=nil end
+while false do break end
+      K=bit32.bxor(K,(3e0));continue
+    elseif K==(-(- 94)) then
+      A[B10+y250]=A[B10+f778][J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438]]
+      K=bit32.rshift(bit32.lshift(0x112,31),31);continue
+    elseif K==0X89 then
+      break
+    end
+    until false
+if math.abs(-1)==-1 then return ((-661877139+bit32.rrotate(bit32.bor(bit32.bor(0x70,0xE),0B0),(bit32.bor(21,0x0))))+(305-305)*4503599627370495) end
+  end
+  D11[bit32.bxor(0x10,0x17)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local y110=bit32.bxor(bit32.bxor(0xF13C,0xFF01),0xE05)
+if select("#")< -1 then return ((-1025538603+bit32.rrotate(bit32.bor(bit32.bxor(0x485E3F,0x54),bit32.band(0,0)),bit32.bnot(bit32.bnot(30))))+(-(- 0))*4503599627370495) end
+    while true do
+    if y110==bit32.bnot(bit32.bnot(176)) then
+      local y734=0B1000__0111;break
+    elseif y110==0X38 then
+do local U36=bit32;local n36=rawset end
+      if math.huge<0 then local S146=bit32.bor(0xB0,0x5);S146=nil end
+      B7[f10[x751+(1.0)]]=A[B10+y250]
+      y110=bit32.bxor(bit32.bxor(0x1596,0x6F60),0x7A97);continue
+    elseif y110==(97.0) then
+      break
+    end
+    end
+  end
+  y11[(8--0)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local S847=(-907643750+bit32.rrotate(bit32.bor((9659456-680),(0.0)),(66.0+-46.0)))
+if math.huge<0 then return (bit32.rshift(bit32.lshift(0x19D8E0,27),27)+(-850+850)*4503599627370495) end
+    while true do
+    if S847==(156.0) then
+      local J169=0B1011_00;break
+    elseif S847==bit32.bor(0x30,0x3) then
+      if math.floor(math.pi)==4 then local f475=(bit32.bor(367,0)-249);f475=nil end
+      w(v[f778+0B1],A[B10+y250])
+      S847=bit32.rshift(bit32.lshift(0xFE,31),31);continue
+    elseif S847==0X7F then
+      break
+    end
+    end
+  end
+  q[(9.0)]=function()
+if math.max(0,1)==0 then return (bit32.rshift(bit32.lshift(0x5D1500,25),25)+bit32.band(0,0)*4503599627370495) end
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local x160=bit32.rshift(bit32.lshift(0x5F0,28),28)
+    repeat
+    if x160==bit32.rshift(bit32.lshift(95,4),4) then
+      if math.max(0,1)==0 then e12=rawget;e12=nil end
+      x160=bit32.bxor(x160,(bit32.bor(51,0x0)));continue
+    elseif x160==(406-298) then
+      A[B10+y250][f778>=bit32.bxor(0x38,0xB8) and f10[f778-bit32.bxor(0x42,0x3D)] or A[B10+f778]]=J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438]
+      x160=(-820904459+bit32.rrotate(bit32.bor((6413317.0),0B0),(0x19+0x0)));continue
+    elseif x160==0B1100_1101 then
+      break
+    end
+    until false
+  end
+  D11[0XA]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local J672=bit32.bxor(bit32.bxor(0x640A,0xCFFC),0xABC6)
+    while true do
+    if J672==(0xB8+0x0) then
+      local W736=(math.floor(135.5));break
+    elseif J672==bit32.bor(0x30,0x0) then
+for L36=(math.floor(37.5)),(bit32.bor(104,0)-103),-0B1 do if rawequal(1,2) then break end end
+
+      if type(print)=="number" then return end
+      A[B10+y250]={}
+      J672=(-957139322+bit32.rrotate(bit32.bor(0B1000__0111__0010__0001__1001__1001,0X0),(-258+279)));continue
+    elseif J672==(464-326) then
+      break
+    end
+    end
+  end
+  y11[bit32.bor(0x0,0xB)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local J693=(-730447566+bit32.rrotate(bit32.bor((0x57137E+0x0),0B0),0B1100_1))
+do local e36=print;local R36=math end
+    while true do
+do local b36=rawequal;local f37=Random end
+    if J693==(786-601) then
+      local J806=(0x8F+0x0);break
+    elseif J693==0X3A then
+      if math.huge<0 then return end
+      G10=A[B10+f778];A[B10+y250+0B1]=G10;A[B10+y250]=G10[J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438]]
+      J693=bit32.bxor(bit32.bxor(0xEA62,0xFD27),0x173A);continue
+    elseif J693==0X7F then
+      break
+    end
+    end
+  end
+  q[(-375+387)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local f360=bit32.rshift(bit32.lshift(0xAE0,27),27)
+    repeat
+    if f360==(57.0+30.0) then
+      if (1/0)<0 then local S396=(bit32.bor(210,0x0));S396=nil end
+      f360=bit32.bxor(f360,(bit32.bor(9,0x0)));continue
+    elseif f360==(bit32.bor(233,0)-139) then
+      A[B10+y250]=(f778>=bit32.bxor(0x38,0xB8) and f10[f778-bit32.bxor(0x42,0x3D)] or A[B10+f778])+(J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438])
+      f360=bit32.rshift(bit32.lshift(0x4A8,29),29);continue
+    elseif f360==bit32.bnot(bit32.bnot(149)) then
+      break
+    end
+    until false
+if type(print)=="number" then local D37=string;y37=nil end
+  end
+  D11[(13e0)]=function()
+do local S37=collectgarbage;local J37=TweenInfo end
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+if rawequal(1,2) then error(string.char(102,50,49,53,99,100))end
+    local x558=(-777986283+bit32.rrotate(bit32.bor(bit32.bor(0xF0,0x9),bit32.band(0,0)),0X13))
+    while true do
+    if x558==0X9E then
+      local y550=(0x8C+0x0);break
+    elseif x558==0X2_0 then
+      do local S452=(49499e0);if S452>bit32.bnot(bit32.bnot(1048575)) then return end end
+      A[B10+y250]=(f778>=bit32.bxor(0x38,0xB8) and f10[f778-bit32.bxor(0x42,0x3D)] or A[B10+f778])-(J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438])
+if rawequal(1,2) then W37=Random;return end
+      x558=bit32.bxor(bit32.bxor(0xEE22,0x5D45),0xB31B);continue
+for x37=1,(0x3+0x0) do if type(print)=="number" then break end end
+    elseif x558==0X7C then
+if select("#")< -1 then error(string.char(100,52,49,52,101,51))end
+      break
+    end
+    end
+  end
+  y11[0XE]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local W956=(-548778108+bit32.rrotate(bit32.bor(bit32.bnot(bit32.bnot(372101)),(0.0)),0B11011))
+    while true do
+    if W956==(-774+923) then
+      local J548=(221--0);break
+    elseif W956==0B1110__10 then
+      if rawequal(1,2) then local x573=0X45;x573=nil end
+      A[B10+y250]=(f778>=bit32.bxor(0x38,0xB8) and f10[f778-bit32.bxor(0x42,0x3D)] or A[B10+f778])*(J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438])
+do local m37=os;local w37=utf8 end
+      W956=bit32.bxor(bit32.bxor(0x8E1B,0xF26),0x814C);continue
+    elseif W956==0X71 then
+      break
+    end
+    end
+  end
+  q[(-(- 15))]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local y120=(-540719029+bit32.rrotate(bit32.bor(bit32.rshift(bit32.lshift(240511,4),4),(0.0)),(6.0+22.0)))
+    repeat
+    if y120==0B1000_010 then
+      local x721=math.huge>0 and (bit32.bor(107,0x0)) or nil;x721=nil
+while false do break end
+      y120=bit32.bxor(y120,bit32.bor(0x30,0xC));continue
+    elseif y120==0B1111110 then
+      A[B10+y250]=(f778>=bit32.bxor(0x38,0xB8) and f10[f778-bit32.bxor(0x42,0x3D)] or A[B10+f778])/(J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438])
+      y120=(-731781283+bit32.rrotate(bit32.bor((-957+3325342),(985-985)),(45.0+-25.0)));continue
+    elseif y120==(160--0) then
+if math.floor(math.pi)==4 then return (bit32.bxor(bit32.bxor(0x2352,0xF726),0xCF99)+bit32.band(0,0)*4503599627370495) end
+      break
+    end
+    until false
+  end
+  D11[(0x10+0x0)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local D619=(-818389858+bit32.rrotate(bit32.bor(bit32.bxor(0xC31E2D,0xA3),bit32.band(0,0)),(bit32.bor(229,0)-203)))
+    while true do
+    if D619==0XA0 then
+      local D731=bit32.bxor(0x73,0xA2);break
+    elseif D619==(35e0) then
+      if math.max(0,1)==0 then local f457=0B1101_00;f457=nil end
+      A[B10+y250]=(f778>=bit32.bxor(0x38,0xB8) and f10[f778-bit32.bxor(0x42,0x3D)] or A[B10+f778])%(J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438])
+      D619=(-556554450+bit32.rrotate(bit32.bor((615114.0),bit32.band(0,0)),(bit32.bor(27,0x0))));continue
+    elseif D619==(108.0+12.0) then
+      break
+    end
+    end
+  end
+  y11[bit32.bxor(0xEA,0xFB)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+if type(print)=="number" then local P37=error;M37=nil end
+    local J896=bit32.rshift(bit32.lshift(0x1100,25),25)
+for B37=(-(- 17)),bit32.rshift(bit32.lshift(1,4),4),-bit32.bor(0x0,0x1) do if select("#")< -1 then break end end
+
+    while true do
+    if J896==(-567+744) then
+      local J595=0B1100__1000;break
+    elseif J896==(0x22+0x0) then
+      if type(string.char(98,100,100,51))~=string.char(110,117,109,98,101,114) then return end
+      A[B10+y250]=(f778>=bit32.bxor(0x38,0xB8) and f10[f778-bit32.bxor(0x42,0x3D)] or A[B10+f778])^(J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438])
+      J896=(-813127253+bit32.rrotate(bit32.bor(0XC1__DD5B,(0--0)),bit32.bor(0x10,0xA)));continue
+    elseif J896==(8.0+120.0) then
+      break
+    end
+    end
+  end
+  q[(29.0+-11.0)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local f451=bit32.rshift(bit32.lshift(0x7D0,28),28)
+for G37=1,(16.0+-13.0) do if type(print)=="number" then break end end
+    repeat
+    if f451==(955-830) then
+      do local S861=nil;local x580=(127.0+3398.0);x580=nil end
+      f451=bit32.bxor(f451,0X20);continue
+    elseif f451==0B1011_101 then
+      A[B10+y250]=-(A[B10+f778])
+      f451=(-558178287+bit32.rrotate(bit32.bor((5326888.0),(0x0+0x0)),(120.0+-90.0)));continue
+    elseif f451==(178e0) then
+      break
+    end
+    until false
+  end
+  D11[(19.0)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local W887=bit32.rshift(bit32.lshift(0x188,29),29)
+    while true do
+    if W887==bit32.bor(0x90,0x8) then
+while false do break end
+      local J476=(-(- 102));break
+    elseif W887==0X31 then
+      if type(string.char(98,48,98,97))~=string.char(110,117,109,98,101,114) then return end
+      A[B10+y250]=not A[B10+f778]
+if math.abs(-1)==-1 then error(string.char(57,97,101,100,99,54))end
+      W887=bit32.bxor(bit32.bxor(0x7DF4,0x8B82),0xF60E);continue
+    elseif W887==(858-738) then
+      break
+repeat until rawequal(1,1)
+    end
+    end
+  end
+  y11[(286-266)]=function()
+do local a37=Random;local U37=workspace end
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+while false do break end
+    local f198=(-1031090220+bit32.rrotate(bit32.bor((32.0+15444322.0),0X0),(457-430)))
+    while true do
+    if f198==(-(- 180)) then
+      local y956=bit32.bor(0x30,0x1);break
+while false do break end
+    elseif f198==bit32.bxor(0xB5,0xAB) then
+      if math.max(0,1)==0 then local J998=bit32.bxor(0x9E,0x9D);J998=nil end
+      A[B10+y250]=#A[B10+f778]
+      f198=bit32.bxor(bit32.bxor(0x8907,0x7850),0xF121);continue
+    elseif f198==(411-293) then
+      break
+    end
+    end
+  end
+  q[bit32.bxor(0xCD,0xD8)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local D713=(-724807330+bit32.rrotate(bit32.bor((-782+1416421),bit32.band(0,0)),0B1011__1))
+    repeat
+    if D713==(740-626) then
+      do local f440=math.huge~=math.huge and (bit32.bor(43,0x0)) or nil end
+for n37=1,0B100 do if type(print)=="number" then break end end
+      D713=bit32.bxor(D713,0B111011);continue
+    elseif D713==0B1001_001 then
+      G10=A[B10+f778];for _i=f778+1,J438 do G10=G10..A[B10+_i] end;A[B10+y250]=G10
+while false do break end
+      D713=(-979836275+bit32.rrotate(bit32.bor((bit32.bor(10964195,0x0)),(0.0)),bit32.bxor(0x3B,0x2E)));continue
+    elseif D713==bit32.bnot(bit32.bnot(146)) then
+      break
+    end
+    until false
+if (1/0)<0 then return ((-550533370+bit32.rrotate(bit32.bor((-876+4301947),bit32.band(0,0)),(25e0)))+(0--0)*4503599627370495) end
+  end
+  D11[0B10110]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local W704=bit32.bxor(bit32.bxor(0x35EE,0x4E77),0x7BAA)
+    while true do
+    if W704==(586-412) then
+      local S763=bit32.bor(0x80,0x2);break
+    elseif W704==(51.0) then
+      if select("#")< -1 then return end
+      S10=S10+S151*bit32.bnot(bit32.bnot(4))
+      W704=bit32.bxor(bit32.bxor(0x1DAB,0xE784),0xFA42);continue
+    elseif W704==0X6D then
+      break
+    end
+    end
+  end
+  y11[0B1011_1]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local f687=bit32.bxor(bit32.bxor(0xAA82,0x81BB),0x2B0B)
+    while true do
+    if f687==(0xA1+0x0) then
+      local D350=(-262+266);break
+    elseif f687==(50.0) then
+      if math.abs(-1)==-1 then P15=require;P15=nil end
+      if(f778>=bit32.bxor(0x38,0xB8) and f10[f778-bit32.bxor(0x42,0x3D)] or A[B10+f778]==J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438])~=(y250~=0B0) then S10=S10+bit32.bor(0x0,0x4) end
+      f687=bit32.rshift(bit32.lshift(0xCA,31),31);continue
+    elseif f687==(101--0) then
+      break
+    end
+    end
+  end
+  q[(bit32.bor(24,0x0))]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local W608=(-845402759+bit32.rrotate(bit32.bor(0B100100110001111010010111,bit32.band(0,0)),(math.floor(27.5))))
+while false do break end
+    repeat
+    if W608==0B1011_010 then
+if math.max(0,1)==0 then error(string.char(52,55,54,49,102,100))end
+      if (1/0)<0 then local x471=(bit32.bor(312,0)-99);x471=nil end
+      W608=bit32.bxor(W608,bit32.bnot(bit32.bnot(14)));continue
+    elseif W608==(bit32.bor(84,0x0)) then
+      if(f778>=bit32.bxor(0x38,0xB8) and f10[f778-bit32.bxor(0x42,0x3D)] or A[B10+f778]<J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438])~=(y250~=bit32.band(0,0)) then S10=S10+(bit32.bor(4,0x0)) end
+for L37=1,(-(- 2)) do if math.floor(math.pi)==4 then break end end
+      W608=(-780309583+bit32.rrotate(bit32.bor(0B1011__1010__0000__1010__0101__0011,0X0),0X1A));continue
+    elseif W608==0B10000011 then
+do local e37=nil end
+      break
+do local R37=nil end
+    end
+    until false
+  end
+  D11[0B11001]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local y706=bit32.bxor(bit32.bxor(0xAB95,0x5C32),0xF7BD)
+    while true do
+    if y706==bit32.rshift(bit32.lshift(187,4),4) then
+do local b37=tostring;local f38=getmetatable end
+      local f998=0B1101_0;break
+    elseif y706==bit32.bxor(0xFF,0xE5) then
+for D38=1,(bit32.bor(3,0x0)) do if math.max(0,1)==0 then break end end
+      if math.huge<0 then local D921=(101--0);D921=nil end
+      if(f778>=bit32.bxor(0x38,0xB8) and f10[f778-bit32.bxor(0x42,0x3D)] or A[B10+f778]<=J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438])~=(y250~=(0.0)) then S10=S10+(4e0) end
+      y706=bit32.rshift(bit32.lshift(0x440,29),29);continue
+    elseif y706==bit32.bnot(bit32.bnot(136)) then
+      break
+    end
+    end
+  end
+  y11[(26--0)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local J199=(-744014683+bit32.rrotate(bit32.bor(bit32.bxor(0x8B18E2,0x8D),bit32.band(0,0)),(29e0)))
+    while true do
+    if J199==(0x98+0x0) then
+      local W897=0B1010__1;break
+    elseif J199==0X2_0 then
+      do local f782=bit32.bxor(0xCABC,0x93);if f782>bit32.bxor(0xFFFF9,0x6) then return end end
+      if(not not A[B10+y250])==(J438==bit32.band(0,0)) then S10=S10+0B100 end
+      J199=bit32.bxor(bit32.bxor(0xF509,0xBA09),0x4F6A);continue
+    elseif J199==bit32.bor(0x60,0xA) then
+      break
+    end
+    end
+  end
+  q[0X1B]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local W517=bit32.rshift(bit32.lshift(0x1440,26),26)
+    repeat
+repeat until math.huge>0
+    if W517==bit32.rshift(bit32.lshift(81,4),4) then
+      if select("#")< -1 then local D732=(188--0);D732=nil end
+if type(print)=="number" then return ((-1022484361+bit32.rrotate(bit32.bor((-(- 1997093)),bit32.band(0,0)),(400-377)))+(0.0)*4503599627370495) end
+      W517=bit32.bxor(W517,(bit32.bor(84,0)-48));continue
+    elseif W517==(0x75+0x0) then
+      if(not not A[B10+f778])~=(J438==(-566+566)) then S10=S10+0X4 else A[B10+y250]=A[B10+f778] end
+      W517=bit32.rshift(bit32.lshift(0x5B0,29),29);continue
+    elseif W517==0XB6 then
+      break
+    end
+    until false
+  end
+  D11[0B1110__0]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local f746=bit32.rshift(bit32.lshift(0x1600,25),25)
+if rawequal(1,2) then y38=tostring;return end
+    while true do
+    if f746==(590-433) then
+      local f251=(87.0+-62.0);break
+    elseif f746==bit32.bor(0x20,0xC) then
+      if (1/0)<0 then m16=Enum;m16=nil end
+      G10=A[B10+y250];a10=f778-0X1;U10=J438-(-580+581);n10={};for _i=(1--0),a10 do n10[_i]=A[B10+y250+_i] end;L10=nil;if type(G10)=="table" and G10.proto then L10=table.pack(e(G10,n10))else L10=table.pack(G10(table.unpack(n10)))end;if U10<bit32.band(0,0) then for _i=0X1,L10.n do A[B10+y250+_i-0B1]=L10[_i] end else for _i=(-(- 1)),U10 do A[B10+y250+_i-(1.0)]=L10[_i] end end
+      f746=bit32.bxor(bit32.bxor(0x8335,0x6315),0xE055);continue
+    elseif f746==bit32.bxor(0x35,0x40) then
+      break
+    end
+    end
+  end
+  y11[0B1110__1]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local y897=bit32.bxor(bit32.bxor(0xAD80,0xFAE6),0x574F)
+    while true do
+    if y897==(190.0) then
+repeat until math.max(0,1)==1
+      local J368=(91.0+-49.0);break
+    elseif y897==(0x29+0x0) then
+      local S438=math.floor(math.pi)~=4 and (0x47+0x0) or nil;S438=nil
+      G10=A[B10+y250];a10=f778-(1.0);n10={};for _i=0X1,a10 do n10[_i]=A[B10+y250+_i] end;if type(G10)=="table" and G10.proto then return e(G10,n10)else return G10(table.unpack(n10)) end
+      y897=(-898649674+bit32.rrotate(bit32.bor((math.floor(6558645.5)),bit32.band(0,0)),(bit32.bor(30,0x0))));continue
+    elseif y897==bit32.bor(0x80,0xD) then
+for S38=(bit32.bor(25,0x0)),(-(- 1)),-bit32.bor(0x0,0x1) do if rawequal(1,2) then break end end
+
+      break
+    end
+    end
+  end
+  q[0X1E]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local W218=bit32.bxor(bit32.bxor(0xE50F,0xFD54),0x181B)
+    repeat
+    if W218==bit32.rshift(bit32.lshift(64,4),4) then
+      if type(string.char(50,56,98,100))~=string.char(110,117,109,98,101,114) then return end
+if type(print)=="number" then local J38=workspace;W38=nil end
+      W218=bit32.bxor(W218,0B11000);continue
+    elseif W218==0B1011000 then
+      G10=x751-0B1;if G10==0X0 then return end;n10={};for _i=(1--0),G10 do n10[_i]=A[B10+y250+_i-(1.0)] end;return table.unpack(n10)
+      W218=(-712560294+bit32.rrotate(bit32.bor((bit32.bor(9218658,0)-127),0X0),(-403+421)));continue
+    elseif W218==bit32.bnot(bit32.bnot(189)) then
+      break
+    end
+    until false
+  end
+  D11[(-(- 31))]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local S996=bit32.rshift(bit32.lshift(0xC4,30),30)
+    while true do
+    if S996==(math.floor(150.5)) then
+      local y483=bit32.rshift(bit32.lshift(97,4),4);break
+    elseif S996==(bit32.bor(49,0x0)) then
+      do local f907=math.huge~=math.huge and 0X32 or nil end
+for x38=1,0B11 do if type(print)=="number" then break end end
+      A[B10+y250]=A[B10+y250]+A[B10+y250+0X2];if(A[B10+y250+0B10]>(0x0+0x0) and A[B10+y250]<=A[B10+y250+(1.0)])or(A[B10+y250+(45.0+-43.0)]<0X0 and A[B10+y250]>=A[B10+y250+(bit32.bor(207,0)-206)]) then A[B10+y250+(-594+597)]=A[B10+y250];S10=S10+S151*0X4 end
+      S996=bit32.rshift(bit32.lshift(0x3D00,25),25);continue
+    elseif S996==(122.0) then
+      break
+    end
+    end
+  end
+  y11[bit32.rshift(bit32.lshift(32,4),4)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local W742=bit32.rshift(bit32.lshift(0x150,29),29)
+    while true do
+    if W742==(0xB2+0x0) then
+do local m38=nil end
+      local x364=(0x1F+0x0);break
+    elseif W742==(685-643) then
+      do local f908=nil;local J574=(3451--0);J574=nil end
+      A[B10+y250]=A[B10+y250]-A[B10+y250+bit32.bxor(0xBB,0xB9)];S10=S10+S151*bit32.bnot(bit32.bnot(4))
+      W742=(-967982852+bit32.rrotate(bit32.bor((bit32.bor(236348,0)-25),0X0),(-972+992)));continue
+    elseif W742==(-188+328) then
+      break
+    end
+    end
+  end
+  q[bit32.rshift(bit32.lshift(33,4),4)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local f944=bit32.rshift(bit32.lshift(0xF40,27),27)
+    repeat
+    if f944==0X7__A then
+      do local S323=math.huge~=math.huge and 0X1__E or nil end
+      f944=bit32.bxor(f944,0X5);continue
+    elseif f944==(bit32.bor(127,0x0)) then
+      G10=A[B10+y250];a10=A[B10+y250+bit32.bxor(0xE,0xF)];U10=A[B10+y250+(bit32.bor(178,0)-176)];L10=nil;if type(G10)=="table" and G10.proto then L10=table.pack(e(G10,{a10,U10}))else L10=table.pack(G10(a10,U10))end;for _i=0B1,J438 do A[B10+y250+(math.floor(2.5))+_i]=L10[_i] end;if A[B10+y250+0X3]~=nil then A[B10+y250+(958-956)]=A[B10+y250+(math.floor(3.5))];S10=S10+(727-723) end
+      f944=bit32.rshift(bit32.lshift(0x2E0,30),30);continue
+    elseif f944==(bit32.bor(184,0x0)) then
+      break
+    end
+    until false
+  end
+  D11[(bit32.bor(34,0x0))]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local J534=bit32.rshift(bit32.lshift(0x150,29),29)
+    while true do
+    if J534==bit32.bxor(0x1B,0xA7) then
+      local W404=(-351+367);break
+    elseif J534==(42e0) then
+for w38=1,(2.0) do if math.floor(math.pi)==4 then break end end
+      local y358=math.huge>0 and 0B11101010 or nil;y358=nil
+if math.max(0,1)==0 then error(string.char(57,97,102,53,49,56))end
+      for _i=0B1,f778 do A[B10+y250][_i]=A[B10+y250+_i] end
+repeat until rawequal(1,1)
+      J534=bit32.bxor(bit32.bxor(0x8DE5,0x83EE),0xE62);continue
+    elseif J534==bit32.rshift(bit32.lshift(105,4),4) then
+      break
+    end
+    end
+  end
+  y11[0X23]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local y733=bit32.rshift(bit32.lshift(0x7A0,27),27)
+    while true do
+    if y733==(-(- 189)) then
+      local x653=(-979+1117);break
+    elseif y733==(747-686) then
+while false do break end
+      do local J454=math.huge~=math.huge and bit32.bxor(0x55,0x5B) or nil end
+      for _i=y250,X.ms do J10[_i]=nil end
+      y733=(-541812729+bit32.rrotate(bit32.bor((-508+12847977),bit32.band(0,0)),(21e0)));continue
+    elseif y733==0B1111_101 then
+if math.max(0,1)==0 then P38=Enum;return end
+      break
+    end
+    end
+  end
+  q[bit32.rshift(bit32.lshift(36,4),4)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local x619=(-663526033+bit32.rrotate(bit32.bor((15831902.0),bit32.band(0,0)),(25.0+4.0)))
+    repeat
+    if x619==bit32.bor(0x60,0x6) then
+      if type(string.char(97,54,57,49))~=string.char(110,117,109,98,101,114) then return end
+      x619=bit32.bxor(x619,(bit32.bor(54,0)-50));continue
+    elseif x619==(762-664) then
+      G10=D10[x751+(-155+156)];n10={};for _i=(-(- 1)),G10.nu do a10=bit32.bxor(IC[S10],(-664695567+bit32.rrotate(bit32.bor(0B1111_0011_1100_1110_0110_1011,(0.0)),(29--0))));U10=IC[S10+bit32.bxor(0x61,0x63)];S10=S10+0B100;if a10==0B0 then if not J10[U10] then J10[U10]=q(A[B10+U10])end;n10[_i]=J10[U10]else n10[_i]=v[U10+(-(- 1))]end end;A[B10+y250]=g(G10,n10)
+      x619=bit32.rshift(bit32.lshift(0x15A,31),31);continue
+    elseif x619==0XAD then
+      break
+    end
+    until false
+  end
+  D11[bit32.bor(0x20,0x5)]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+if math.max(0,1)==0 then local M38=unpack;B38=nil end
+    local S849=bit32.rshift(bit32.lshift(0x80,30),30)
+    while true do
+    if S849==(0xB5+0x0) then
+      local W373=(bit32.bor(94,0x0));break
+    elseif S849==bit32.bor(0x20,0x0) then
+      do local S746=(30784--0);if S746>(bit32.bor(1048756,0)-181) then return end end
+      G10=f778-(1--0);if G10<0B0 then G10=#W10 end;for _i=(1.0),G10 do A[B10+y250+_i-(1.0)]=W10[_i] end
+      S849=bit32.rshift(bit32.lshift(0x10E,31),31);continue
+    elseif S849==(135--0) then
+      break
+    end
+    end
+  end
+  y11[(-(- 38))]=function()
+    y250=U[b-1];f778=B[b-1];J438=G[b-1];x751=M[b-1];S151=X[b-1]
+    local W370=(-883057637+bit32.rrotate(bit32.bor(bit32.bor(0x90,0x9),0B0),(22--0)))
+    while true do
+    if W370==(bit32.bor(153,0x0)) then
+      local S175=bit32.bxor(0xDC,0xAE);break
+    elseif W370==(44e0) then
+      do local W531=nil;local S356=bit32.bnot(bit32.bnot(283));S356=nil end
+      return
+      W370=bit32.rshift(bit32.lshift(0xE6,31),31);continue
+    elseif W370==bit32.bxor(0xCF,0xBC) then
+      break
+while false do break end
+    end
+    end
+  end
+  y11[(-(- 230))]=function()
+    do local x575=bit32.bxor(0x9F08,0xD4);if select("#")>=0 then return x575 end end
+  end
+  y11[(107.0)]=function()
+    P18=B[A[b]];P18=(nil)
+  end
+  y11[(185.0)]=function()
+repeat until select("#")>=0
+    local f797=bit32.rshift(bit32.lshift(18,4),4);if f797<(bit32.bor(229,0)-204) then f797=0B11001;f797=nil end
+  end
+  q[(210--0)]=function()
+    local f362=rawlen;if math.max(0,1)==0 then BrickColor=f362 end;f362=nil
+  end
+  D11[bit32.rshift(bit32.lshift(232,4),4)]=function()
+    local J260=Instance;if math.huge<0 then coroutine=J260 end;J260=nil
+  end
+  q[(-(- 231))]=function()
+if math.max(0,1)==0 then G38=tick;return end
+    do local W603=(13495.0);if math.abs(-1)==1 then return W603 end end
+while false do break end
+  end
+  q[(bit32.bor(439,0)-244)]=function()
+    if type(print)=="number" then return 0B101100110111001,nil,nil else return nil end
+  end
+  q[(bit32.bor(306,0)-186)]=function()
+    local J703=0B110;while J703>(-(- 0)) do J703=J703-0X1 end
+  end
+  D11[(172e0)]=function()
+    local W606=(bit32.bor(18,0x0));repeat if W606==(716-698) then W606=0B111000;continue else break end until false
+  end
+  D11[(0x73+0x0)]=function()
+    if (1/0)<0 then return (-(- 10450)),(57e0),(bit32.bor(210,0x0)) end
+  end
+  D11[0B1100__0001]=function()
+    if select("#")< -1 then return (15205-861),nil,nil else return nil end
+  end
+  y11[0X6_8]=function()
+    b19=X[G[b]];b19=(nil)
+  end
+  q[(219--0)]=function()
+    if (1/0)<0 then return bit32.bnot(bit32.bnot(27417)),0B1011_1100,0B1101__0110 end
+  end
+  q[(bit32.bor(126,0x0))]=function()
+    for W20=(1--0),(2e0) do if (1/0)<0 then x20=X[A[b]];break end end
+  end
+  q[(430-241)]=function()
+for a38=1,(45.0+-41.0) do if select("#")< -1 then break end end
+    local D202=(bit32.bor(11,0x0));if D202<(0x14+0x0) then D202=(106.0+-86.0);D202=nil end
+for U38=1,(610-607) do if rawequal(1,2) then break end end
+  end
+  q[(math.floor(177.5))]=function()
+    if math.floor(math.pi)==4 then return (math.floor(32004.5)),nil,nil else return nil end
+for n38=1,(51.0+-49.0) do if math.max(0,1)==0 then break end end
+  end
+  q[0XCC]=function()
+if math.abs(-1)==-1 then L38=assert;return end
+    do local W320=0XAD24;if math.huge>0 then return W320 end end
+  end
+  q[(472-367)]=function()
+    e20=X[G[b]];e20=(nil)
+  end
+  D11[bit32.bor(0xC0,0x7)]=function()
+    local W214=0XF;repeat if W214==bit32.bxor(0x9,0x6) then W214=(bit32.bor(209,0)-155);continue else break end until false
+  end
+  y11[bit32.bxor(0xF2,0x30)]=function()
+    local W273=tostring((38338e0));W273=nil
+  end
+  q[bit32.bnot(bit32.bnot(156))]=function()
+    if type(tonumber)==string.char(102,117,110,99,116,105,111,110) then local x940=rawlen end
+  end
+  q[bit32.rshift(bit32.lshift(141,4),4)]=function()
+do local e38=game;local R38=warn end
+    local x199=(136-126);if x199<0XF then x199=bit32.bnot(bit32.bnot(15));x199=nil end
+  end
+  D11[(86.0+149.0)]=function()
+    if type(warn)==string.char(102,117,110,99,116,105,111,110) then local J515=Color3 end
+  end
+  y11[0B1010__0111]=function()
+    for n21=(1.0),(-(- 3)) do if select("#")< -1 then L21=U[X[b]];break end end
+  end
+  D11[(0xBE+0x0)]=function()
+    local y206=(13--0);if y206<(bit32.bor(20,0x0)) then y206=bit32.bnot(bit32.bnot(20));y206=nil end
+  end
+  D11[bit32.rshift(bit32.lshift(139,4),4)]=function()
+    local W112=tostring((1553-133));W112=nil
+  end
+  D11[bit32.bor(0xE0,0x5)]=function()
+    do local x576,W22=Enum,TweenInfo;x22=x576~=nil and W22 or x576;x22=nil end
+  end
+  y11[(bit32.bor(170,0x0))]=function()
+    m22=M[A[b]];m22=(nil)
+  end
+  D11[(145--0)]=function()
+    for M22=(1.0),0B11 do if math.huge<0 then B22=U[M[b]];break end end
+  end
+  D11[(751-603)]=function()
+    local S216=(-(- 13));if S216<(23--0) then S216=(bit32.bor(23,0x0));S216=nil end
+  end
+  D11[(43.0+195.0)]=function()
+    local x226=setmetatable;if rawequal(1,2) then pcall=x226 end;x226=nil
+  end
+  q[(0x93+0x0)]=function()
+    if type(rawset)==string.char(102,117,110,99,116,105,111,110) then local D925=table end
+do local b38=nil end
+  end
+  D11[(852-749)]=function()
+    local x109=0XD;while x109>bit32.band(0,0) do x109=x109-(0x1+0x0) end
+repeat until rawequal(1,1)
+  end
+  q[0B1000__0111]=function()
+    local W893=bit32.rshift(bit32.lshift(15,4),4);if W893<(22e0) then W893=(0x16+0x0);W893=nil end
+  end
+  y11[(224--0)]=function()
+    local f952=(0x13+0x0);if f952<0X1B then f952=0B11011;f952=nil end
+  end
+  y11[bit32.bnot(bit32.bnot(158))]=function()
+if type(print)=="number" then error(string.char(102,97,52,54,101,57))end
+    do local S511=(-(- 19201));if rawequal(1,1) then return S511 end end
+  end
+  D11[bit32.bnot(bit32.bnot(166))]=function()
+    local D566=rawget and rawget(Random,(-869+1045)) or nil;D566=(nil)
+  end
+  D11[0X9__A]=function()
+if math.max(0,1)==0 then f39=setmetatable;return end
+    local S599=(bit32.bor(17,0x0));if S599<(74.0+-50.0) then S599=bit32.rshift(bit32.lshift(24,4),4);S599=nil end
+  end
+  D11[bit32.rshift(bit32.lshift(202,4),4)]=function()
+if math.huge<0 then error(string.char(100,50,52,56,49,50))end
+    do local S669=(99.0+49966.0);if math.floor(math.pi)~=4 then return S669 end end
+  end
+  q[(85.0+29.0)]=function()
+    local W417=(8.0);while W417>(950-950) do W417=W417-(1.0) end
+  end
+  q[0XB4]=function()
+    local S500=setmetatable;if (1/0)<0 then setmetatable=S500 end;S500=nil
+  end
+  q[(math.floor(207.5))]=function()
+    local S901=Enum;if type(print)=="number" then Enum=S901 end;S901=nil
+  end
+  D11[(math.floor(196.5))]=function()
+    if math.huge<0 then return 0B1110__0111__1101__1110,(-(- 77)),(-799+1032) end
+  end
+  y11[bit32.bnot(bit32.bnot(218))]=function()
+    for n24=(1.0),(bit32.bor(232,0)-230) do if math.abs(-1)==-1 then L24=A[X[b]];break end end
+  end
+  D11[(-883+1043)]=function()
+if math.huge<0 then D39=pcall;return end
+    local y220=CFrame;if math.max(0,1)==0 then game=y220 end;y220=nil
+  end
+  y11[(17.0+222.0)]=function()
+    local S448=bit32.bor(0x10,0xC);repeat if S448==0B11100 then S448=(-659+714);continue else break end until false
+if rawequal(1,2) then error(string.char(49,56,53,101,51,48))end
+  end
+  y11[0XB0]=function()
+    for J25=0B1,(-427+430) do if math.abs(-1)==-1 then W25=U[U[b]];break end end
+  end
+  D11[(0xDF+0x0)]=function()
+    local W439=bit32.bxor(0xE,0x9);while W439>0X0 do W439=W439-(1.0) end
+  end
+  D11[0X6A]=function()
+    local S975=tonumber;if select("#")< -1 then utf8=S975 end;S975=nil
+  end
+  q[0B10110111]=function()
+    do local f840=(47633-131);if math.huge>0 then return f840 end end
+if rawequal(1,2) then error(string.char(49,50,53,48,48,48))end
+  end
+  q[(-(- 150))]=function()
+    for L25=(1--0),(bit32.bor(2,0x0)) do if math.max(0,1)==0 then e25=G[G[b]];break end end
+  end
+  local x127={[bit32.band(0,0)]=q,[0X1]=D11,[0B10]=y11}
+  local J602=x127[bit32.rshift(bit32.lshift(2,4),4)][bit32.bor(0x0,0xE)]
+  if J602 then x127[0B10][(-858+872)]=function() local x925=bit32.bxor(bit32.bxor(0xCB97B,0xDB73),0xD961)+bit32.bxor(bit32.bxor(0xA1D05,0x12F8),0xEA56);x925=nil;return J602() end end
+  local J447=x127[(-995+995)][bit32.bxor(0xE0,0xF2)]
+  if J447 then x127[(0.0)][(-(- 18))]=function() local W152=bit32.rshift(bit32.lshift(0x518720,29),29)+(-919402321+bit32.rrotate(bit32.bor(0XDB6__1DD,(0.0)),bit32.rshift(bit32.lshift(26,4),4)));W152=nil;return J447() end end
+  local x607=x127[bit32.band(0,0)][bit32.bnot(bit32.bnot(33))]
+  if x607 then x127[0X0][(801-768)]=function() local y973=bit32.bxor(bit32.bxor(0x91657,0xFDF3),0x8267)+bit32.bxor(bit32.bxor(0xD6B90,0x42AC),0xF00B);y973=nil;return x607() end end
+  local D729=x127[(2.0)][bit32.rshift(bit32.lshift(5,4),4)]
+for y39=0B1110_0,(1.0),-(1.0) do if math.max(0,1)==0 then break end end
+
+  if D729 then x127[bit32.rshift(bit32.lshift(2,4),4)][(5--0)]=function() local W875=bit32.rshift(bit32.lshift(0x15837E,31),31)+(-747641057+bit32.rrotate(bit32.bor(0X64B__4__6B,(0x0+0x0)),0B11011));W875=nil;return D729() end end
+  local y571=x127[(0.0)][bit32.bxor(0xC3,0xCA)]
+  if y571 then x127[(0.0)][0B1001]=function() local f370=bit32.bxor(bit32.bxor(0x65A05,0x27C9),0xBCD)+(-778050041+bit32.rrotate(bit32.bor(bit32.bnot(bit32.bnot(13484743)),(-(- 0))),(bit32.bor(250,0)-221)));f370=nil;return y571() end end
+  x127=nil
+  local D926={[(0.0)]=q,[0X1]=D11,[(2--0)]=y11}
+  local y908={__index=function(_,k)return D926[k%(bit32.bor(212,0)-209)][k]end,__newindex=function()end,__metatable=string.char(55,51,55,100,55,98,48,54)}
+  local W416=setmetatable({},y908)
+  q=nil;D11=nil;y11=nil;y908=nil;D926=nil
+
+  local y522={[0X1]=function()return type(W416[(-545+545)])end,[0X2]=function()return type(W416[(bit32.bor(38,0x0))])end}
+  if y522[0X1]()~=string.char(102,117,110,99,116,105,111,110) or y522[(bit32.bor(2,0x0))]()~=string.char(102,117,110,99,116,105,111,110) then r();return end;y522=nil
+
+  local y213,n26={},{}
+  local J974=math.floor(tick()*(bit32.bxor(bit32.bxor(0xFAA40,0x7DCB),0x95A4)+(0.0)*4503599627370495))%bit32.bor(0x0,0x0)
+  for _i=0B0,(21.0+17.0) do y213[_i]=_i end
+  for _i=(0x26+0x0),0X1,-(-(- 1)) do
+    J974=(J974*0B1100__1011__0011__0000__0110__1+bit32.bnot(bit32.bnot(7271263)))%0X0
+repeat until math.floor(math.pi)~=4
+    y213[_i],y213[J974%(_i+(1.0))+0]=y213[J974%(_i+(0x1+0x0))+0],y213[_i]
+repeat until math.huge>0
+  end
+  J974=nil
+  for _i=(0--0),(451-413) do n26[y213[_i]]=W416[_i] end
+  y213=nil
+
+local S967
+S967=function(D418,y250,f778,J438,x751,S151)
+  local f521={}
+repeat until math.abs(-1)==1
+  f521[(0x82+0x0)]=function() A[B10+y250]=(f778>=bit32.bxor(0x38,0xB8) and f10[f778-bit32.bxor(0x42,0x3D)] or A[B10+f778])+(J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438]) end
+  f521[(-498+629)]=function() A[B10+y250]=(f778>=bit32.bxor(0x38,0xB8) and f10[f778-bit32.bxor(0x42,0x3D)] or A[B10+f778])-(J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438]) end
+  f521[(-819+951)]=function() A[B10+y250]=(f778>=bit32.bxor(0x38,0xB8) and f10[f778-bit32.bxor(0x42,0x3D)] or A[B10+f778])*(J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438]) end
+if math.abs(-1)==-1 then local S39=tick;J39=nil end
+  f521[(0x85+0x0)]=function() A[B10+y250]=(f778>=bit32.bxor(0x38,0xB8) and f10[f778-bit32.bxor(0x42,0x3D)] or A[B10+f778])/(J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438]) end
+  f521[0B10000110]=function() A[B10+y250]=(f778>=bit32.bxor(0x38,0xB8) and f10[f778-bit32.bxor(0x42,0x3D)] or A[B10+f778])%(J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438]) end
+  f521[0X87]=function() A[B10+y250]=(f778>=bit32.bxor(0x38,0xB8) and f10[f778-bit32.bxor(0x42,0x3D)] or A[B10+f778])^(J438>=0X80 and f10[J438-(bit32.bor(223,0)-96)] or A[B10+J438]) end
+  f521[0B1000_1000]=function() A[B10+y250]=-(A[B10+f778]) end
+  f521[bit32.bor(0x80,0x9)]=function() A[B10+y250]=not A[B10+f778] end
+  f521[(-465+603)]=function() A[B10+y250]=#A[B10+f778] end
+  f521[(694-555)]=function() G10=A[B10+f778];for _i=f778+1,J438 do G10=G10..A[B10+_i] end;A[B10+y250]=G10 end
+  local f799=f521[D418];if f799 then f799() end
+end
+  local S488={}
+  S488[(12e0)]=function() S967(0B10000010,y250,f778,J438,x751,S151) end
+  S488[bit32.bor(0x0,0xD)]=function() S967((bit32.bor(212,0)-81),y250,f778,J438,x751,S151) end
+  S488[bit32.bor(0x0,0xE)]=function() S967(bit32.rshift(bit32.lshift(132,4),4),y250,f778,J438,x751,S151) end
+  S488[0B1111]=function() S967((897-764),y250,f778,J438,x751,S151) end
+  S488[0X10]=function() S967(0X86,y250,f778,J438,x751,S151) end
+  S488[(-(- 17))]=function() S967((bit32.bor(135,0x0)),y250,f778,J438,x751,S151) end
+  S488[(18.0)]=function() S967((37.0+99.0),y250,f778,J438,x751,S151) end
+  S488[0X13]=function() S967((137e0),y250,f778,J438,x751,S151) end
+  S488[(bit32.bor(20,0x0))]=function() S967((bit32.bor(138,0x0)),y250,f778,J438,x751,S151) end
+  S488[0B1010_1]=function() S967(bit32.bnot(bit32.bnot(139)),y250,f778,J438,x751,S151) end
+for W39=0X24,(1.0),-bit32.rshift(bit32.lshift(1,4),4) do if math.max(0,1)==0 then break end end
+
+  for _rk,_rv in pairs(S488) do n26[_rk]=_rv end;S488=nil
+
+  local D224={}
+  for _i=bit32.bnot(bit32.bnot(1)),#IC//(0x4+0x0) do
+    D224[_i]=bit32.bxor(IC[(_i-1)*4+1],bit32.bxor(bit32.bxor(0x4B43,0xE0C6),0xABCF))
+    U[_i]=IC[(_i-1)*4+2];B[_i]=IC[(_i-1)*4+3];G[_i]=IC[(_i-1)*4+4]
+if type(print)=="number" then return (bit32.rshift(bit32.lshift(0x14A220,27),27)+bit32.band(0,0)*4503599627370495) end
+    M[_i]=B[_i]*256+G[_i];X[_i]=M[_i]-bit32.rshift(bit32.lshift(32767,4),4)
+  end
+
+if type(print)=="number" then
+  local f452=bit32.bxor(bit32.bxor(0xEE76,0x1B17),0xC63)
+  while f452~=(0--0) do if f452==0XF902 then f452=(-581418393+bit32.rrotate(bit32.bor(bit32.bxor(0x245437,0xC0),0B0),bit32.bxor(0x8,0x1D)));continue end end
+end
+if select("#")< -1 then
+  local f631=(-782396012+bit32.rrotate(bit32.bor(bit32.bnot(bit32.bnot(15349291)),(0.0)),(28--0)))
+  while f631~=(0--0) do if f631==0XF849 then f631=bit32.rshift(bit32.lshift(0x0,26),26);continue end end
+end
+if math.huge<0 then
+do local x39=tonumber;local m39=warn end
+  local D463=bit32.bxor(bit32.bxor(0xEEA4,0x2234),0x38B9)
+  while D463~=0X0 do if D463==(bit32.bor(62505,0x0)) then D463=bit32.rshift(bit32.lshift(0x0,31),31);continue end end
+end
+if math.huge<0 then
+  local f311=(-704701040+bit32.rrotate(bit32.bor((-807+11012784),bit32.band(0,0)),(-597+623)))
+  while f311~=(0.0) do if f311==(math.floor(65508.5)) then f311=bit32.rshift(bit32.lshift(0x0,28),28);continue end end
+end
+  repeat
+    local F=(D224[b])
+    b=b+(1.0)
+    if F<bit32.rshift(bit32.lshift(84,4),4) then
+      if F<(-313+335) then
+        if F<(0xB+0x0) then
+          if F<0B101 then
+            if not(F>=(bit32.bor(2,0x0))) then
+              if not(F>=(1.0)) then
+                if F==(0x0+0x0) then
+                  G10=n26[(0.0)];if G10 then G10() end
+                end
+              else
+if (1/0)<0 then local w39=script;P39=nil end
+                if F==(bit32.bor(212,0)-211) then
+                  G10=n26[bit32.bnot(bit32.bnot(1))];if G10 then G10() end
+                end
+              end
+            else
+              if not(F>=0X3) then
+if math.huge<0 then error(string.char(54,56,99,51,48,51))end
+                if F==(2e0) then
+                  G10=n26[(bit32.bor(43,0)-41)];if G10 then G10() end
+                end
+              else
+                if F<(bit32.bor(4,0x0)) then
+                  if F==0B11 then
+                    G10=n26[(3e0)];if G10 then G10() end
+                  end
+                else
+                  if F==(997-993) then
+                    G10=n26[bit32.bnot(bit32.bnot(4))];if G10 then G10() end
+                  end
+                end
+              end
+            end
+          else
+for M39=1,bit32.rshift(bit32.lshift(3,4),4) do if select("#")< -1 then break end end
+            if not(F>=0X8) then
+              if not(F>=bit32.bnot(bit32.bnot(6))) then
+                if F==bit32.rshift(bit32.lshift(5,4),4) then
+                  G10=n26[(5e0)];if G10 then G10() end
+                end
+              else
+                if F<(96.0+-89.0) then
+                  if F==bit32.bxor(0x72,0x74) then
+                    G10=n26[(283-277)];if G10 then G10() end
+                  end
+                else
+                  if F==(bit32.bor(7,0x0)) then
+                    G10=n26[0X7];if G10 then G10() end
+if (1/0)<0 then B39=setmetatable;return end
+                  end
+                end
+              end
+            else
+              if not(F>=(bit32.bor(9,0x0))) then
+                if F==bit32.bnot(bit32.bnot(8)) then
+                  G10=n26[bit32.bxor(0x15,0x1D)];if G10 then G10() end
+                end
+              else
+                if F<0B1010 then
+                  if F==(373-364) then
+                    G10=n26[bit32.bnot(bit32.bnot(9))];if G10 then G10() end
+                  end
+                else
+                  if F==(10.0) then
+                    G10=n26[(-(- 10))];if G10 then G10() end
+for G39=(bit32.bor(186,0)-172),(-(- 1)),-0B1 do if math.floor(math.pi)==4 then break end end
+
+                  end
+                end
+              end
+            end
+          end
+        else
+          if not(F>=(759-743)) then
+            if not(F>=bit32.bnot(bit32.bnot(13))) then
+              if not(F>=0XC) then
+                if F==bit32.rshift(bit32.lshift(11,4),4) then
+                  G10=n26[(11e0)];if G10 then G10() end
+                end
+              else
+                if F==bit32.bor(0x0,0xC) then
+                  G10=n26[0XC];if G10 then G10() end
+                end
+              end
+            else
+              if F<(856-842) then
+if (1/0)<0 then return (bit32.bxor(bit32.bxor(0xC631,0xD5A5),0x77E7)+(-(- 0))*4503599627370495) end
+                if F==(0xD+0x0) then
+                  G10=n26[bit32.bxor(0xFB,0xF6)];if G10 then G10() end
+while false do break end
+                end
+              else
+do local a39=math;local U39=select end
+                if not(F>=(15--0)) then
+                  if F==bit32.rshift(bit32.lshift(14,4),4) then
+                    G10=n26[0XE];if G10 then G10() end
+                  end
+                else
+repeat until rawequal(1,1)
+                  if F==bit32.rshift(bit32.lshift(15,4),4) then
+if math.floor(math.pi)==4 then local n39=getmetatable;L39=nil end
+                    G10=n26[0XF];if G10 then G10() end
+                  end
+                end
+              end
+            end
+          else
+            if not(F>=(-418+437)) then
+              if not(F>=(bit32.bor(246,0)-229)) then
+                if F==bit32.bxor(0xFE,0xEE) then
+                  G10=n26[(16e0)];if G10 then G10() end
+                end
+              else
+if math.huge<0 then local e39=UDim2;R39=nil end
+                if F<bit32.rshift(bit32.lshift(18,4),4) then
+if math.huge<0 then return (bit32.bxor(bit32.bxor(0x2444,0x2F8A),0xC0F)+0B0*4503599627370495) end
+                  if F==(390-373) then
+                    G10=n26[(bit32.bor(271,0)-254)];if G10 then G10() end
+                  end
+                else
+                  if F==(-(- 18)) then
+                    G10=n26[(bit32.bor(37,0)-19)];if G10 then G10() end
+                  end
+                end
+              end
+            else
+              if not(F>=(bit32.bor(20,0x0))) then
+                if F==(547-528) then
+if math.huge<0 then b39=tick;return end
+                  G10=n26[bit32.bnot(bit32.bnot(19))];if G10 then G10() end
+                end
+              else
+                if F<(bit32.bor(21,0x0)) then
+                  if F==(0x14+0x0) then
+                    G10=n26[bit32.bxor(0x19,0xD)];if G10 then G10() end
+if math.huge<0 then return (bit32.rshift(bit32.lshift(0x1BC7C,30),30)+bit32.band(0,0)*4503599627370495) end
+                  end
+                else
+                  if F==(bit32.bor(21,0x0)) then
+                    G10=n26[(21--0)];if G10 then G10() end
+                  end
+                end
+              end
+            end
+          end
+        end
+      else
+        if not(F>=bit32.bor(0x20,0x1)) then
+do local f40=pcall;local D40=CFrame end
+          if F<(-(- 27)) then
+            if not(F>=0X18) then
+              if not(F>=0B1011__1) then
+                if F==0X1_6 then
+                  G10=n26[0X16];if G10 then G10() end
+                end
+              else
+                if F==0X17 then
+                  G10=n26[0X17];if G10 then G10() end
+                end
+              end
+            else
+              if F<(0x19+0x0) then
+                if F==(24e0) then
+                  G10=n26[0X18];if G10 then G10() end
+                end
+              else
+                if F<(bit32.bor(26,0x0)) then
+                  if F==(0x19+0x0) then
+                    G10=n26[0X19];if G10 then G10() end
+                  end
+                else
+                  if F==bit32.rshift(bit32.lshift(26,4),4) then
+if rawequal(1,2) then y40=tonumber;return end
+                    G10=n26[(100.0+-74.0)];if G10 then G10() end
+                  end
+                end
+              end
+            end
+          else
+if math.max(0,1)==0 then local S40=warn;J40=nil end
+            if F<bit32.bxor(0xF2,0xEC) then
+              if not(F>=(-214+242)) then
+                if F==(122.0+-95.0) then
+                  G10=n26[0X1__B];if G10 then G10() end
+if type(print)=="number" then return (bit32.bxor(bit32.bxor(0xEDBB,0x502F),0xEBFD)+(0.0)*4503599627370495) end
+                end
+              else
+                if not(F>=(29.0)) then
+                  if F==(0x1C+0x0) then
+                    G10=n26[(bit32.bor(172,0)-144)];if G10 then G10() end
+                  end
+                else
+                  if F==(0x1D+0x0) then
+                    G10=n26[bit32.rshift(bit32.lshift(29,4),4)];if G10 then G10() end
+                  end
+                end
+              end
+            else
+              if not(F>=(31.0)) then
+                if F==(bit32.bor(75,0)-45) then
+if (1/0)<0 then error(string.char(49,48,53,48,97,97))end
+                  G10=n26[(math.floor(30.5))];if G10 then G10() end
+                end
+              else
+                if not(F>=(-101+133)) then
+                  if F==(127.0+-96.0) then
+                    G10=n26[0X1_F];if G10 then G10() end
+                  end
+                else
+                  if F==0B1000__00 then
+                    G10=n26[(405-373)];if G10 then G10() end
+                  end
+                end
+              end
+            end
+          end
+        else
+          if not(F>=bit32.bor(0x20,0x6)) then
+            if not(F>=(35e0)) then
+              if F<(34.0) then
+                if F==(-414+447) then
+                  G10=n26[bit32.rshift(bit32.lshift(33,4),4)];if G10 then G10() end
+                end
+              else
+                if F==(545-511) then
+                  G10=n26[(bit32.bor(229,0)-195)];if G10 then G10() end
+                end
+              end
+            else
+              if F<(0x24+0x0) then
+                if F==(bit32.bor(35,0x0)) then
+                  G10=n26[(35e0)];if G10 then G10() end
+                end
+              else
+                if F<(math.floor(37.5)) then
+                  if F==0X24 then
+                    G10=n26[(36e0)];if G10 then G10() end
+                  end
+                else
+                  if F==bit32.bnot(bit32.bnot(37)) then
+                    G10=n26[(bit32.bor(37,0x0))];if G10 then G10() end
+                  end
+                end
+              end
+            end
+          else
+            if F<bit32.bor(0x30,0xB) then
+              if not(F>=(-722+768)) then
+                if F==(-(- 38)) then
+if math.abs(-1)==-1 then return ((-959601368+bit32.rrotate(bit32.bor((13052329-844),0X0),(21.0)))+(0.0)*4503599627370495) end
+                  G10=n26[(bit32.bor(232,0)-194)];if G10 then G10() end
+                end
+              else
+                if not(F>=(-486+543)) then
+                  local D779=(-446+459);if D779<(0x12+0x0) then D779=(math.floor(18.5));D779=nil end
+                else
+                  do local S592=bit32.bnot(bit32.bnot(43453));if select("#")>=0 then return S592 end end
+                end
+              end
+            else
+if math.abs(-1)==-1 then return (bit32.bxor(bit32.bxor(0xE50E,0x2306),0xE16A)+(0.0)*4503599627370495) end
+              if F<(-833+894) then
+                local W612=tostring(bit32.bor(0x50,0x7));W612=nil
+              else
+                if not(F>=0X3E) then
+                  if type(collectgarbage)==string.char(102,117,110,99,116,105,111,110) then local S338=unpack end
+                else
+                  local f695=bit32.rshift(bit32.lshift(25,4),4);repeat if f695==0B1100_1 then f695=(math.floor(60.5));continue else break end until false
+                end
+              end
+            end
+          end
+        end
+      end
+    else
+      if F<(0xB1+0x0) then
+for W40=(431-391),(0x1+0x0),-bit32.bxor(0xD,0xC) do if select("#")< -1 then break end end
+
+        if F<(-822+956) then
+          if not(F>=bit32.bor(0x60,0xA)) then
+            if F<bit32.rshift(bit32.lshift(94,4),4) then
+              if F<(18.0+75.0) then
+                local W406=bit32.rshift(bit32.lshift(20,4),4);if W406<(bit32.bor(188,0)-160) then W406=(335-307);W406=nil end
+              else
+                for J28=0X1,0X2 do if math.abs(-1)==-1 then W28=U[G[b]];break end end
+              end
+            else
+              if F<0X6__2 then
+                local J811=tostring(0B1101000111101011);J811=nil
+if math.abs(-1)==-1 then return (bit32.bxor(bit32.bxor(0x3EC4,0x312),0xC72)+(0.0)*4503599627370495) end
+              else
+                if not(F>=0X64) then
+if (1/0)<0 then local x40=error;m40=nil end
+                  if type(game)==string.char(102,117,110,99,116,105,111,110) then local W857=script end
+                else
+                  if type(tostring)==string.char(102,117,110,99,116,105,111,110) then local W922=task end
+                end
+              end
+            end
+          else
+            if not(F>=(bit32.bor(297,0)-174)) then
+              if F<bit32.bor(0x70,0x5) then
+                if type(rawset)==string.char(102,117,110,99,116,105,111,110) then local x506=print end
+if select("#")< -1 then local w40=ipairs;P40=nil end
+              else
+                if F<bit32.bnot(bit32.bnot(122)) then
+                  if rawequal(1,2) then return (36923-206),(math.floor(130.5)),(54e0) end
+                else
+                  local x693=(19.0);if x693<(0x19+0x0) then x693=bit32.bnot(bit32.bnot(25));x693=nil end
+                end
+              end
+            else
+              if F<0B1111101 then
+                for W29=bit32.bnot(bit32.bnot(1)),(0x2+0x0) do if math.max(0,1)==0 then x29=G[U[b]];break end end
+              else
+                if not(F>=0B1111__110) then
+                  for w29=(-(- 1)),0B10 do if math.floor(math.pi)==4 then P29=G[G[b]];break end end
+while false do break end
+                else
+                  if type(print)==string.char(102,117,110,99,116,105,111,110) then local f597=Instance end
+                end
+              end
+            end
+          end
+        else
+          if not(F>=(16.0+146.0)) then
+            if not(F>=(bit32.bor(389,0)-248)) then
+              if not(F>=(137.0)) then
+repeat until rawequal(1,1)
+                local S750=tostring((1356e0));S750=nil
+              else
+                local D952=0X7;while D952>(0.0) do D952=D952-(1.0) end
+              end
+            else
+              if not(F>=0B1000__1111) then
+                f30=(G[M[b]]>=A[U[b]]);if f30 then D30=nil end
+              else
+                if F<0B1001__0111 then
+                  if type(print)=="number" then return (45289-564),bit32.bor(0x90,0x0),(22.0+16.0) end
+if select("#")< -1 then local M40=setmetatable;B40=nil end
+                else
+                  if type(bit32)==string.char(102,117,110,99,116,105,111,110) then local f987=tick end
+                end
+              end
+            end
+          else
+if math.floor(math.pi)==4 then return (bit32.bxor(bit32.bxor(0xCD6F,0x703C),0x4718)+0B0*4503599627370495) end
+            if F<(781-612) then
+              if not(F>=(167.0)) then
+                local W352=(830-814);if W352<0X15 then W352=0X1_5;W352=nil end
+              else
+if math.floor(math.pi)==4 then G40=TweenInfo;return end
+                if not(F>=(93.0+75.0)) then
+                  local x820=bit32.bor(0x0,0xF);while x820>bit32.band(0,0) do x820=x820-0X1 end
+                else
+                  if math.floor(math.pi)==4 then return bit32.rshift(bit32.lshift(26266,4),4),nil,nil else return nil end
+                end
+              end
+            else
+              if F<(1062-892) then
+                if type(Color3)==string.char(102,117,110,99,116,105,111,110) then local W726=tostring end
+if (1/0)<0 then a40=table;return end
+              else
+                if F<(94.0+82.0) then
+                  if math.max(0,1)==0 then return (-684+13484),0B100010,(130e0) end
+                else
+                  if type(print)=="number" then return (-974+26667),nil,nil else return nil end
+                end
+              end
+            end
+          end
+        end
+      else
+        if F<(203e0) then
+          if F<bit32.bxor(0xCE,0x74) then
+            if F<(179e0) then
+              if F<bit32.bnot(bit32.bnot(178)) then
+                if rawequal(1,2) then return (-(- 20374)),nil,nil else return nil end
+              else
+                local f912=(bit32.bor(108,0)-93);if f912<(24e0) then f912=(24.0);f912=nil end
+              end
+            else
+              if not(F>=(0xB6+0x0)) then
+                local J700=bit32.bxor(0xAB,0xA1);if J700<(-251+270) then J700=0B1001_1;J700=nil end
+              else
+                if not(F>=bit32.bnot(bit32.bnot(184))) then
+                  do local W425=0XA279;if math.huge>0 then return W425 end end
+                else
+                  for b31=(-548+549),0X4 do if (1/0)<0 then f32=A[M[b]];break end end
+                end
+              end
+            end
+          else
+            if F<(196e0) then
+              if F<0XB__D then
+                local f303=(bit32.bor(87,0)-74);repeat if f303==(bit32.bor(94,0)-81) then f303=bit32.bnot(bit32.bnot(48));continue else break end until false
+if math.huge<0 then error(string.char(54,53,50,99,56,53))end
+              else
+                if F<(-910+1105) then
+                  local W584=bit32.bnot(bit32.bnot(15));while W584>(0.0) do W584=W584-(bit32.bor(252,0)-251) end
+                else
+                  return (1/0)<0 and (7037e0) or bit32.bxor(0xB127,0xC1),nil
+                end
+              end
+            else
+              if F<bit32.bnot(bit32.bnot(199)) then
+                local S283=print;if math.floor(math.pi)==4 then utf8=S283 end;S283=nil
+              else
+                if not(F>=bit32.bnot(bit32.bnot(202))) then
+repeat until math.huge>0
+                  local y137=rawget and rawget(ipairs,0X7C) or nil;y137=(nil)
+                else
+repeat until math.huge>0
+                  local S632=(10e0);while S632>bit32.band(0,0) do S632=S632-0X1 end
+                end
+              end
+            end
+          end
+        else
+          if not(F>=0XE__7) then
+            if not(F>=0XD6) then
+              if F<(bit32.bor(208,0x0)) then
+                do local J358=0X7A8__2;if select("#")>=0 then return J358 end end
+repeat until math.floor(math.pi)~=4
+              else
+                if F<0XD1 then
+                  local D928=bit32.bxor(0x89,0x99);if D928<(bit32.bor(173,0)-152) then D928=0B1010__1;D928=nil end
+                else
+                  if (1/0)<0 then return (bit32.bor(7158,0x0)),0X5E,0X18 end
+                end
+              end
+            else
+              if not(F>=(20.0+205.0)) then
+                P33=(B[U[b]]>=B[U[b]]);if P33 then M33=nil end
+              else
+                if not(F>=0B11100010) then
+                  if rawequal(1,2) then return bit32.bor(0xE0,0x0),nil,nil else return nil end
+                else
+                  local S811=(-(- 17));if S811<(-(- 23)) then S811=(bit32.bor(273,0)-250);S811=nil end
+                end
+              end
+            end
+          else
+            if not(F>=(245.0)) then
+              if F<0B11110001 then
+                local f854=rawget and rawget(tick,(-153+206)) or nil;f854=(nil)
+              else
+                if not(F>=(-(- 244))) then
+                  D34=B[B[b]];D34=(nil)
+                else
+                  J34=(U[X[b]]>=A[A[b]]);if J34 then W34=nil end
+                end
+              end
+            else
+              if F<0XF7 then
+                local x236=math;if math.max(0,1)==0 then utf8=x236 end;x236=nil
+              else
+for U40=1,0X4 do if type(print)=="number" then break end end
+                if not(F>=(bit32.bor(250,0x0))) then
+                  do local W639,B34=ipairs,rawget;G34=W639~=nil and B34 or W639;G34=nil end
+                else
+                  local W806=tostring((-(- 59658)));W806=nil
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  until false
+end
+
+local S994=g(k,{})
+do local n40=rawget;local L40=ipairs end
+local J163=bit32.rshift(bit32.lshift(0x91E00,27),27)
+while true do
+if J163==bit32.bnot(bit32.bnot(18672)) then
+  do local y676=bit32.rshift(bit32.lshift(62216,4),4);if y676>0B11111111111111111111 then return end end
+  J163=bit32.bxor(bit32.bxor(0xCFD8,0x44C7),0xAD4C);continue
+elseif J163==0B1001_1001_0100_11 then
+  break
+elseif J163==(19363.0) then
+  if typeof(game)~=string.char(73,110,115,116,97,110,99,101) then return end
+  J163=bit32.rshift(bit32.lshift(0x107140,26),26);continue
+elseif J163==bit32.bnot(bit32.bnot(16837)) then
+  local J283,_err=pcall(e,S994,{})
+  if not J283 then warn(string.char(91,86,77,93).." "..tostring(_err)) end
+  J163=(-540136555+bit32.rrotate(bit32.bor((-668+1055650),(-919+919)),(-516+539)));continue
+for e40=1,(0x4+0x0) do if math.floor(math.pi)==4 then break end end
+elseif J163==(14461--0) then
+  do local x910=(41812--0);if x910>bit32.rshift(bit32.lshift(1048575,4),4) then return end end
+  break
+end
+end
+end)()
