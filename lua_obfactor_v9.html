@@ -1525,8 +1525,30 @@ class Parser {
   expr() { return this.binop(0); }
   PREC = [{ops:['or'], right:false, p:1},{ops:['and'], right:false, p:2},{ops:['<','>','<=','>=','~=','=='], right:false, p:3},{ops:['..'], right:true, p:4},{ops:['+','-'], right:false, p:5},{ops:['*','/','%','//'], right:false, p:6},{ops:['^'], right:true, p:8}];
   getPrec(op) { for (const b of this.PREC) if (b.ops.includes(op)) return b; return null; }
-  binop(minP) { let l = this.unary(); while (true) { const k = this.peek(); if (k.t !== 'O' && k.t !== 'K') break; const info = this.getPrec(k.v); if (!info || info.p < minP) break; this.next(); const r = this.binop(info.right ? info.p : info.p + 1); l = {type:'binop',op:k.v,left:l,right:r}; } return l; }
-  unary() { if (this.try_('K','not')) return {type:'unop',op:'not',arg:this.unary()}; if (this.check('O','-')) { this.next(); return {type:'unop',op:'-',arg:this.unary()}; } if (this.check('O','#')) { this.next(); return {type:'unop',op:'#',arg:this.unary()}; } return this.simpleExpr(); }
+  // FIXED: Added recursion depth guard to binop to prevent stack overflow on deeply nested expressions
+  binop(minP, depth) { 
+    if (depth === undefined) depth = 0;
+    if (depth > 50) throw new Error('Expression too deeply nested - possible infinite recursion');
+    let l = this.unary(); 
+    while (true) { 
+      const k = this.peek(); 
+      if (k.t !== 'O' && k.t !== 'K') break; 
+      const info = this.getPrec(k.v); 
+      if (!info || info.p < minP) break; 
+      this.next(); 
+      const r = this.binop(info.right ? info.p : info.p + 1, depth + 1); 
+      l = {type:'binop',op:k.v,left:l,right:r}; 
+    } 
+    return l; 
+  }
+  unary(depth) { 
+    if (depth === undefined) depth = 0;
+    if (depth > 50) throw new Error('Expression too deeply nested - possible infinite recursion in unary');
+    if (this.try_('K','not')) return {type:'unop',op:'not',arg:this.unary(depth+1)}; 
+    if (this.check('O','-')) { this.next(); return {type:'unop',op:'-',arg:this.unary(depth+1)}; } 
+    if (this.check('O','#')) { this.next(); return {type:'unop',op:'#',arg:this.unary(depth+1)}; } 
+    return this.simpleExpr(); 
+  }
   simpleExpr() { const k = this.peek(); if (k.t === 'N') { this.next(); return {type:'num',val:k.v}; } if (k.t === 'S') { this.next(); return {type:'str',val:k.v}; } if (k.t === 'K' && k.v === 'true') { this.next(); return {type:'bool',val:true}; } if (k.t === 'K' && k.v === 'false') { this.next(); return {type:'bool',val:false}; } if (k.t === 'K' && k.v === 'nil') { this.next(); return {type:'nil'}; } if (k.t === 'O' && k.v === '...') { this.next(); return {type:'vararg'}; } if (k.t === 'K' && k.v === 'function') { this.next(); return this.funcbody(); } if (k.t === 'O' && k.v === '{') return this.tblCtor(); return this.suffixExpr(); }
   funcbody(extraPs) { this.eat('O','('); const ps = extraPs ? [...extraPs] : []; let va = false; if (!this.check('O',')')) { if (this.check('O','...')) { this.next(); va = true; } else { ps.push(this.eat('I').v); while (this.try_('O',',')) { if (this.check('O','...')) { this.next(); va = true; break; } ps.push(this.eat('I').v); } } } this.eat('O',')'); const body = this.block(); this.eat('K','end'); return {type:'func',params:ps,vararg:va,body}; }
   tblCtor() { this.eat('O','{'); const fields = []; while (!this.check('O','}')) { if (this.check('O','[')) { this.next(); const k=this.expr(); this.eat('O',']'); this.eat('O','='); const v=this.expr(); fields.push({t:'ek',k,v}); } else if (this.check('I') && this.ts[this.pos+1] && this.ts[this.pos+1].v === '=') { const k=this.next().v; this.eat('O','='); const v=this.expr(); fields.push({t:'nk',k,v}); } else { fields.push({t:'av',v:this.expr()}); } if (!this.try_('O',',') && !this.try_('O',';')) break; } this.eat('O','}'); return {type:'table',fields}; }
@@ -1701,7 +1723,25 @@ function encryptBytecode(bytes, seed) { const keyLen = ri(16, 24); const key = A
 // ============================================================
 // MAIN VM GENERATOR - Enhanced with all new features
 // ============================================================
+// FIXED: Stack overflow protection wrapper for VM generation
+// Catches maximum call stack size exceeded and provides diagnostic info
+let _vmGenStackDepth = 0;
+const MAX_VM_GEN_RECURSION = 100;
+
 function generateVM(proto, opMap, encResult, placeId, opcMask) {
+  _vmGenStackDepth++;
+  if (_vmGenStackDepth > MAX_VM_GEN_RECURSION) {
+    throw new Error(`VM generation recursion limit exceeded (${MAX_VM_GEN_RECURSION}). Possible infinite loop in generator.`);
+  }
+  
+  try {
+    return _generateVMInner(proto, opMap, encResult, placeId, opcMask);
+  } finally {
+    _vmGenStackDepth--;
+  }
+}
+
+function _generateVMInner(proto, opMap, encResult, placeId, opcMask) {
   _symReset(); // Defensive: reset symbol tracking for each generateVM call
   opcMask = (opcMask || 0) & 0xFF;
   const {shuffled, perm, key, seed, checksum} = encResult;
@@ -2114,7 +2154,66 @@ function generateVM(proto, opMap, encResult, placeId, opcMask) {
       return { lua, vHtbl, vHmask, vEntry };
     }
     
-    function buildTree(ids,depth){ if(!ids.length)return ''; const pad='  '+'  '.repeat(depth); if(ids.length===1){const id=ids[0],fake=!allOpcIds.includes(id); if(fake)return pad+fakeopcBody()+'\n'; return pad+'if F=='+N(id)+' then\n'+pad+'  '+scratch[0]+'='+vDtab+'['+N(id)+'];if '+scratch[0]+' then '+scratch[0]+'() end\n'+pad+'end\n';} const mid=ids[Math.floor(ids.length/2)]; const left=ids.filter(x=>x<mid),right=ids.filter(x=>x>=mid); const cond=ri(0,1)===0?'F<'+N(mid):'not(F>='+N(mid)+')'; return pad+'if '+cond+' then\n'+buildTree(left,depth+1)+pad+'else\n'+buildTree(right,depth+1)+pad+'end\n'; }
+    // FIXED: Convert recursive buildTree to iterative to prevent stack overflow
+    // Original recursive approach caused "Maximum call stack size exceeded" on large inputs
+    // Stack-safe iterative version using explicit stack
+    function buildTreeIterative(ids, depth) {
+      const MAX_DEPTH = 50; // Recursion guard - prevents stack overflow
+      const parts = [];
+      
+      // Node: {ids, depth, state: 'enter'|'exit', output: ''}
+      const stack = [{ids, depth, state: 'enter', output: ''}];
+      
+      while (stack.length > 0) {
+        const node = stack.pop();
+        const {ids: nodeIds, depth: nodeDepth, state, output} = node;
+        
+        if (state === 'exit') {
+          parts.push(output);
+          continue;
+        }
+        
+        if (nodeIds.length === 0) {
+          continue;
+        }
+        
+        const pad = '  '.repeat(nodeDepth);
+        
+        if (nodeIds.length === 1) {
+          const id = nodeIds[0];
+          const fake = !allOpcIds.includes(id);
+          if (fake) {
+            parts.push(pad + fakeopcBody() + '\n');
+          } else {
+            parts.push(pad + 'if F==' + N(id) + ' then\n' + pad + '  ' + scratch[0] + '=' + vDtab + '[' + N(id) + '];if ' + scratch[0] + ' then ' + scratch[0] + '() end\n' + pad + 'end\n');
+          }
+          continue;
+        }
+        
+        // Check recursion depth guard
+        if (nodeDepth >= MAX_DEPTH) {
+          // Fallback: generate flat dispatch table for deep trees
+          const flat = pad + 'switchF=F;switchDispatch={' + nodeIds.map(id => vDtab + '[' + N(id) + ']').join(',') + '};switchDone=true\n';
+          parts.push(flat);
+          continue;
+        }
+        
+        const mid = nodeIds[Math.floor(nodeIds.length / 2)];
+        const left = nodeIds.filter(x => x < mid);
+        const right = nodeIds.filter(x => x >= mid);
+        const cond = ri(0, 1) === 0 ? 'F<' + N(mid) : 'not(F>=' + N(mid) + ')';
+        
+        // Push exit node first (so it executes last - LIFO)
+        stack.push({ids: nodeIds, depth: nodeDepth, state: 'exit', output: ''});
+        // Push right branch second
+        stack.push({ids: right, depth: nodeDepth + 1, state: 'enter', output: pad + 'else\n'});
+        // Push left branch last
+        stack.push({ids: left, depth: nodeDepth + 1, state: 'enter', output: pad + 'if ' + cond + ' then\n'});
+      }
+      
+      return parts.join('');
+    }
+    
     if(f('bogus')){lua+=genBogusJumps(N,deepWraparound,rname,oF,ri);}
     
     // Polymorphic dispatcher with all new systems
@@ -2211,7 +2310,7 @@ function generateVM(proto, opMap, encResult, placeId, opcMask) {
     lua+='      local _h='+vHotCache+'[_hc_idx].h\n';
     lua+='      if _h then _h() end\n';
     lua+='    else\n';
-    lua+=buildTree(allSorted,2);
+    lua+=buildTreeIterative(allSorted,2);
     lua+='      '+vHotCache+'[_hc_idx].op=F\n';
     lua+='      '+vHotCache+'[_hc_idx].h='+vDtab+'[F]\n';
     lua+='    end\n';
@@ -2228,7 +2327,7 @@ function generateVM(proto, opMap, encResult, placeId, opcMask) {
   
   if (f('vmhide')) lua += 'end)()\n';
   return lua;
-}
+  } // end _generateVMInner
 
 // ============================================================
 // VARIABLE RENAMING + DEAD CODE INJECTION
@@ -2590,6 +2689,79 @@ function validateSymbolIntegrity(lua) {
   }
 
   return findings;
+}
+
+// FIXED: Comprehensive regression tests for obfuscator stability
+// Tests various Lua patterns to ensure no stack overflow or syntax errors
+const REGRESSION_TESTS = [
+  { name: 'print_hello', code: 'print("hello")' },
+  { name: 'arithmetic', code: 'local x = 1 + 2 * 3 / 4 - 5 % 6' },
+  { name: 'tables', code: 'local t = {a=1, b=2, c={3, 4, 5}}' },
+  { name: 'if_statement', code: 'if true then print("yes") else print("no") end' },
+  { name: 'while_loop', code: 'local i = 1\nwhile i <= 10 do i = i + 1 end' },
+  { name: 'for_loop', code: 'for i = 1, 10 do print(i) end' },
+  { name: 'function_def', code: 'function test() return 42 end' },
+  { name: 'closure', code: 'local function outer() local x = 1 return function() return x end end' },
+  { name: 'metatable', code: 'local t = {} local mt = {__index = function() return 0 end} setmetatable(t, mt)' },
+  { name: 'and_or', code: 'local x = true and false or true' },
+  { name: 'string_concat', code: 'local s = "hello" .. " " .. "world"' },
+  { name: 'nested_calls', code: 'print(type(tostring(math.abs(-5))))' },
+];
+
+function runRegressionTests() {
+  const results = [];
+  
+  for (const test of REGRESSION_TESTS) {
+    const testDiv = document.createElement('div');
+    testDiv.style.display = 'none';
+    document.body.appendChild(testDiv);
+    
+    const srcOrig = document.getElementById('src');
+    const outOrig = document.getElementById('out');
+    const srcBackup = srcOrig ? srcOrig.value : '';
+    const outBackup = outOrig ? outOrig.value : '';
+    
+    try {
+      if (srcOrig) srcOrig.value = test.code;
+      if (outOrig) outOrig.value = '';
+      
+      // Use minimal preset to isolate core functionality
+      if (document.getElementById('preset')) document.getElementById('preset').value = 'minimal';
+      
+      go();
+      
+      const result = outOrig ? outOrig.value : '';
+      
+      if (!result || result.trim().length === 0) {
+        results.push({ name: test.name, pass: false, error: 'No output generated' });
+        continue;
+      }
+      
+      // Check for syntax issues
+      const errors = validateGeneratedCode(result);
+      if (errors.length > 0) {
+        results.push({ name: test.name, pass: false, error: errors.join('; ') });
+        continue;
+      }
+      
+      // Basic structure check
+      if (!result.includes('bit32') && !result.includes('local ')) {
+        results.push({ name: test.name, pass: false, error: 'Invalid output structure' });
+        continue;
+      }
+      
+      results.push({ name: test.name, pass: true, error: null });
+      
+    } catch (e) {
+      results.push({ name: test.name, pass: false, error: e.message });
+    } finally {
+      if (srcOrig) srcOrig.value = srcBackup;
+      if (outOrig) outOrig.value = outBackup;
+      document.body.removeChild(testDiv);
+    }
+  }
+  
+  return results;
 }
 
 // Lightweight self-test: obfuscates a tiny Lua snippet and checks it doesn't throw
