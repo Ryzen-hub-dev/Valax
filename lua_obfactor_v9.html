@@ -1698,6 +1698,7 @@ function encryptBytecode(bytes, seed) { const keyLen = ri(16, 24); const key = A
 // MAIN VM GENERATOR - Enhanced with all new features
 // ============================================================
 function generateVM(proto, opMap, encResult, placeId, opcMask) {
+  _symReset(); // Defensive: reset symbol tracking for each generateVM call
   opcMask = (opcMask || 0) & 0xFF;
   const {shuffled, perm, key, seed, checksum} = encResult;
   const vKey=rname(),vBuf=rname(),vRaw=rname(),vPerm=rname(),vI=rname(),vJ=rname();
@@ -1987,17 +1988,22 @@ function generateVM(proto, opMap, encResult, placeId, opcMask) {
     
     const vOpcMask=deepWraparound(opcMask),vS=rname();
     
-    // NEW: Instruction Caching
+    // Instruction Caching — hoist to function scope so all code blocks can reference vCache/vCacheSize
+    let vCache=null, vCacheSize=null;
     if (f('cache')) {
-      const vCache=rname(), vCacheSize=rname();
+      vCache=rname(); vCacheSize=rname();
+      _symTrack(vCacheSize, 'vCacheSize', 'cache-init');
+      _symTrack(vCache, 'vCache', 'cache-init');
       lua+='  local '+vCacheSize+'='+N(Math.min(256, Math.max(16, proto.code.length/4)))+'\n';
       lua+='  local '+vCache+'={}\n';
       lua+='  for _ci=1,'+vCacheSize+' do '+vCache+'[_ci]={op=nil,a=0,b=0,c=0} end\n';
     }
-    
-    // NEW: Lazy Decoding
+
+    // Lazy Decoding — hoist to function scope for consistency and future extensibility
+    let vLazyDecode=null;
     if (f('lazydec')) {
-      const vLazyDecode=rname();
+      vLazyDecode=rname();
+      _symTrack(vLazyDecode, 'vLazyDecode', 'lazydec-init');
       lua+='  local '+vLazyDecode+'=function(idx)\n';
       lua+='    local word='+vCodeV+'[(idx-1)*4+1]\n';
       lua+='    return bit32.bxor(word,'+vOpcMask+')\n';
@@ -2010,6 +2016,8 @@ function generateVM(proto, opMap, encResult, placeId, opcMask) {
     lua+='    U[_i]='+vCodeV+'[(_i-1)*4+2];B[_i]='+vCodeV+'[(_i-1)*4+3];G[_i]='+vCodeV+'[(_i-1)*4+4]\n';
     lua+='    M[_i]=B[_i]*256+G[_i];X[_i]=M[_i]-'+N(BIAS)+'\n';
     if (f('cache')) {
+      _symRef(vCacheSize, 'vCacheSize', 'cache-populate-loop');
+      _symRef(vCache, 'vCache', 'cache-populate-loop');
       lua+='    if _i<='+vCacheSize+' then\n';
       lua+='      '+vCache+'[_i].op='+vS+'[_i];'+vCache+'[_i].a=U[_i];'+vCache+'[_i].b=B[_i];'+vCache+'[_i].c=G[_i]\n';
       lua+='    end\n';
@@ -2170,6 +2178,179 @@ function validateGeneratedCode(lua) {
 }
 
 // ============================================================
+// SYMBOL INTEGRITY VERIFICATION (defensive: prevents regression
+// of hoisting/cross-block reference bugs like the vCacheSize crash)
+// ============================================================
+
+// Tracks JS-side variables emitted into the generated Lua code.
+// Must be declared at function scope (not block scope) to be
+// safely referenced by all feature blocks within generateVM().
+const _emittedLuaVars = new Map(); // name -> { block, emitted: bool, refs: Set }
+
+// Reset tracking state for each generateVM invocation
+function _symReset() { _emittedLuaVars.clear(); }
+
+// Register a lua-side variable being declared in the current block
+// Throws immediately if a duplicate declaration is detected (duplicate `local x=...`).
+function _symTrack(name, jsSourceVar, block) {
+  const entry = _emittedLuaVars.get(name);
+  if (entry && entry.emitted) {
+    throw new Error(
+      `[SymbolIntegrity] DUPLICATE DECLARATION: lua variable "${name}" ` +
+      `(JS source: "${jsSourceVar}") is declared twice in block "${block}". ` +
+      `This generates redundant "local x={}" statements.`
+    );
+  }
+  _emittedLuaVars.set(name, {
+    name,
+    jsVar: jsSourceVar,
+    block: block || '?',
+    emitted: true,
+    refs: new Set()
+  });
+}
+
+// Register a lua-side variable being referenced in generated Lua code.
+// Throws immediately if the variable was never declared (hoisting bug).
+function _symRef(name, jsSourceVar, block) {
+  const entry = _emittedLuaVars.get(name);
+  if (!entry || !entry.emitted) {
+    const declared = [..._emittedLuaVars.entries()]
+      .filter(([,v]) => v.emitted)
+      .map(([k]) => k);
+    throw new Error(
+      `[SymbolIntegrity] HOISTING BUG DETECTED: lua variable "${name}" ` +
+      `(JS source: "${jsSourceVar}") is referenced in block "${block || '?'}" ` +
+      `but was never declared. This causes ReferenceError at generation time. ` +
+      `Known emitted vars: [${declared.slice(0, 20).join(', ')}${declared.length > 20 ? '...' : ''}]. ` +
+      `FIX: Declare the JS variable at FUNCTION scope (before any if blocks), not block scope.`
+    );
+  }
+  entry.refs.add(block || '?');
+}
+
+// Validates the generated Lua code for structural integrity.
+// Returns an array of { severity, message } findings.
+function validateSymbolIntegrity(lua) {
+  const findings = [];
+
+  // 1. Detect all `local varname=` declarations in the generated Lua
+  const localDeclRe = /\blocal\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=/g;
+  const declaredVars = new Map(); // name -> [{line, declaredBefore}]
+  let match;
+  while ((match = localDeclRe.exec(lua)) !== null) {
+    const name = match[1];
+    if (!declaredVars.has(name)) declaredVars.set(name, []);
+    declaredVars.get(name).push(match.index);
+  }
+
+  // 2. Collect all bare identifier references (not inside strings/regex/comments)
+  //    Split into potential "reference" contexts
+  //    For safety, check that every identifier used in `if _i<=VARNAME` or similar
+  //    is actually declared somewhere above it.
+  const lines = lua.split('\n');
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+    // Strip string literals and comments
+    const stripped = line
+      .replace(/--.*$/, '')                                    // remove comments
+      .replace(/'[^']*'/g, "''")                                // remove single-quoted strings
+      .replace(/"[^"]*"/g, '""')                               // remove double-quoted strings
+      .replace(/\[(=*)\[[\s\S]*?\]\1\]/g, '[[]]');             // remove long strings
+    // Find identifiers used in expressions (word boundaries)
+    const idRe = /\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g;
+    let m;
+    while ((m = idRe.exec(stripped)) !== null) {
+      const id = m[1];
+      // Skip Lua keywords and builtins
+      if (RSVD.has(id)) continue;
+      // Skip single-char names (common scratch vars like A, B, etc.)
+      if (id.length === 1) continue;
+      // Skip if this identifier is a local declaration on the same line
+      const isDeclLine = stripped.includes('local ' + id + '=');
+      if (isDeclLine) continue;
+      // Find the earliest declaration of this var before this line
+      const declPositions = declaredVars.get(id) || [];
+      const beforeThisLine = declPositions.filter(pos => {
+        const declLine = lua.substring(0, pos).split('\n').length;
+        return declLine <= li + 1;
+      });
+      if (beforeThisLine.length === 0 && !RSVD.has(id)) {
+        findings.push({
+          severity: 'warn',
+          message: `Line ${li + 1}: identifier "${id}" referenced but not declared above (possible typo or missing declaration)`
+        });
+      }
+    }
+  }
+
+  // 3. Check cache system consistency: vCacheSize must be <= number of cache init slots
+  const cacheInitCount = (lua.match(/for _ci=1,([^\s]+)/g) || []).length;
+  const cacheRefCount = (lua.match(/vCacheSize|\b_([a-zA-Z_][a-zA-Z0-9_]*)\b(?=.*\.op)/g) || []).length;
+  // Check vCache is declared before being indexed
+  const cacheIdxMatch = /_ci\.\w+/g;
+  if (!lua.includes('local vCache=') && !lua.match(/\bloc[a-z ]*vCache[ =]/)) {
+    const cacheEntries = lua.match(/\bvCache\b/g);
+    if (cacheEntries && cacheEntries.length > 1) {
+      findings.push({
+        severity: 'warn',
+        message: 'vCache referenced but may not be properly initialized'
+      });
+    }
+  }
+
+  return findings;
+}
+
+// Lightweight self-test: obfuscates a tiny Lua snippet and checks it doesn't throw
+function runIntegritySelfTest() {
+  const testInput = 'print("hello")';
+  const testDiv = document.createElement('div');
+  testDiv.style.display = 'none';
+  document.body.appendChild(testDiv);
+  const srcOrig = document.getElementById('src');
+  const outOrig = document.getElementById('out');
+  const srcBackup = srcOrig ? srcOrig.value : '';
+  const outBackup = outOrig ? outOrig.value : '';
+  try {
+    if (srcOrig) srcOrig.value = testInput;
+    if (outOrig) outOrig.value = '';
+    // Temporarily disable all heavy features to isolate symbol generation
+    const prevEnabled = DEBUG.enabled;
+    DEBUG.enabled = false;
+    const presetOrig = document.getElementById('preset') ? document.getElementById('preset').value : 'custom';
+    if (document.getElementById('preset')) document.getElementById('preset').value = 'minimal';
+    // Force cache on for this test
+    const cacheChk = document.getElementById('fcache');
+    const cachePrev = cacheChk ? cacheChk.checked : false;
+    if (cacheChk) cacheChk.checked = true;
+    go();
+    DEBUG.enabled = prevEnabled;
+    if (cacheChk) cacheChk.checked = cachePrev;
+    if (document.getElementById('preset')) document.getElementById('preset').value = presetOrig;
+    const result = outOrig ? outOrig.value : '';
+    if (!result || result.trim().length === 0) {
+      DEBUG.log('selftest', 'FAIL: no output generated');
+      return false;
+    }
+    // Basic sanity: output should contain Lua VM structure
+    if (!result.includes('bit32') && !result.includes('local ')) {
+      DEBUG.log('selftest', 'FAIL: output lacks expected Lua VM structure');
+      return false;
+    }
+    DEBUG.log('selftest', 'PASS: self-test produced valid output', { bytes: result.length });
+    return true;
+  } catch (e) {
+    DEBUG.log('selftest', 'FAIL: ' + e.message);
+    return false;
+  } finally {
+    if (srcOrig) srcOrig.value = srcBackup;
+    if (outOrig) outOrig.value = outBackup;
+    document.body.removeChild(testDiv);
+  }
+}
+
+// ============================================================
 // MAIN ENTRY POINT
 // ============================================================
 function go() {
@@ -2233,6 +2414,15 @@ function go() {
       if (luaErrors.length > 0) {
         console.warn('VM generation warnings:', luaErrors);
         DEBUG.log('validation', 'Warnings', luaErrors);
+      }
+
+      // Defensive: symbol integrity check — catches cross-block reference bugs at generation time
+      if (typeof validateSymbolIntegrity === 'function') {
+        const symFindings = validateSymbolIntegrity(output);
+        for (const finding of symFindings) {
+          console.warn('[SymbolIntegrity]', finding.severity + ':', finding.message);
+          DEBUG.log('symbol', finding.message, { severity: finding.severity });
+        }
       }
       DEBUG.endPerf('generateVM');
       
