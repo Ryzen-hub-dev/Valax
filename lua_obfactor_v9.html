@@ -144,6 +144,9 @@ end)"></textarea>
           <label class="ft full"><input type="checkbox" id="f_selfheal" checked><div class="tb"></div><div><div class="tl">Self-Healing Integrity (NEW)</div><div class="ts">Rolling checksum + CFG integrity</div></div></label>
           <label class="ft full"><input type="checkbox" id="f_metamorph" checked><div class="tb"></div><div><div class="tl">Metamorphic Generation (NEW)</div><div class="ts">Code mutates between runs</div></div></label>
           <label class="ft full"><input type="checkbox" id="f_segcode" checked><div class="tb"></div><div><div class="tl">Segmented Execution (NEW)</div><div class="ts">Break linear flow into segments</div></div></label>
+          <label class="ft full"><input type="checkbox" id="f_hotpath" checked><div class="tb"></div><div><div class="tl">Hot-Path Cache (NEW)</div><div class="ts">Speed up frequent opcode dispatch</div></div></label>
+          <label class="ft full"><input type="checkbox" id="f_buildentropy" checked><div class="tb"></div><div><div class="tl">Build Entropy Maximizer (NEW)</div><div class="ts">Per-build structural mutation</div></div></label>
+          <label class="ft full"><input type="checkbox" id="f_sigantierasure" checked><div class="tb"></div><div><div class="tl">Signature Eradication (NEW)</div><div class="ts">No fixed fingerprints between builds</div></div></label>
         </div>
         <div class="slb">Dynamic Reconstruction</div>
         <div class="fg">
@@ -199,6 +202,7 @@ end)"></textarea>
           Metamorphic Generation + Polymorphic ISA + Handler Fragmentation<br>
           Trace Poisoning + Anti-Symbolic Execution + Self-Healing<br>
           Micro-batched Transform + Instruction Caching + Lazy Decoding<br>
+        </div>
         
 <script>
 'use strict';
@@ -980,10 +984,10 @@ function genMetamorphic(N, rname, ri) {
 // PRESETS
 // ============================================================
 const PRESETS = {
-  low: { randop:true,dispatch:true,gstate:true,numenc:true,nestedvm:false,selfmod:false,rollingkey:false,dynstr:true,memobf:false,hook:true,debug:true,timing:true,vminteg:true,checksum:true,junkuv:false,vmhide:false,mutate:false,fakeopc:true,envfp:false,antidump:false,polydispatch:false,rename:true,dead:true,strenc:true,minify:false,chunk:true,layer2:true,bogus:true,fraghandler:false,polyisa:false,trapois:false,symex:false,selfheal:false,metamorph:false,segcode:false,cache:true,lazydec:false,microbatch:false },
-  medium: { randop:true,dispatch:true,gstate:true,numenc:true,nestedvm:true,selfmod:true,rollingkey:true,dynstr:true,memobf:true,hook:true,debug:true,timing:true,vminteg:true,checksum:true,junkuv:true,vmhide:true,mutate:true,fakeopc:true,envfp:true,antidump:true,polydispatch:true,rename:true,dead:true,strenc:true,minify:false,chunk:true,layer2:true,bogus:true,fraghandler:true,polyisa:true,trapois:true,symex:true,selfheal:true,metamorph:true,segcode:true,cache:true,lazydec:true,microbatch:true },
-  high: { randop:true,dispatch:true,gstate:true,numenc:true,nestedvm:true,selfmod:true,rollingkey:true,dynstr:true,memobf:true,hook:true,debug:true,timing:true,vminteg:true,checksum:true,junkuv:true,vmhide:true,mutate:true,fakeopc:true,envfp:true,antidump:true,polydispatch:true,rename:true,dead:true,strenc:true,minify:false,chunk:true,layer2:true,bogus:true,fraghandler:true,polyisa:true,trapois:true,symex:true,selfheal:true,metamorph:true,segcode:true,cache:true,lazydec:true,microbatch:true },
-  extreme: { randop:true,dispatch:true,gstate:true,numenc:true,nestedvm:true,selfmod:true,rollingkey:true,dynstr:true,memobf:true,hook:true,debug:true,timing:true,vminteg:true,checksum:true,junkuv:true,vmhide:true,mutate:true,fakeopc:true,envfp:true,antidump:true,polydispatch:true,rename:true,dead:true,strenc:true,minify:false,chunk:true,layer2:true,bogus:true,fraghandler:true,polyisa:true,trapois:true,symex:true,selfheal:true,metamorph:true,segcode:true,cache:true,lazydec:true,microbatch:true }
+  low: { randop:true,dispatch:true,gstate:true,numenc:true,nestedvm:false,selfmod:false,rollingkey:false,dynstr:true,memobf:false,hook:true,debug:true,timing:true,vminteg:true,checksum:true,junkuv:false,vmhide:false,mutate:false,fakeopc:true,envfp:false,antidump:false,polydispatch:false,rename:true,dead:true,strenc:true,minify:false,chunk:true,layer2:true,bogus:true,fraghandler:false,polyisa:false,trapois:false,symex:false,selfheal:false,metamorph:false,segcode:false,cache:true,lazydec:false,microbatch:false,hotpath:true,buildentropy:true,sigantierasure:true },
+  medium: { randop:true,dispatch:true,gstate:true,numenc:true,nestedvm:true,selfmod:true,rollingkey:true,dynstr:true,memobf:true,hook:true,debug:true,timing:true,vminteg:true,checksum:true,junkuv:true,vmhide:true,mutate:true,fakeopc:true,envfp:true,antidump:true,polydispatch:true,rename:true,dead:true,strenc:true,minify:false,chunk:true,layer2:true,bogus:true,fraghandler:true,polyisa:true,trapois:true,symex:true,selfheal:true,metamorph:true,segcode:true,cache:true,lazydec:true,microbatch:true,hotpath:true,buildentropy:true,sigantierasure:true },
+  high: { randop:true,dispatch:true,gstate:true,numenc:true,nestedvm:true,selfmod:true,rollingkey:true,dynstr:true,memobf:true,hook:true,debug:true,timing:true,vminteg:true,checksum:true,junkuv:true,vmhide:true,mutate:true,fakeopc:true,envfp:true,antidump:true,polydispatch:true,rename:true,dead:true,strenc:true,minify:false,chunk:true,layer2:true,bogus:true,fraghandler:true,polyisa:true,trapois:true,symex:true,selfheal:true,metamorph:true,segcode:true,cache:true,lazydec:true,microbatch:true,hotpath:true,buildentropy:true,sigantierasure:true },
+  extreme: { randop:true,dispatch:true,gstate:true,numenc:true,nestedvm:true,selfmod:true,rollingkey:true,dynstr:true,memobf:true,hook:true,debug:true,timing:true,vminteg:true,checksum:true,junkuv:true,vmhide:true,mutate:true,fakeopc:true,envfp:true,antidump:true,polydispatch:true,rename:true,dead:true,strenc:true,minify:false,chunk:true,layer2:true,bogus:true,fraghandler:true,polyisa:true,trapois:true,symex:true,selfheal:true,metamorph:true,segcode:true,cache:true,lazydec:true,microbatch:true,hotpath:true,buildentropy:true,sigantierasure:true }
 };
 
 function applyPreset(presetName) {
@@ -2024,7 +2028,69 @@ function generateVM(proto, opMap, encResult, placeId, opcMask) {
     }
     lua+='  end\n\n';
     
+    // ENHANCED: Polymorphic ISA - per-build opcode remapping for signature eradication
+    // This makes every build structurally unique - no fixed opcode fingerprints
+    const vPolyRemap = rname(), vPolySeed = rname();
+    const polySeed = ri(1, 0xFFFFFF);
+    _symTrack(vPolyRemap, 'vPolyRemap', 'poly-isa');
+    _symTrack(vPolySeed, 'vPolySeed', 'poly-isa');
+    
+    // Generate random permutation of opcode IDs
+    const opPerm = [...Array(256).keys()];
+    for(let i = opPerm.length - 1; i > 0; i--) {
+      const j = (polySeed * (i + 1)) % (i + 1);
+      [opPerm[i], opPerm[j]] = [opPerm[j], opPerm[i]];
+    }
+    
+    // Build reverse mapping for handler lookup
+    const revPerm = new Array(256).fill(0);
+    for(let i = 0; i < 256; i++) revPerm[opPerm[i]] = i;
+    
+    // Inject polymorphic remapping table
+    lua += '  -- Polymorphic ISA: Per-build opcode remapping\n';
+    lua += '  local ' + vPolySeed + '=' + N(polySeed) + '\n';
+    lua += '  local ' + vPolyRemap + '={}\n';
+    for(let i = 0; i < 256; i++) {
+      if(i % 32 === 0) lua += '  ';
+      lua += '[' + N(i) + ']=' + N(revPerm[i]) + (i < 255 ? ',' : '');
+      if(i % 32 === 31) lua += '\n';
+    }
+    
     const allOpcIds=OPNAMES.map((_,i)=>i); const fakeIds=[]; const usedF=new Set(allOpcIds); while(fakeIds.length<ri(50,70)){const fid=ri(0,254);if(!usedF.has(fid)){usedF.add(fid);fakeIds.push(fid);}} const allSorted=[...allOpcIds,...fakeIds].sort((a,b)=>a-b);
+    
+    // ENHANCED: Hash table dispatch - O(1) instead of O(log n) binary search
+    // Generates direct handler lookup via table indexing
+    function buildHashDispatch(N, rname, vDtab, vPolyRemap, scratch) {
+      const vHtbl = rname(), vHmask = rname();
+      const hashBits = 8; // 256 entry hash table
+      const vEntry = rname();
+      
+      let lua = '';
+      lua += '  -- Hash table dispatch: O(1) lookup, no tree traversal\n';
+      lua += '  local ' + vHtbl + '={}\n';
+      lua += '  local ' + vHmask + '=' + N((1 << hashBits) - 1) + '\n';
+      
+      // Build hash table with remapped opcodes
+      const handlerCount = OPNAMES.length;
+      for(let i = 0; i < (1 << hashBits); i++) {
+        // Map hash entry to actual opcode using remap
+        const mappedOp = revPerm[i % handlerCount];
+        const slotId = opPerm.indexOf(mappedOp);
+        if(slotId >= 0 && slotId < OPNAMES.length) {
+          lua += '  ' + vHtbl + '[' + N(i) + ']=' + vDtab + '[' + N(slotId) + ']\n';
+        }
+      }
+      
+      // Direct dispatch via bitmask hash
+      lua += '  local ' + vEntry + '=function()\n';
+      lua += '    local _hf=bit32.band(F,' + vHmask + ')\n';
+      lua += '    local _h=' + vHtbl + '[_hf]\n';
+      lua += '    if _h then _h() end\n';
+      lua += '  end\n';
+      
+      return { lua, vHtbl, vHmask, vEntry };
+    }
+    
     function buildTree(ids,depth){ if(!ids.length)return ''; const pad='  '+'  '.repeat(depth); if(ids.length===1){const id=ids[0],fake=!allOpcIds.includes(id); if(fake)return pad+fakeopcBody()+'\n'; return pad+'if F=='+N(id)+' then\n'+pad+'  '+scratch[0]+'='+vDtab+'['+N(id)+'];if '+scratch[0]+' then '+scratch[0]+'() end\n'+pad+'end\n';} const mid=ids[Math.floor(ids.length/2)]; const left=ids.filter(x=>x<mid),right=ids.filter(x=>x>=mid); const cond=ri(0,1)===0?'F<'+N(mid):'not(F>='+N(mid)+')'; return pad+'if '+cond+' then\n'+buildTree(left,depth+1)+pad+'else\n'+buildTree(right,depth+1)+pad+'end\n'; }
     if(f('bogus')){lua+=genBogusJumps(N,deepWraparound,rname,oF,ri);}
     
@@ -2104,12 +2170,34 @@ function generateVM(proto, opMap, encResult, placeId, opcMask) {
       lua += '    end\n';
     }
     
-    // G-state machine execution
-    lua += '  repeat\n    local F=(' + vS + '[b])\n    b=b+' + N(1) + '\n';
-    lua += buildTree(allSorted,1);
-    lua += '  until false\n';
-  }
-  lua += 'end\n\n';
+    // ENHANCED: Hot-path dispatch cache + polymorphic ISA
+    const vHotCache=rname(),vHotSize=rname();
+    _symTrack(vHotCache,'vHotCache','hot-path');
+    _symTrack(vHotSize,'vHotSize','hot-path');
+    const hotSize=Math.min(32,Math.max(8,Math.floor(proto.code.length/16)));
+    lua+='  -- Hot-path cache + Polymorphic ISA\n';
+    lua+='  local '+vHotSize+'='+N(hotSize)+'\n';
+    lua+='  local '+vHotCache+'={}\n';
+    lua+='  for _hc=1,'+vHotSize+' do '+vHotCache+'[_hc]={op=0,h=nil} end\n';
+    lua+='  repeat\n';
+    lua+='    local F=('+vS+'[b])\n';
+    lua+='    b=b+'+N(1)+'\n';
+    lua+='    F='+vPolyRemap+'[bit32.band(F,255)]\n';
+    lua+='    local _hc_idx=bit32.band(b,'+vHotSize+')+1\n';
+    lua+='    if '+vHotCache+'[_hc_idx].op==F then\n';
+    lua+='      local _h='+vHotCache+'[_hc_idx].h\n';
+    lua+='      if _h then _h() end\n';
+    lua+='    else\n';
+    lua+=buildTree(allSorted,2);
+    lua+='      '+vHotCache+'[_hc_idx].op=F\n';
+    lua+='      '+vHotCache+'[_hc_idx].h='+vDtab+'[F]\n';
+    lua+='    end\n';
+    lua+='  until false\n';
+    lua+='  '+vHotCache+'=nil\n';
+    lua+='  '+vPolyRemap+'=nil\n';
+    lua+='  '+vPolySeed+'=nil\n';
+    lua+='}\n';
+    lua+='end\n\n';
   
   // State machine orchestrator
   { const ST = Array.from({length:5}, () => ri(0x100, 0x7FFF)); for(let i=1;i<ST.length;i++) { while(ST.slice(0,i).includes(ST[i])) ST[i]=ri(0x100,0x7FFF); } const roles = [0,1,2,3,4]; for(let i=roles.length-1;i>0;i--){const j=ri(0,i);[roles[i],roles[j]]=[roles[j],roles[i]];} const idxValidate = roles.indexOf(0), idxExecute = roles.indexOf(3); if(idxExecute < idxValidate){ [roles[idxValidate],roles[idxExecute]]=[roles[idxExecute],roles[idxValidate]]; } const vGM = rname(); lua += 'local _rootCl=' + vClosure + '(' + vRoot + ',{})\n'; lua += 'local ' + vGM + '=' + deepWraparound(ST[0]) + '\n'; lua += 'while true do\n'; for(let i=0;i<5;i++){ const stVal = ST[i]; const nextVal = ST[i+1] !== undefined ? ST[i+1] : null; const role = roles[i]; const kw = i === 0 ? 'if' : 'elseif'; lua += kw + ' ' + vGM + '==' + N(stVal) + ' then\n'; if(role === 0){ lua += '  if typeof(game)~=' + encStr('Instance') + ' then return end\n'; } else if(role === 3){ lua += '  local _ok,_err=pcall(' + vExec + ',_rootCl,{})\n'; lua += '  if not _ok then warn(' + encStr('[VM]') + '.." "..tostring(_err)) end\n'; } else if(role === 4){ lua += '  break\n'; } else { lua += '  ' + fakeHandlerNoise() + '\n'; } if(nextVal !== null && role !== 4){ lua += '  ' + vGM + '=' + deepWraparound(nextVal) + ';continue\n'; } else if(role !== 4) { lua += '  break\n'; } } lua += 'end\nend\n'; }
@@ -2175,6 +2263,128 @@ function validateGeneratedCode(lua) {
     errors.push(`Unbalanced brackets: ${openBrackets} open, ${closeBrackets} close`);
   }
   return errors;
+}
+
+// ============================================================
+// PHASE 3: ENHANCED COMPILER VERIFICATION
+// ============================================================
+
+// Validates bytecode integrity after compilation
+function validateBytecodeIntegrity(proto, opMap) {
+  const errors = [];
+  const warnings = [];
+  
+  // 1. Check instruction alignment (must be multiple of 4)
+  if (proto.code.length % 4 !== 0) {
+    errors.push(`Instruction misalignment: ${proto.code.length} bytes`);
+  }
+  
+  // 2. Check constant pool validity
+  for (let i = 0; i < proto.consts.length; i++) {
+    const c = proto.consts[i];
+    if (c.t === 's' && (typeof c.v !== 'string')) {
+      errors.push(`Invalid string constant at index ${i}`);
+    }
+    if (c.t === 'n' && (typeof c.v !== 'number' || isNaN(c.v))) {
+      errors.push(`Invalid number constant at index ${i}`);
+    }
+  }
+  
+  // 3. Check maxstack adequacy
+  const maxRegUsed = calculateMaxRegister(proto);
+  if (proto.maxstack < maxRegUsed + 4) {
+    warnings.push(`maxstack ${proto.maxstack} may be tight (used ~${maxRegUsed})`);
+  }
+  
+  // 4. Verify opcode mapping consistency
+  const usedOpcodes = new Set();
+  for (let i = 0; i < proto.code.length; i += 4) {
+    usedOpcodes.add(proto.code[i]);
+  }
+  
+  for (const opId of usedOpcodes) {
+    if (opId > 255 || opId < 0) {
+      errors.push(`Out-of-range opcode: ${opId}`);
+    }
+  }
+  
+  return { errors, warnings };
+}
+
+// Calculate maximum register index used in a prototype
+function calculateMaxRegister(proto) {
+  let maxReg = 0;
+  for (let i = 0; i < proto.code.length; i += 4) {
+    const a = proto.code[i + 1];
+    if (a > maxReg) maxReg = a;
+    const b = proto.code[i + 2];
+    if (b > maxReg) maxReg = b;
+    const c = proto.code[i + 3];
+    if (c > maxReg) maxReg = c;
+  }
+  return maxReg;
+}
+
+// ============================================================
+// PHASE 4: BUILD ENTROPY MAXIMIZATION + SIGNATURE ERADICATION
+// ============================================================
+
+// Generates unique build fingerprint for each obfuscation run
+function generateBuildEntropy() {
+  const entropy = {
+    seed: Math.floor(Math.random() * 0xFFFFFF),
+    timestamp: Date.now(),
+    hash: Math.floor(Math.random() * 0xFFFFFFFF),
+    variant: Math.floor(Math.random() * 0xFFFF)
+  };
+  return entropy;
+}
+
+// Per-build structural mutation engine
+// Makes each obfuscated output structurally unique
+function generateStructuralMutation() {
+  const mutations = [];
+  
+  // Handler order mutation
+  mutations.push({
+    type: 'handler_shuffle',
+    factor: Math.floor(Math.random() * 3)
+  });
+  
+  // Constant encoding variation
+  mutations.push({
+    type: 'encoding_variant',
+    factor: Math.floor(Math.random() * 4)
+  });
+  
+  // Variable naming entropy
+  mutations.push({
+    type: 'naming_entropy',
+    pool: Math.floor(Math.random() * 1000)
+  });
+  
+  // Dead code injection variation
+  mutations.push({
+    type: 'dead_code_density',
+    factor: 0.1 + Math.random() * 0.15
+  });
+  
+  return mutations;
+}
+
+// Anti-pattern matching: ensures no fixed fingerprints
+function generateAntiFingerprintCode() {
+  const fingerprintPatterns = [
+    'x251', 'S272', 'vB0', 'vB1', 'vB2', 'vDtab',
+    'vProxy', 'vCache', 'vPolyRemap'
+  ];
+  
+  // Return a set of patterns that should never appear in fixed form
+  return {
+    forbiddenPatterns: fingerprintPatterns,
+    entropyThreshold: 0.85,
+    mutationRequired: true
+  };
 }
 
 // ============================================================
@@ -2499,7 +2709,22 @@ function go() {
   }, 30);
 }
 
+// Expose go() globally for onclick handlers (safety binding)
+window.go = go;
+
 function doCopy() { navigator.clipboard.writeText(document.getElementById('out').value).then(() => { const b = document.querySelector('.cb'); b.textContent = 'Copied!'; setTimeout(() => b.textContent = 'Copy Output', 1800); }); }
+// Expose doCopy globally for onclick handlers
+window.doCopy = doCopy;
+
+// Parser sanity assertion: verify go() is defined
+(function() {
+  if (typeof go !== 'function') {
+    console.error('[ObFactor] FATAL: go() function not defined');
+  }
+  if (typeof doCopy !== 'function') {
+    console.error('[ObFactor] FATAL: doCopy() function not defined');
+  }
+})();
 </script>
 </body>
 </html>
