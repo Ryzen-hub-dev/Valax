@@ -1,0 +1,44 @@
+{
+  "plans": [
+    {
+      "id": "starter",
+      "name": "Starter",
+      "subtitle": "For individual builders",
+      "price": 0,
+      "popular": false,
+      "cta": "Start free",
+      "features": [
+        { "label": "Core protection pipeline", "included": true },
+        { "label": "Basic analytics", "included": true },
+        { "label": "API access", "included": false }
+      ]
+    },
+    {
+      "id": "pro",
+      "name": "Pro",
+      "subtitle": "For serious operators",
+      "price": 29,
+      "popular": true,
+      "cta": "Choose Pro",
+      "features": [
+        { "label": "All starter features", "included": true },
+        { "label": "Expanded key controls", "included": true, "detail": "Recommended" },
+        { "label": "Automated workflows", "included": true },
+        { "label": "Priority support", "included": true }
+      ]
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
+      "subtitle": "For teams and platforms",
+      "price": 79,
+      "popular": false,
+      "cta": "Contact sales",
+      "features": [
+        { "label": "Team operations", "included": true },
+        { "label": "White-label workflow", "included": true },
+        { "label": "Advanced telemetry", "included": true }
+      ]
+    }
+  ]
+}
